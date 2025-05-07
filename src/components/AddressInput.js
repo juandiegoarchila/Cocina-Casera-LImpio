@@ -7,6 +7,7 @@ const AddressInput = ({ address, setAddress }) => {
     <div className="bg-white p-4 rounded-lg shadow">
       <h2 className="text-lg font-semibold mb-2">📍 ¿A dónde lo enviamos?</h2>
       <input
+        id="address-input"
         type="text"
         value={address}
         onChange={(e) => setAddress(e.target.value)}

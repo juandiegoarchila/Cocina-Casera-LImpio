@@ -8,18 +8,16 @@ const CutlerySelector = ({ cutlery, setCutlery }) => {
       <div className="grid grid-cols-2 gap-2">
         <button
           onClick={() => setCutlery('Sí')}
-          className={`cutlery-btn p-2 rounded ${
-            cutlery === 'Sí' ? 'bg-green-200' : 'bg-gray-100 hover:bg-gray-200'
-          } transition-colors`}
+          className={`p-2 rounded ${cutlery === 'Sí' ? 'bg-green-200' : 'bg-gray-100 hover:bg-gray-200'} transition-colors`}
+          style={{ minHeight: '44px', minWidth: '44px' }}
           aria-label="Seleccionar que sí necesito cubiertos"
         >
           Sí
         </button>
         <button
           onClick={() => setCutlery('No')}
-          className={`cutlery-btn p-2 rounded ${
-            cutlery === 'No' ? 'bg-red-200' : 'bg-gray-100 hover:bg-gray-200'
-          } transition-colors`}
+          className={`p-2 rounded ${cutlery === 'No' ? 'bg-red-200' : 'bg-gray-100 hover:bg-gray-200'} transition-colors`}
+          style={{ minHeight: '44px', minWidth: '44px' }}
           aria-label="Seleccionar que no necesito cubiertos"
         >
           No

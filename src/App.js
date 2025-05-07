@@ -1,35 +1,13 @@
 //src/App.js
 import React, { useState, useEffect, useCallback } from 'react';
 import { soups, soupReplacements, principles, proteins, drinks, sides, times, paymentMethods } from './mock/menuOptions';
+import useLocalStorage from './hooks/useLocalStorage';
 import Header from './components/Header';
 import MealList from './components/MealList';
 import OrderSummary from './components/OrderSummary';
 import LoadingIndicator from './components/LoadingIndicator';
 import ErrorMessage from './components/ErrorMessage';
 import SuccessMessage from './components/SuccessMessage';
-
-// Hook useLocalStorage integrado directamente en App.js (solo para address)
-const useLocalStorage = (key, initialValue) => {
-  const [value, setValue] = useState(() => {
-    try {
-      const stored = localStorage.getItem(key);
-      return stored ? JSON.parse(stored) : initialValue;
-    } catch (error) {
-      console.error('Error reading localStorage:', error);
-      return initialValue;
-    }
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch (error) {
-      console.error('Error writing to localStorage:', error);
-    }
-  }, [value, key]);
-
-  return [value, setValue];
-};
 
 const initialMeal = {
   soup: null,
@@ -63,15 +41,12 @@ const App = () => {
     setMeals(prev => {
       const updatedMeals = [...prev];
       updatedMeals[id] = { ...updatedMeals[id], [field]: value };
-      if (field === 'address' && value) {
-        setAddress(value);
-        return updatedMeals.map(meal => ({ ...meal, address: value }));
-      }
+      if (field === 'address' && value) setAddress(value);
       return updatedMeals;
     });
-  }, [setMeals, setAddress]);
+  }, [setAddress]);
 
-  const addMeal = () => {
+  const addMeal = useCallback(() => {
     const newMeal = { ...initialMeal, address };
     if (meals.length > 0) {
       const firstMeal = meals[0];
@@ -81,12 +56,12 @@ const App = () => {
       if (firstMeal.payment) newMeal.payment = firstMeal.payment;
     }
     setMeals(prev => [...prev, newMeal]);
-  };
+  }, [meals, address, setSuccessMessage]);
 
-  const duplicateMeal = (mealToDuplicate) => {
+  const duplicateMeal = useCallback((mealToDuplicate) => {
     setSuccessMessage("Se ha duplicado el almuerzo. Puedes modificarlo si es necesario.");
     setMeals(prev => [...prev, { ...mealToDuplicate }]);
-  };
+  }, [setSuccessMessage]);
 
   const removeMeal = useCallback((id) => {
     if (meals.length > 1) {
@@ -95,9 +70,9 @@ const App = () => {
     } else {
       setErrorMessage("Debes tener al menos un almuerzo en tu pedido.");
     }
-  }, [meals, setMeals]);
+  }, [meals, setSuccessMessage, setErrorMessage]);
 
-  const sendToWhatsApp = () => {
+  const sendToWhatsApp = useCallback(() => {
     setIsLoading(true);
     setErrorMessage(null);
     setSuccessMessage(null);
@@ -139,7 +114,6 @@ const App = () => {
           element.scrollIntoView({ behavior: 'smooth', block: 'center' });
           element.classList.add('highlight-incomplete');
           setTimeout(() => element.classList.remove('highlight-incomplete'), 3000);
-          // Disparamos un evento personalizado para que MealItem cambie al slide correcto
           element.dispatchEvent(new CustomEvent('updateSlide', { detail: { slideIndex: slideMap[firstMissingField] } }));
         }
       }, 100);
@@ -199,7 +173,7 @@ const App = () => {
     setIsLoading(false);
 
     setTimeout(() => setSuccessMessage(null), 5000);
-  };
+  }, [meals]);
 
   useEffect(() => {
     if (errorMessage) {
@@ -218,8 +192,8 @@ const App = () => {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <Header />
-      <main className="p-4 flex-grow max-w-4xl mx-auto w-full">
-        <div className="fixed top-14 right-3 z-40 space-y-1">
+      <main role="main" className="p-4 flex-grow max-w-4xl mx-auto w-full">
+        <div className="fixed top-14 right-3 z-40 space-y-1" aria-live="polite">
           {isLoading && <LoadingIndicator />}
           {errorMessage && <ErrorMessage message={errorMessage} />}
           {successMessage && <SuccessMessage message={successMessage} />}
