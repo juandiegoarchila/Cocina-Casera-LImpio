@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import OptionSelector from './OptionSelector';
 import SidesSelector from './SidesSelector';
 import TimeSelector from './TimeSelector';
@@ -29,6 +29,8 @@ const MealItem = ({
   const [collapseTimeout, setCollapseTimeout] = useState(null);
   const [touchStartX, setTouchStartX] = useState(0);
   const [isSwiping, setIsSwiping] = useState(false);
+  const slideRef = useRef(null);
+  const containerRef = useRef(null);
 
   const isSoupComplete = meal?.soup && (meal.soup?.name !== 'Sin sopa' || meal?.soupReplacement);
   const isPrincipleComplete = meal?.principle && (meal.principle?.name !== 'Sin principio' || meal?.principleReplacement);
@@ -50,75 +52,63 @@ const MealItem = ({
   const slides = [
     {
       component: (
-        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 rounded-lg shadow-sm">
-          <OptionSelector
-            title="Sopa"
-            emoji="🥣"
-            options={soups}
-            selected={meal?.soup}
-            onSelect={(option) => handleChange('soup', option)}
-            showReplacements={meal?.soup?.name === 'Sin sopa'}
-            replacements={soupReplacements}
-            replacementSelected={meal?.soupReplacement}
-            onReplacementSelect={(option) => handleChange('soupReplacement', option)}
-          />
-        </div>
+        <OptionSelector
+          title="Sopa"
+          options={soups}
+          selected={meal?.soup}
+          onSelect={(option) => handleChange('soup', option)}
+          showReplacements={meal?.soup?.name === 'Sin sopa'}
+          replacements={soupReplacements}
+          replacementSelected={meal?.soupReplacement}
+          onReplacementSelect={(option) => handleChange('soupReplacement', option)}
+        />
       ),
       isComplete: isSoupComplete,
       label: 'Sopa'
     },
     {
       component: (
-        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 rounded-lg shadow-sm">
-          <OptionSelector
-            title="Principio"
-            emoji="🍚"
-            options={principles}
-            selected={meal?.principle}
-            onSelect={(option) => handleChange('principle', option)}
-            showReplacements={meal?.principle?.name === 'Sin principio'}
-            replacements={soupReplacements}
-            replacementSelected={meal?.principleReplacement}
-            onReplacementSelect={(option) => handleChange('principleReplacement', option)}
-          />
-        </div>
+        <OptionSelector
+          title="Principio"
+          options={principles}
+          selected={meal?.principle}
+          onSelect={(option) => handleChange('principle', option)}
+          showReplacements={meal?.principle?.name === 'Sin principio'}
+          replacements={soupReplacements}
+          replacementSelected={meal?.principleReplacement}
+          onReplacementSelect={(option) => handleChange('principleReplacement', option)}
+        />
       ),
       isComplete: isPrincipleComplete,
       label: 'Principio'
     },
     {
       component: (
-        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 rounded-lg shadow-sm">
-          <OptionSelector
-            title="Proteína"
-            emoji="🍗"
-            options={proteins}
-            selected={meal?.protein}
-            onSelect={(option) => handleChange('protein', option)}
-          />
-        </div>
+        <OptionSelector
+          title="Proteína"
+          options={proteins}
+          selected={meal?.protein}
+          onSelect={(option) => handleChange('protein', option)}
+        />
       ),
       isComplete: !!meal?.protein,
       label: 'Proteína'
     },
     {
       component: (
-        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 rounded-lg shadow-sm">
-          <OptionSelector
-            title="Bebida"
-            emoji="🥤"
-            options={drinks}
-            selected={meal?.drink}
-            onSelect={(option) => handleChange('drink', option)}
-          />
-        </div>
+        <OptionSelector
+          title="Bebida"
+          options={drinks}
+          selected={meal?.drink}
+          onSelect={(option) => handleChange('drink', option)}
+        />
       ),
       isComplete: !!meal?.drink,
       label: 'Bebida'
     },
     {
       component: (
-        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 rounded-lg shadow-sm">
+        <>
           <SidesSelector
             sides={sides}
             selectedSides={meal?.sides || []}
@@ -126,89 +116,83 @@ const MealItem = ({
             notes={meal?.notes || ''}
             setNotes={(notes) => handleChange('notes', notes)}
           />
-          <div className="mt-2 text-xs text-gray-500">
+          <div className="mt-1 text-xs text-gray-500">
             Selecciona los acompañamientos que desees y desliza o usa las flechas para avanzar cuando estés listo.
           </div>
-        </div>
+        </>
       ),
-      isComplete: true, // Sides are optional
+      isComplete: true,
       label: 'Acompañamientos'
     },
     {
       component: (
-        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 rounded-lg shadow-sm">
+        <>
           <TimeSelector
             times={times}
             selectedTime={meal?.time}
             setSelectedTime={(time) => handleChange('time', time)}
           />
           {!meal?.time && (
-            <p className="text-[10px] text-red-600 bg-red-50 p-1 rounded mt-1 flex items-center">
-              <span className="mr-1">⚠️</span> Por favor, selecciona una hora
+            <p className="text-[10px] text-red-600 bg-red-50 p-1 rounded mt-1">
+              Por favor, selecciona una hora
             </p>
           )}
-        </div>
+        </>
       ),
       isComplete: !!meal?.time,
       label: 'Hora'
     },
     {
       component: (
-        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 rounded-lg shadow-sm">
-          <h4 className="text-sm font-semibold text-green-700 mb-2 flex items-center">
-            <span className="mr-1">📍</span> Dirección de Entrega
-          </h4>
+        <>
+          <h4 className="text-sm font-semibold text-gray-800 mb-1">Dirección de Entrega</h4>
           <AddressInput
             address={meal?.address || ''}
             setAddress={(address) => handleChange('address', address)}
           />
           {meal?.address === '' && (
-            <p className="text-[10px] text-red-600 bg-red-50 p-1 rounded mt-1 flex items-center">
-              <span className="mr-1">⚠️</span> Por favor, ingresa una dirección
+            <p className="text-[10px] text-red-600 bg-red-50 p-1 rounded mt-1">
+              Por favor, ingresa una dirección
             </p>
           )}
-        </div>
+        </>
       ),
       isComplete: !!meal?.address,
       label: 'Dirección'
     },
     {
       component: (
-        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 rounded-lg shadow-sm">
-          <h4 className="text-sm font-semibold text-green-700 mb-2 flex items-center">
-            <span className="mr-1">💳</span> Método de Pago
-          </h4>
+        <>
+          <h4 className="text-sm font-semibold text-gray-800 mb-1">Método de Pago</h4>
           <PaymentSelector
             paymentMethods={paymentMethods}
             selectedPayment={meal?.payment}
             setSelectedPayment={(payment) => handleChange('payment', payment)}
           />
           {!meal?.payment && (
-            <p className="text-[10px] text-red-600 bg-red-50 p-1 rounded mt-1 flex items-center">
-              <span className="mr-1">⚠️</span> Por favor, selecciona un método de pago
+            <p className="text-[10px] text-red-600 bg-red-50 p-1 rounded mt-1">
+              Por favor, selecciona un método de pago
             </p>
           )}
-        </div>
+        </>
       ),
       isComplete: !!meal?.payment,
       label: 'Método de pago'
     },
     {
       component: (
-        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 rounded-lg shadow-sm">
-          <h4 className="text-sm font-semibold text-green-700 mb-2 flex items-center">
-            <span className="mr-1">🍴</span> Cubiertos
-          </h4>
+        <>
+          <h4 className="text-sm font-semibold text-gray-800 mb-1">Cubiertos</h4>
           <CutlerySelector
             cutlery={meal?.cutlery}
             setCutlery={(cutlery) => handleChange('cutlery', cutlery)}
           />
           {!meal?.cutlery && (
-            <p className="text-[10px] text-red-600 bg-red-50 p-1 rounded mt-1 flex items-center">
-              <span className="mr-1">⚠️</span> Por favor, selecciona si necesitas cubiertos
+            <p className="text-[10px] text-red-600 bg-red-50 p-1 rounded mt-1">
+              Por favor, selecciona si necesitas cubiertos
             </p>
           )}
-        </div>
+        </>
       ),
       isComplete: !!meal?.cutlery,
       label: 'Cubiertos'
@@ -231,7 +215,7 @@ const MealItem = ({
     if (willBeComplete) {
       const timeout = setTimeout(() => setIsExpanded(false), 5000);
       setCollapseTimeout(timeout);
-      return; // No avanzar si está completo
+      return;
     }
 
     if (['sides', 'notes'].includes(field)) return;
@@ -242,7 +226,7 @@ const MealItem = ({
     }
 
     // Avanzar al siguiente paso si el paso actual está completo
-    if (currentSlide < slides.length - 1) {
+    if (currentSlide < slides.length - 1 && slides[currentSlide].isComplete) {
       setTimeout(() => setCurrentSlide(currentSlide + 1), 500);
     }
   };
@@ -283,6 +267,31 @@ const MealItem = ({
       if (collapseTimeout) clearTimeout(collapseTimeout);
     };
   }, [id, collapseTimeout]);
+
+  useEffect(() => {
+    if (currentSlide === 4 || currentSlide === 5) {
+      const timer = setTimeout(() => {
+        if (currentSlide < slides.length - 1) {
+          setCurrentSlide(currentSlide + 1);
+        }
+      }, 7000);
+      return () => clearTimeout(timer);
+    }
+  }, [currentSlide]);
+
+  useEffect(() => {
+    if (containerRef.current && slideRef.current) {
+      const updateHeight = () => {
+        setTimeout(() => {
+          const slideHeight = slideRef.current.children[currentSlide].offsetHeight;
+          containerRef.current.style.height = `${slideHeight + 8}px`; // Compensar solo el padding del contenedor interno
+        }, 50);
+      };
+      updateHeight();
+      window.addEventListener('resize', updateHeight);
+      return () => window.removeEventListener('resize', updateHeight);
+    }
+  }, [currentSlide, meal]);
 
   const handleNext = () => {
     if (currentSlide < slides.length - 1) {
@@ -333,7 +342,7 @@ const MealItem = ({
       >
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center cursor-pointer hover:bg-gray-50">
           <div className="flex items-center mb-1 sm:mb-0">
-            <div className={`w-6 h-6 rounded-full mr-2 flex items-center justify-center ${isComplete ? 'bg-green-700 text-white' : 'bg-green-200 text-green-700'} text-xs font-medium`}>
+            <div className={`w-6 h-6 rounded-full mr-2 flex items-center justify-center ${isComplete ? 'bg-gray-700 text-white' : 'bg-gray-200 text-gray-700'} text-xs font-medium`}>
               {isComplete ? '✓' : id + 1}
             </div>
             <div>
@@ -346,7 +355,7 @@ const MealItem = ({
           <div className="flex items-center space-x-1 mt-1 sm:mt-0">
             {isComplete && (
               <span className="hidden sm:inline-flex">
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-green-200 text-green-700">Completo</span>
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-gray-200 text-gray-700">Completo</span>
               </span>
             )}
             <button 
@@ -354,7 +363,7 @@ const MealItem = ({
                 e.stopPropagation();
                 onDuplicateMeal(meal);
               }}
-              className="p-1 text-green-700 hover:text-green-800 flex items-center transition-colors"
+              className="p-1 text-gray-700 hover:text-gray-800 flex items-center transition-colors"
               aria-label={`Duplicar Almuerzo #${id + 1}`}
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
@@ -381,18 +390,21 @@ const MealItem = ({
       {isExpanded && (
         <div className="p-2">
           <div
-            className="relative overflow-hidden touch-pan-x"
+            ref={containerRef}
+            className="relative overflow-hidden bg-white rounded-lg shadow-sm"
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
+            style={{ transition: 'height 0.3s ease-in-out' }}
           >
             <div
+              ref={slideRef}
               className="flex transition-transform duration-500 ease-in-out"
               style={{ transform: `translateX(-${currentSlide * 100}%)` }}
             >
               {slides.map((slide, index) => (
-                <div key={index} className="w-full flex-shrink-0">
-                  {slide.component}
+                <div key={index} className="w-full flex-shrink-0" style={{ height: 'fit-content' }}>
+                  <div className="p-2" style={{ height: 'fit-content' }}>{slide.component}</div>
                 </div>
               ))}
             </div>
@@ -413,7 +425,7 @@ const MealItem = ({
                 <button
                   key={index}
                   onClick={() => handleSlideChange(index)}
-                  className={`w-2 h-2 rounded-full transition-colors ${currentSlide === index ? 'bg-green-700' : slide.isComplete ? 'bg-green-400' : 'bg-green-200'}`}
+                  className={`w-2 h-2 rounded-full transition-colors ${currentSlide === index ? 'bg-gray-700' : slide.isComplete ? 'bg-gray-400' : 'bg-gray-200'}`}
                   aria-label={`Ir a ${slide.label}`}
                   title={slide.label}
                 />
