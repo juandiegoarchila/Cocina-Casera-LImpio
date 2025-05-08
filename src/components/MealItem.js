@@ -22,7 +22,8 @@ const MealItem = ({
   times = [],
   paymentMethods = [],
   isIncomplete = false,
-  incompleteSlideIndex = null
+  incompleteSlideIndex = null,
+  address = ''
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const [currentSlide, setCurrentSlide] = useState(0);
@@ -52,63 +53,71 @@ const MealItem = ({
   const slides = [
     {
       component: (
-        <OptionSelector
-          title="Sopa"
-          options={soups}
-          selected={meal?.soup}
-          onSelect={(option) => handleChange('soup', option)}
-          showReplacements={meal?.soup?.name === 'Sin sopa'}
-          replacements={soupReplacements}
-          replacementSelected={meal?.soupReplacement}
-          onReplacementSelect={(option) => handleChange('soupReplacement', option)}
-        />
+        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 rounded-lg shadow-sm">
+          <OptionSelector
+            title="Sopa"
+            options={soups}
+            selected={meal?.soup}
+            onSelect={(option) => handleChange('soup', option)}
+            showReplacements={meal?.soup?.name === 'Sin sopa'}
+            replacements={soupReplacements}
+            replacementSelected={meal?.soupReplacement}
+            onReplacementSelect={(option) => handleChange('soupReplacement', option)}
+          />
+        </div>
       ),
       isComplete: isSoupComplete,
       label: 'Sopa'
     },
     {
       component: (
-        <OptionSelector
-          title="Principio"
-          options={principles}
-          selected={meal?.principle}
-          onSelect={(option) => handleChange('principle', option)}
-          showReplacements={meal?.principle?.name === 'Sin principio'}
-          replacements={soupReplacements}
-          replacementSelected={meal?.principleReplacement}
-          onReplacementSelect={(option) => handleChange('principleReplacement', option)}
-        />
+        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 rounded-lg shadow-sm">
+          <OptionSelector
+            title="Principio"
+            options={principles}
+            selected={meal?.principle}
+            onSelect={(option) => handleChange('principle', option)}
+            showReplacements={meal?.principle?.name === 'Sin principio'}
+            replacements={soupReplacements}
+            replacementSelected={meal?.principleReplacement}
+            onReplacementSelect={(option) => handleChange('principleReplacement', option)}
+          />
+        </div>
       ),
       isComplete: isPrincipleComplete,
       label: 'Principio'
     },
     {
       component: (
-        <OptionSelector
-          title="Proteína"
-          options={proteins}
-          selected={meal?.protein}
-          onSelect={(option) => handleChange('protein', option)}
-        />
+        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 rounded-lg shadow-sm">
+          <OptionSelector
+            title="Proteína"
+            options={proteins}
+            selected={meal?.protein}
+            onSelect={(option) => handleChange('protein', option)}
+          />
+        </div>
       ),
       isComplete: !!meal?.protein,
       label: 'Proteína'
     },
     {
       component: (
-        <OptionSelector
-          title="Bebida"
-          options={drinks}
-          selected={meal?.drink}
-          onSelect={(option) => handleChange('drink', option)}
-        />
+        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 rounded-lg shadow-sm">
+          <OptionSelector
+            title="Bebida"
+            options={drinks}
+            selected={meal?.drink}
+            onSelect={(option) => handleChange('drink', option)}
+          />
+        </div>
       ),
       isComplete: !!meal?.drink,
       label: 'Bebida'
     },
     {
       component: (
-        <>
+        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 rounded-lg shadow-sm">
           <SidesSelector
             sides={sides}
             selectedSides={meal?.sides || []}
@@ -116,17 +125,17 @@ const MealItem = ({
             notes={meal?.notes || ''}
             setNotes={(notes) => handleChange('notes', notes)}
           />
-          <div className="mt-1 text-xs text-gray-500">
+          <div className="mt-2 text-xs text-gray-500">
             Selecciona los acompañamientos que desees y desliza o usa las flechas para avanzar cuando estés listo.
           </div>
-        </>
+        </div>
       ),
       isComplete: true,
       label: 'Acompañamientos'
     },
     {
       component: (
-        <>
+        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 rounded-lg shadow-sm">
           <TimeSelector
             times={times}
             selectedTime={meal?.time}
@@ -137,33 +146,39 @@ const MealItem = ({
               Por favor, selecciona una hora
             </p>
           )}
-        </>
+        </div>
       ),
       isComplete: !!meal?.time,
       label: 'Hora'
     },
     {
       component: (
-        <>
-          <h4 className="text-sm font-semibold text-gray-800 mb-1">Dirección de Entrega</h4>
+        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 rounded-lg shadow-sm">
+          {address && (
+            <div className="mb-2 text-sm text-gray-600">
+              ¿Deseas usar la misma dirección ({address}) o ingresar una nueva?
+              <button onClick={() => handleChange('address', address)} className="ml-2 text-blue-500">Usar misma</button>
+              <button onClick={() => handleChange('address', '')} className="ml-2 text-red-500">Cambiar</button>
+            </div>
+          )}
           <AddressInput
             address={meal?.address || ''}
-            setAddress={(address) => handleChange('address', address)}
+            setAddress={(newAddress) => handleChange('address', newAddress)}
           />
           {meal?.address === '' && (
             <p className="text-[10px] text-red-600 bg-red-50 p-1 rounded mt-1">
               Por favor, ingresa una dirección
             </p>
           )}
-        </>
+        </div>
       ),
       isComplete: !!meal?.address,
       label: 'Dirección'
     },
     {
       component: (
-        <>
-          <h4 className="text-sm font-semibold text-gray-800 mb-1">Método de Pago</h4>
+        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 rounded-lg shadow-sm">
+          <h4 className="text-sm font-semibold text-green-700 mb-2">Método de Pago</h4>
           <PaymentSelector
             paymentMethods={paymentMethods}
             selectedPayment={meal?.payment}
@@ -174,15 +189,15 @@ const MealItem = ({
               Por favor, selecciona un método de pago
             </p>
           )}
-        </>
+        </div>
       ),
       isComplete: !!meal?.payment,
       label: 'Método de pago'
     },
     {
       component: (
-        <>
-          <h4 className="text-sm font-semibold text-gray-800 mb-1">Cubiertos</h4>
+        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 rounded-lg shadow-sm">
+          <h4 className="text-sm font-semibold text-green-700 mb-2">Cubiertos</h4>
           <CutlerySelector
             cutlery={meal?.cutlery}
             setCutlery={(cutlery) => handleChange('cutlery', cutlery)}
@@ -192,7 +207,7 @@ const MealItem = ({
               Por favor, selecciona si necesitas cubiertos
             </p>
           )}
-        </>
+        </div>
       ),
       isComplete: !!meal?.cutlery,
       label: 'Cubiertos'
@@ -201,19 +216,24 @@ const MealItem = ({
 
   const handleChange = (field, value) => {
     onMealChange(id, field, value);
-    
+
     if (collapseTimeout) {
       clearTimeout(collapseTimeout);
       setCollapseTimeout(null);
     }
-    
+
     const updatedMeal = { ...meal, [field]: value };
     const updatedIsSoupComplete = updatedMeal?.soup && (updatedMeal.soup?.name !== 'Sin sopa' || updatedMeal?.soupReplacement);
     const updatedIsPrincipleComplete = updatedMeal?.principle && (updatedMeal.principle?.name !== 'Sin principio' || updatedMeal?.principleReplacement);
     const willBeComplete = updatedIsSoupComplete && updatedIsPrincipleComplete && updatedMeal?.protein && updatedMeal?.drink && updatedMeal?.time && updatedMeal?.address && updatedMeal?.payment && updatedMeal?.cutlery;
-    
+
     if (willBeComplete) {
-      const timeout = setTimeout(() => setIsExpanded(false), 5000);
+      const timeout = setTimeout(() => {
+        if (containerRef.current) {
+          containerRef.current.style.height = '0'; // Inicia el colapso lento
+        }
+        setTimeout(() => setIsExpanded(false), 1500); // Ajusta después de la transición
+      }, 5000);
       setCollapseTimeout(timeout);
       return;
     }
@@ -225,8 +245,40 @@ const MealItem = ({
       return;
     }
 
-    // Avanzar al siguiente paso si el paso actual está completo
-    if (currentSlide < slides.length - 1 && slides[currentSlide].isComplete) {
+    let isSlideComplete = false;
+    switch (currentSlide) {
+      case 0:
+        isSlideComplete = updatedIsSoupComplete;
+        break;
+      case 1:
+        isSlideComplete = updatedIsPrincipleComplete;
+        break;
+      case 2:
+        isSlideComplete = !!updatedMeal?.protein;
+        break;
+      case 3:
+        isSlideComplete = !!updatedMeal?.drink;
+        break;
+      case 4:
+        isSlideComplete = true;
+        break;
+      case 5:
+        isSlideComplete = !!updatedMeal?.time;
+        break;
+      case 6:
+        isSlideComplete = !!updatedMeal?.address;
+        break;
+      case 7:
+        isSlideComplete = !!updatedMeal?.payment;
+        break;
+      case 8:
+        isSlideComplete = !!updatedMeal?.cutlery;
+        break;
+      default:
+        break;
+    }
+
+    if (isSlideComplete && currentSlide < slides.length - 1) {
       setTimeout(() => setCurrentSlide(currentSlide + 1), 500);
     }
   };
@@ -246,6 +298,18 @@ const MealItem = ({
     };
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [currentSlide]);
+
+  useEffect(() => {
+    let timer;
+    if (currentSlide === 4 || currentSlide === 5) {
+      timer = setTimeout(() => {
+        if (currentSlide < slides.length - 1) {
+          setCurrentSlide(currentSlide + 1);
+        }
+      }, 7000);
+    }
+    return () => clearTimeout(timer);
   }, [currentSlide]);
 
   useEffect(() => {
@@ -269,29 +333,25 @@ const MealItem = ({
   }, [id, collapseTimeout]);
 
   useEffect(() => {
-    if (currentSlide === 4 || currentSlide === 5) {
-      const timer = setTimeout(() => {
-        if (currentSlide < slides.length - 1) {
-          setCurrentSlide(currentSlide + 1);
-        }
-      }, 7000);
-      return () => clearTimeout(timer);
-    }
-  }, [currentSlide]);
-
-  useEffect(() => {
     if (containerRef.current && slideRef.current) {
-      const updateHeight = () => {
-        setTimeout(() => {
-          const slideHeight = slideRef.current.children[currentSlide].offsetHeight;
-          containerRef.current.style.height = `${slideHeight + 8}px`; // Compensar solo el padding del contenedor interno
-        }, 50);
-      };
-      updateHeight();
-      window.addEventListener('resize', updateHeight);
-      return () => window.removeEventListener('resize', updateHeight);
+      if (isExpanded) {
+        const updateHeight = () => {
+          setTimeout(() => {
+            const slideHeight = slideRef.current.children[currentSlide].offsetHeight;
+            containerRef.current.style.height = `${slideHeight + 8}px`;
+          }, 150);
+        };
+        if (containerRef.current.style.height === '0' || containerRef.current.style.height === '') {
+          containerRef.current.style.height = '0'; // Asegura que parta de 0 para la transición
+          setTimeout(updateHeight, 0); // Inicia la transición inmediatamente
+        } else {
+          updateHeight();
+        }
+      } else {
+        containerRef.current.style.height = '0'; // Colapso lento
+      }
     }
-  }, [currentSlide, meal]);
+  }, [currentSlide, meal, isExpanded]);
 
   const handleNext = () => {
     if (currentSlide < slides.length - 1) {
@@ -338,11 +398,18 @@ const MealItem = ({
     <div id={`meal-item-${id}`} className="relative bg-white rounded-lg shadow-md mb-2">
       <div 
         className="sticky top-0 z-10 bg-white p-2 border-b border-gray-200 rounded-t-lg"
-        onClick={() => setIsExpanded(!isExpanded)}
+        onClick={() => {
+          if (!isExpanded) {
+            setIsExpanded(true); // Expande con transición
+          } else {
+            containerRef.current.style.height = '0'; // Inicia colapso lento
+            setTimeout(() => setIsExpanded(false), 1500); // Ajusta después de la transición
+          }
+        }}
       >
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center cursor-pointer hover:bg-gray-50">
           <div className="flex items-center mb-1 sm:mb-0">
-            <div className={`w-6 h-6 rounded-full mr-2 flex items-center justify-center ${isComplete ? 'bg-gray-700 text-white' : 'bg-gray-200 text-gray-700'} text-xs font-medium`}>
+            <div className={`w-6 h-6 rounded-full mr-2 flex items-center justify-center ${isComplete ? 'bg-green-700 text-white' : 'bg-green-200 text-green-700'} text-xs font-medium`}>
               {isComplete ? '✓' : id + 1}
             </div>
             <div>
@@ -355,7 +422,7 @@ const MealItem = ({
           <div className="flex items-center space-x-1 mt-1 sm:mt-0">
             {isComplete && (
               <span className="hidden sm:inline-flex">
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-gray-200 text-gray-700">Completo</span>
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-green-200 text-green-700">Completo</span>
               </span>
             )}
             <button 
@@ -363,7 +430,7 @@ const MealItem = ({
                 e.stopPropagation();
                 onDuplicateMeal(meal);
               }}
-              className="p-1 text-gray-700 hover:text-gray-800 flex items-center transition-colors"
+              className="p-1 text-green-700 hover:text-green-800 flex items-center transition-colors"
               aria-label={`Duplicar Almuerzo #${id + 1}`}
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
@@ -391,11 +458,11 @@ const MealItem = ({
         <div className="p-2">
           <div
             ref={containerRef}
-            className="relative overflow-hidden bg-white rounded-lg shadow-sm"
+            className="relative overflow-hidden rounded-lg"
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
-            style={{ transition: 'height 0.3s ease-in-out' }}
+            style={{ transition: 'height 1.5s ease-in-out', height: isExpanded ? '' : '0' }}
           >
             <div
               ref={slideRef}
@@ -425,7 +492,7 @@ const MealItem = ({
                 <button
                   key={index}
                   onClick={() => handleSlideChange(index)}
-                  className={`w-2 h-2 rounded-full transition-colors ${currentSlide === index ? 'bg-gray-700' : slide.isComplete ? 'bg-gray-400' : 'bg-gray-200'}`}
+                  className={`w-2 h-2 rounded-full transition-colors ${currentSlide === index ? 'bg-green-700' : slide.isComplete ? 'bg-green-400' : 'bg-green-200'}`}
                   aria-label={`Ir a ${slide.label}`}
                   title={slide.label}
                 />
