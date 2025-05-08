@@ -230,10 +230,10 @@ const MealItem = ({
     if (willBeComplete) {
       const timeout = setTimeout(() => {
         if (containerRef.current) {
-          containerRef.current.style.height = '0'; // Inicia el colapso lento
+          containerRef.current.style.height = '0';
         }
-        setTimeout(() => setIsExpanded(false), 1500); // Ajusta después de la transición
-      }, 5000);
+        setTimeout(() => setIsExpanded(false), 300); // Reducido a 300ms
+      }, 2000); // Reducido a 2000ms
       setCollapseTimeout(timeout);
       return;
     }
@@ -279,7 +279,7 @@ const MealItem = ({
     }
 
     if (isSlideComplete && currentSlide < slides.length - 1) {
-      setTimeout(() => setCurrentSlide(currentSlide + 1), 500);
+      setTimeout(() => setCurrentSlide(currentSlide + 1), 300); // Reducido a 300ms
     }
   };
 
@@ -307,7 +307,7 @@ const MealItem = ({
         if (currentSlide < slides.length - 1) {
           setCurrentSlide(currentSlide + 1);
         }
-      }, 7000);
+      }, 3000); // Reducido a 3000ms
     }
     return () => clearTimeout(timer);
   }, [currentSlide]);
@@ -339,16 +339,16 @@ const MealItem = ({
           setTimeout(() => {
             const slideHeight = slideRef.current.children[currentSlide].offsetHeight;
             containerRef.current.style.height = `${slideHeight + 8}px`;
-          }, 150);
+          }, 0);
         };
         if (containerRef.current.style.height === '0' || containerRef.current.style.height === '') {
-          containerRef.current.style.height = '0'; // Asegura que parta de 0 para la transición
-          setTimeout(updateHeight, 0); // Inicia la transición inmediatamente
+          containerRef.current.style.height = '0';
+          setTimeout(updateHeight, 0);
         } else {
           updateHeight();
         }
       } else {
-        containerRef.current.style.height = '0'; // Colapso lento
+        containerRef.current.style.height = '0';
       }
     }
   }, [currentSlide, meal, isExpanded]);
@@ -400,10 +400,10 @@ const MealItem = ({
         className="sticky top-0 z-10 bg-white p-2 border-b border-gray-200 rounded-t-lg"
         onClick={() => {
           if (!isExpanded) {
-            setIsExpanded(true); // Expande con transición
+            setIsExpanded(true);
           } else {
-            containerRef.current.style.height = '0'; // Inicia colapso lento
-            setTimeout(() => setIsExpanded(false), 1500); // Ajusta después de la transición
+            containerRef.current.style.height = '0';
+            setTimeout(() => setIsExpanded(false), 300); // Reducido a 300ms
           }
         }}
       >
@@ -462,11 +462,11 @@ const MealItem = ({
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
-            style={{ transition: 'height 1.5s ease-in-out', height: isExpanded ? '' : '0' }}
+            style={{ transition: 'height 0.3s ease-in-out', height: isExpanded ? '' : '0' }}
           >
             <div
               ref={slideRef}
-              className="flex transition-transform duration-500 ease-in-out"
+              className="flex transition-transform duration-300 ease-in-out"
               style={{ transform: `translateX(-${currentSlide * 100}%)` }}
             >
               {slides.map((slide, index) => (
