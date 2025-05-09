@@ -2,18 +2,18 @@ import React from 'react';
 
 const Header = () => {
   return (
-    <header className="bg-gradient-to-r from-green-500 to-green-600 text-white p-4 shadow-md">
-      <div className="container mx-auto flex flex-col items-center sm:flex-row sm:justify-between">
-        <h1 className="text-2xl font-bold mb-2 sm:mb-0">Cocina Casera 🍽️</h1>
+    <header className="bg-gradient-to-r from-green-500 to-green-600 text-white p-2 xs:p-3 sm:p-4 shadow-md">
+      <div className="container mx-auto flex flex-col items-center xs:flex-row xs:justify-between">
+        <h1 className="text-base xs:text-lg sm:text-xl font-bold mb-1 xs:mb-0">Cocina Casera 🍽️</h1>
         <a 
           href="https://wa.me/573023931292" 
-          className="text-sm hover:underline hover:text-white transition-all flex items-center"
+          className="text-[10px] xs:text-xs sm:text-sm hover:underline hover:text-white transition-all flex items-center"
           aria-label="Volver a WhatsApp para contactar con Cocina Casera"
         >
           <span className="mr-1">Volver a WhatsApp</span>
           <svg 
             xmlns="http://www.w3.org/2000/svg" 
-            className="h-4 w-4" 
+            className="h-3 xs:h-4 w-3 xs:w-4" 
             viewBox="0 0 24 24" 
             fill="currentColor" 
             aria-hidden="true"

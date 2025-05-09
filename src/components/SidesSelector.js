@@ -1,67 +1,69 @@
-//src/components/SidesSelector.js
-import React from 'react';
+import React, { useState } from 'react';
 
 const SidesSelector = ({ sides, selectedSides, setSelectedSides, notes, setNotes }) => {
-  const toggleSide = (side) => {
-    const safeSelectedSides = Array.isArray(selectedSides) ? selectedSides : [];
-    
-    if (side.name === 'Ninguno') {
-      setSelectedSides([]);
+  const [customSide, setCustomSide] = useState('');
+
+  const handleSideToggle = (side) => {
+    if (selectedSides.some(s => s.id === side.id)) {
+      setSelectedSides(selectedSides.filter(s => s.id !== side.id));
     } else {
-      setSelectedSides(
-        safeSelectedSides.some(s => s.id === side.id)
-          ? safeSelectedSides.filter(s => s.id !== side.id)
-          : [...safeSelectedSides, side]
-      );
+      setSelectedSides([...selectedSides, side]);
+    }
+  };
+
+  const addCustomSide = () => {
+    if (customSide.trim()) {
+      const newSide = { id: `custom-${customSide}`, name: customSide };
+      setSelectedSides([...selectedSides, newSide]);
+      setCustomSide('');
     }
   };
 
   return (
-    <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 rounded-lg shadow-sm">
-      <h2 className="text-sm font-semibold text-green-700 mb-2 flex items-center">
+    <div className="bg-gradient-to-r from-green-50 to-green-100 p-1 xs:p-2 sm:p-3 rounded-lg shadow-sm">
+      <h2 className="text-[10px] xs:text-xs sm:text-sm font-semibold mb-1 xs:mb-2 flex items-center text-green-700">
         <span className="mr-1">🥗</span> Acompañamientos
       </h2>
-      <div className="grid grid-cols-2 gap-2">
+      <div className="flex flex-col space-y-1 xs:space-y-2">
         {sides.map(side => (
-          <button
-            key={side.id}
-            onClick={() => toggleSide(side)}
-            className={`relative p-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center text-center min-h-[40px] shadow-sm ${
-              Array.isArray(selectedSides) && selectedSides.some(s => s.id === side.id)
-                ? 'bg-green-200 text-green-800 border border-green-300'
-                : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
-            }`}
-            aria-label={`Seleccionar acompañamiento ${side.name}`}
-          >
-            <span className="truncate">{side.name}</span>
-            {side.isNew && (
-              <span className="absolute top-0 right-7 transform translate-x-1/2 -translate-y-1/2 bg-red-500 text-white text-[10px] font-semibold rounded-full px-2 py-0.5">
-                NUEVO
-              </span>
-            )}
-          </button>
+          <label key={side.id} className="flex items-center space-x-1 xs:space-x-2 text-[10px] xs:text-xs sm:text-sm">
+            <input
+              type="checkbox"
+              checked={selectedSides.some(s => s.id === side.id)}
+              onChange={() => handleSideToggle(side)}
+              className="h-3 xs:h-4 w-3 xs:w-4 text-green-600 border-gray-300 rounded focus:ring-green-400"
+            />
+            <span>{side.name}</span>
+          </label>
         ))}
-        <button
-          onClick={() => toggleSide({ id: 0, name: 'Ninguno' })}
-          className={`relative p-2 rounded-lg text-sm font-medium col-span-2 transition-all duration-200 flex items-center justify-center text-center min-h-[40px] shadow-sm ${
-            !Array.isArray(selectedSides) || selectedSides.length === 0
-              ? 'bg-green-200 text-green-800 border border-green-300'
-              : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
-          }`}
-          aria-label="Seleccionar ningún acompañamiento"
-        >
-          Ninguno
-        </button>
-      </div>
-      <div className="mt-2">
-        <input
-          type="text"
-          value={notes || ''}
-          onChange={(e) => setNotes(e.target.value)}
-          placeholder="Notas (ej. sin cebolla)"
-          className="w-full p-2 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-400 placeholder-gray-400"
-          aria-label="Notas adicionales para el almuerzo"
-        />
+        <div className="flex flex-col space-y-1 xs:space-y-2 mt-1 xs:mt-2">
+          <input
+            type="text"
+            value={customSide}
+            onChange={(e) => setCustomSide(e.target.value)}
+            placeholder="Otro acompañamiento"
+            className="p-1 xs:p-2 text-[10px] xs:text-xs sm:text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-400 placeholder-gray-400"
+            aria-label="Ingresar un acompañamiento personalizado"
+          />
+          <button
+            onClick={addCustomSide}
+            className="bg-green-500 hover:bg-green-600 text-white px-2 xs:px-3 py-0.5 xs:py-1 rounded-lg text-[10px] xs:text-xs sm:text-sm transition-colors"
+            aria-label="Agregar acompañamiento personalizado"
+          >
+            Agregar
+          </button>
+        </div>
+        <div className="mt-1 xs:mt-2">
+          <h3 className="text-[10px] xs:text-xs sm:text-sm font-semibold mb-0.5 xs:mb-1 text-green-700">Notas adicionales</h3>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Ejemplo: Sin cebolla, por favor"
+            className="w-full p-1 xs:p-2 text-[10px] xs:text-xs sm:text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-400 placeholder-gray-400"
+            rows="2"
+            aria-label="Notas adicionales para el pedido"
+          />
+        </div>
       </div>
     </div>
   );

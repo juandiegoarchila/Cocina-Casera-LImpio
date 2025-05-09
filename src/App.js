@@ -198,7 +198,7 @@ const App = () => {
           {errorMessage && <ErrorMessage message={errorMessage} />}
           {successMessage && <SuccessMessage message={successMessage} />}
         </div>
-        <p className="text-center text-gray-700 mb-6 bg-white p-4 rounded-lg shadow-sm">
+        <p className="text-center text-gray-700 mb-1 sm:mb-2 md:mb-4 text-[10px] xs:text-xs sm:text-sm bg-white p-1 xs:p-2 rounded-lg shadow-sm">
           ¡Pide tu almuerzo fácil y rápido! Almuerzo $13.000 (solo bandeja o sin sopa $12.000)
         </p>
         <MealList
