@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import MealItem from './MealItem';
 
 const MealList = ({ 
@@ -16,6 +16,8 @@ const MealList = ({
   onAddMeal,
   onDuplicateMeal
 }) => {
+  const [showTutorial, setShowTutorial] = useState(true); // Estado global para el tutorial
+
   const completedMeals = meals.filter(m => 
     m.protein && m.soup && m.principle && m.drink && m.time && m.address && m.payment && m.cutlery
   ).length;
@@ -31,7 +33,7 @@ const MealList = ({
         </div>
         <button
           onClick={onAddMeal}
-          className="bg-green-500 hover:bg-green-600 text-white px-2 xs:px-3 py-1 xs:py-1.5 rounded-md transition-colors text-[10px] xs:text-xs sm:text-sm font-medium flex items-center shadow-sm"
+          className="add-meal-button bg-green-500 hover:bg-green-600 text-white px-2 xs:px-3 py-1 xs:py-1.5 rounded-md transition-colors text-[10px] xs:text-xs sm:text-sm font-medium flex items-center shadow-sm"
           aria-label="Añadir un nuevo almuerzo"
         >
           <svg xmlns="http://www.w3.org/2000/svg" className="h-3 xs:h-4 w-3 xs:w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
@@ -57,6 +59,8 @@ const MealList = ({
             sides={sides}
             times={times}
             paymentMethods={paymentMethods}
+            showTutorial={showTutorial} // Pasamos el estado
+            setShowTutorial={setShowTutorial} // Pasamos la función para actualizarlo
           />
         ))}
       </div>

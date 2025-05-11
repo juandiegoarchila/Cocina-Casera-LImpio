@@ -6,6 +6,7 @@ import AddressInput from './AddressInput';
 import PaymentSelector from './PaymentSelector';
 import CutlerySelector from './CutlerySelector';
 import ProgressBar from './ProgressBar';
+import OnboardingTutorial from './OnboardingTutorial';
 
 const MealItem = ({ 
   id,
@@ -23,7 +24,9 @@ const MealItem = ({
   paymentMethods = [],
   isIncomplete = false,
   incompleteSlideIndex = null,
-  address = ''
+  address = '',
+  showTutorial, // Recibimos el estado como prop
+  setShowTutorial // Recibimos la función para actualizar el estado
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const [currentSlide, setCurrentSlide] = useState(0);
@@ -32,6 +35,8 @@ const MealItem = ({
   const [isSwiping, setIsSwiping] = useState(false);
   const slideRef = useRef(null);
   const containerRef = useRef(null);
+  const nextButtonRef = useRef(null);
+  const prevButtonRef = useRef(null);
 
   const isSoupComplete = meal?.soup && (meal.soup?.name !== 'Sin sopa' || meal?.soupReplacement);
   const isPrincipleComplete = meal?.principle && (meal.principle?.name !== 'Sin principio' || meal?.principleReplacement);
@@ -53,7 +58,7 @@ const MealItem = ({
   const slides = [
     {
       component: (
-        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 rounded-lg shadow-sm">
+        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
           <OptionSelector
             title="Sopa"
             options={soups}
@@ -71,7 +76,7 @@ const MealItem = ({
     },
     {
       component: (
-        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 rounded-lg shadow-sm">
+        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
           <OptionSelector
             title="Principio"
             options={principles}
@@ -89,7 +94,7 @@ const MealItem = ({
     },
     {
       component: (
-        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 rounded-lg shadow-sm">
+        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
           <OptionSelector
             title="Proteína"
             options={proteins}
@@ -103,7 +108,7 @@ const MealItem = ({
     },
     {
       component: (
-        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 rounded-lg shadow-sm">
+        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
           <OptionSelector
             title="Bebida"
             options={drinks}
@@ -117,7 +122,7 @@ const MealItem = ({
     },
     {
       component: (
-        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 rounded-lg shadow-sm">
+        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
           <SidesSelector
             sides={sides}
             selectedSides={meal?.sides || []}
@@ -135,7 +140,7 @@ const MealItem = ({
     },
     {
       component: (
-        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 rounded-lg shadow-sm">
+        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
           <TimeSelector
             times={times}
             selectedTime={meal?.time}
@@ -153,7 +158,7 @@ const MealItem = ({
     },
     {
       component: (
-        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 rounded-lg shadow-sm">
+        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
           {address && (
             <div className="mb-2 text-sm text-gray-600">
               ¿Deseas usar la misma dirección ({address}) o ingresar una nueva?
@@ -177,7 +182,7 @@ const MealItem = ({
     },
     {
       component: (
-        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 rounded-lg shadow-sm">
+        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
           <h4 className="text-sm font-semibold text-green-700 mb-2">Método de Pago</h4>
           <PaymentSelector
             paymentMethods={paymentMethods}
@@ -196,7 +201,7 @@ const MealItem = ({
     },
     {
       component: (
-        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 rounded-lg shadow-sm">
+        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
           <h4 className="text-sm font-semibold text-green-700 mb-2">Cubiertos</h4>
           <CutlerySelector
             cutlery={meal?.cutlery}
@@ -232,8 +237,8 @@ const MealItem = ({
         if (containerRef.current) {
           containerRef.current.style.height = '0';
         }
-        setTimeout(() => setIsExpanded(false), 300); // Reducido a 300ms
-      }, 2000); // Reducido a 2000ms
+        setTimeout(() => setIsExpanded(false), 300);
+      }, 2000);
       setCollapseTimeout(timeout);
       return;
     }
@@ -279,7 +284,7 @@ const MealItem = ({
     }
 
     if (isSlideComplete && currentSlide < slides.length - 1) {
-      setTimeout(() => setCurrentSlide(currentSlide + 1), 300); // Reducido a 300ms
+      setTimeout(() => setCurrentSlide(currentSlide + 1), 300);
     }
   };
 
@@ -307,7 +312,7 @@ const MealItem = ({
         if (currentSlide < slides.length - 1) {
           setCurrentSlide(currentSlide + 1);
         }
-      }, 3000); // Reducido a 3000ms
+      }, 3000);
     }
     return () => clearTimeout(timer);
   }, [currentSlide]);
@@ -394,16 +399,23 @@ const MealItem = ({
     setCurrentSlide(index);
   };
 
+  const handleTutorialComplete = () => {
+    setShowTutorial(false); // Actualizamos el estado global
+  };
+
   return (
     <div id={`meal-item-${id}`} className="relative bg-white rounded-lg shadow-md mb-2">
+      {showTutorial && id === 0 && ( // Solo mostramos el tutorial en el primer MealItem
+        <OnboardingTutorial run={showTutorial} onComplete={handleTutorialComplete} />
+      )}
       <div 
-        className="sticky top-0 z-10 bg-white p-2 border-b border-gray-200 rounded-t-lg"
+        className="sticky top-0 z-[10000] bg-white p-2 border-b border-gray-200 rounded-t-lg"
         onClick={() => {
           if (!isExpanded) {
             setIsExpanded(true);
           } else {
             containerRef.current.style.height = '0';
-            setTimeout(() => setIsExpanded(false), 300); // Reducido a 300ms
+            setTimeout(() => setIsExpanded(false), 300);
           }
         }}
       >
@@ -430,7 +442,7 @@ const MealItem = ({
                 e.stopPropagation();
                 onDuplicateMeal(meal);
               }}
-              className="p-1 text-green-700 hover:text-green-800 flex items-center transition-colors"
+              className="duplicate-button p-1 text-green-700 hover:text-green-800 flex items-center transition-colors"
               aria-label={`Duplicar Almuerzo #${id + 1}`}
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
@@ -443,11 +455,11 @@ const MealItem = ({
                 e.stopPropagation();
                 onRemoveMeal(id);
               }}
-              className="p-1 text-red-600 hover:text-red-700 flex items-center transition-colors"
+              className="remove-button p-1 text-red-600 hover:text-red-700 flex items-center transition-colors"
               aria-label={`Eliminar Almuerzo #${id + 1}`}
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 00-1-1z" clipRule="evenodd" />
               </svg>
               <span className="text-xs">Eliminar</span>
             </button>
@@ -478,9 +490,10 @@ const MealItem = ({
           </div>
           <div className="flex justify-between items-center mt-1">
             <button
+              ref={prevButtonRef}
+              className="prev-button p-1 rounded-full text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               onClick={handlePrev}
               disabled={currentSlide === 0}
-              className={`p-1 rounded-full text-gray-600 hover:bg-gray-100 transition-colors ${currentSlide === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
               aria-label="Anterior"
             >
               <svg className="h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
@@ -499,9 +512,10 @@ const MealItem = ({
               ))}
             </div>
             <button
+              ref={nextButtonRef}
+              className="next-button p-1 rounded-full text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               onClick={handleNext}
               disabled={currentSlide === slides.length - 1}
-              className={`p-1 rounded-full text-gray-600 hover:bg-gray-100 transition-colors ${currentSlide === slides.length - 1 ? 'opacity-50 cursor-not-allowed' : ''}`}
               aria-label="Siguiente"
             >
               <svg className="h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">

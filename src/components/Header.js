@@ -7,7 +7,7 @@ const Header = () => {
         <h1 className="text-base xs:text-lg sm:text-xl font-bold mb-1 xs:mb-0">Cocina Casera 🍽️</h1>
         <a 
           href="https://wa.me/573023931292" 
-          className="text-[10px] xs:text-xs sm:text-sm hover:underline hover:text-white transition-all flex items-center"
+          className="back-to-whatsapp text-[10px] xs:text-xs sm:text-sm hover:underline hover:text-white transition-all flex items-center"
           aria-label="Volver a WhatsApp para contactar con Cocina Casera"
         >
           <span className="mr-1">Volver a WhatsApp</span>

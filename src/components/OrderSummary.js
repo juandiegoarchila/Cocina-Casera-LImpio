@@ -34,7 +34,7 @@ const OrderSummary = ({ meals, onSendOrder }) => {
   const paymentNumber = '3138505647';
 
   return (
-    <div className="bg-white p-2 xs:p-4 sm:p-6 rounded-lg shadow-lg mt-4 xs:mt-6 sm:mt-8">
+    <div className="order-summary bg-white p-2 xs:p-4 sm:p-6 rounded-lg shadow-lg mt-4 xs:mt-6 sm:mt-8">
       <h2 className="text-sm xs:text-base sm:text-lg font-bold text-gray-800 mb-2 xs:mb-4">✅ Resumen del Pedido</h2>
       <div className="space-y-2 xs:space-y-4 sm:space-y-6">
         {Object.entries(groupedMeals).map(([key, { count, indices }]) => {
@@ -77,7 +77,7 @@ const OrderSummary = ({ meals, onSendOrder }) => {
           );
         })}
         <div className="pt-2 xs:pt-4 border-t">
-          <p className="text-[10px] xs:text-sm sm:text-base font-bold text-right">
+          <p className="total-price text-[10px] xs:text-sm sm:text-base font-bold text-right">
             Total: <span className="text-green-600">${total.toLocaleString()}</span>
           </p>
           {selectedPayment && (
@@ -94,7 +94,7 @@ const OrderSummary = ({ meals, onSendOrder }) => {
           )}
           <button 
             onClick={onSendOrder}
-            className="w-full bg-green-500 hover:bg-green-600 text-white py-1 xs:py-2 rounded-lg mt-2 xs:mt-4 transition-colors flex items-center justify-center text-[10px] xs:text-xs sm:text-sm"
+            className="send-order-button w-full bg-green-500 hover:bg-green-600 text-white py-1 xs:py-2 rounded-lg mt-2 xs:mt-4 transition-colors flex items-center justify-center text-[10px] xs:text-xs sm:text-sm"
             aria-label="Enviar pedido a WhatsApp"
           >
             <span className="mr-1 xs:mr-2">Enviar pedido a WhatsApp</span>
