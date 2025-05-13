@@ -57,10 +57,17 @@ const steps: Step[] = [
 
 const OnboardingTutorial = ({ run = true, onComplete }) => {
   const handleJoyrideCallback = (data) => {
-    const { status } = data;
-    if (status === 'finished' || status === 'skipped') {
-      onComplete();
+    const { status, action } = data;
+
+    // Detenemos el tutorial y el spotlight solo si se hace clic en "Omitir" o en la "X"
+    if (
+      status === 'finished' || // Tutorial completado
+      status === 'skipped' || // Clic en "Omitir"
+      action === 'close' // Clic en la "X"
+    ) {
+      onComplete(); // Llamamos a onComplete para detener el tutorial y ocultar el spotlight
     }
+    // Ignoramos el clic fuera del tooltip (overlay), por lo que el tutorial sigue activo
   };
 
   return (
@@ -70,6 +77,7 @@ const OnboardingTutorial = ({ run = true, onComplete }) => {
       continuous={true}
       showSkipButton={true}
       callback={handleJoyrideCallback}
+      disableOverlayClose={true} // Evita que el clic en el overlay cierre el tutorial
       styles={{
         options: {
           zIndex: 10001,

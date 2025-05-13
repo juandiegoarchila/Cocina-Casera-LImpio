@@ -338,35 +338,30 @@ const MealItem = ({
   }, [id, collapseTimeout]);
 
   useEffect(() => {
-    if (containerRef.current && slideRef.current) {
-      if (isExpanded) {
-        const updateHeight = () => {
-          setTimeout(() => {
-            const slideHeight = slideRef.current.children[currentSlide].offsetHeight;
-            containerRef.current.style.height = `${slideHeight + 8}px`;
-          }, 0);
-        };
-        if (containerRef.current.style.height === '0' || containerRef.current.style.height === '') {
-          containerRef.current.style.height = '0';
-          setTimeout(updateHeight, 0);
-        } else {
-          updateHeight();
+    if (containerRef.current && slideRef.current && isExpanded) {
+      const updateHeight = () => {
+        if (slideRef.current && slideRef.current.children && slideRef.current.children[currentSlide]) {
+          const slideHeight = slideRef.current.children[currentSlide].offsetHeight;
+          containerRef.current.style.height = `${slideHeight + 8}px`;
         }
-      } else {
-        containerRef.current.style.height = '0';
-      }
+      };
+      updateHeight();
+    } else if (containerRef.current && !isExpanded) {
+      containerRef.current.style.height = '0';
     }
   }, [currentSlide, meal, isExpanded]);
 
   const handleNext = () => {
-    if (currentSlide < slides.length - 1) {
+    if (currentSlide < slides.length - 1 && slideRef.current) {
       setCurrentSlide(currentSlide + 1);
+      slideRef.current.style.transform = `translateX(-${(currentSlide + 1) * 100}%)`;
     }
   };
 
   const handlePrev = () => {
-    if (currentSlide > 0) {
+    if (currentSlide > 0 && slideRef.current) {
       setCurrentSlide(currentSlide - 1);
+      slideRef.current.style.transform = `translateX(-${(currentSlide - 1) * 100}%)`;
     }
   };
 
@@ -376,7 +371,7 @@ const MealItem = ({
   };
 
   const handleTouchMove = (e) => {
-    if (isSwiping) return;
+    if (isSwiping || !slideRef.current) return;
     const touchX = e.touches[0].clientX;
     const diff = touchStartX - touchX;
 
@@ -384,8 +379,10 @@ const MealItem = ({
       setIsSwiping(true);
       if (diff > 0 && currentSlide < slides.length - 1) {
         setCurrentSlide(currentSlide + 1);
+        slideRef.current.style.transform = `translateX(-${(currentSlide + 1) * 100}%)`;
       } else if (diff < 0 && currentSlide > 0) {
         setCurrentSlide(currentSlide - 1);
+        slideRef.current.style.transform = `translateX(-${(currentSlide - 1) * 100}%)`;
       }
     }
   };
@@ -396,7 +393,10 @@ const MealItem = ({
   };
 
   const handleSlideChange = (index) => {
-    setCurrentSlide(index);
+    if (slideRef.current) {
+      setCurrentSlide(index);
+      slideRef.current.style.transform = `translateX(-${index * 100}%)`;
+    }
   };
 
   const handleTutorialComplete = () => {
@@ -405,7 +405,7 @@ const MealItem = ({
 
   return (
     <div id={`meal-item-${id}`} className="relative bg-white rounded-lg shadow-md mb-2">
-      {showTutorial && id === 0 && ( // Solo mostramos el tutorial en el primer MealItem
+      {showTutorial && id === 0 && (
         <OnboardingTutorial run={showTutorial} onComplete={handleTutorialComplete} />
       )}
       <div 
@@ -413,7 +413,7 @@ const MealItem = ({
         onClick={() => {
           if (!isExpanded) {
             setIsExpanded(true);
-          } else {
+          } else if (containerRef.current) {
             containerRef.current.style.height = '0';
             setTimeout(() => setIsExpanded(false), 300);
           }

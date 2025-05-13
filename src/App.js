@@ -1,4 +1,3 @@
-//src/App.js
 import React, { useState, useEffect, useCallback } from 'react';
 import { soups, soupReplacements, principles, proteins, drinks, sides, times, paymentMethods } from './mock/menuOptions';
 import useLocalStorage from './hooks/useLocalStorage';
@@ -10,6 +9,7 @@ import ErrorMessage from './components/ErrorMessage';
 import SuccessMessage from './components/SuccessMessage';
 
 const initialMeal = {
+  id: 0,
   soup: null,
   soupReplacement: null,
   principle: null,
@@ -25,7 +25,7 @@ const initialMeal = {
 };
 
 const App = () => {
-  const [meals, setMeals] = useState([initialMeal]);
+  const [meals, setMeals] = useState([]); // Estado inicial vacío
   const [address, setAddress] = useLocalStorage('userAddress', '');
   const [errorMessage, setErrorMessage] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
@@ -39,18 +39,20 @@ const App = () => {
 
   const handleMealChange = useCallback((id, field, value) => {
     setMeals(prev => {
-      const updatedMeals = [...prev];
-      updatedMeals[id] = { ...updatedMeals[id], [field]: value };
+      const updatedMeals = prev.map(meal =>
+        meal.id === id ? { ...meal, [field]: value } : meal
+      );
       if (field === 'address' && value) setAddress(value);
       return updatedMeals;
     });
   }, [setAddress]);
 
   const addMeal = useCallback(() => {
-    const newMeal = { ...initialMeal, address };
+    const newId = meals.length > 0 ? Math.max(...meals.map(meal => meal.id)) + 1 : 0;
+    const newMeal = { ...initialMeal, id: newId, address };
     if (meals.length > 0) {
       const firstMeal = meals[0];
-      setSuccessMessage("Tu dirección, hora y método de pago se han copiado del primer almuerzo. Puedes modificarlos si es necesario.");
+      setSuccessMessage("Tu dirección, hora y método de pago se han copiado del primer almuerzo. Puedes modificarlo si es necesario.");
       if (firstMeal.time) newMeal.time = firstMeal.time;
       if (firstMeal.address) newMeal.address = firstMeal.address;
       if (firstMeal.payment) newMeal.payment = firstMeal.payment;
@@ -59,18 +61,25 @@ const App = () => {
   }, [meals, address, setSuccessMessage]);
 
   const duplicateMeal = useCallback((mealToDuplicate) => {
+    const newId = meals.length > 0 ? Math.max(...meals.map(meal => meal.id)) + 1 : 0;
     setSuccessMessage("Se ha duplicado el almuerzo. Puedes modificarlo si es necesario.");
-    setMeals(prev => [...prev, { ...mealToDuplicate }]);
-  }, [setSuccessMessage]);
+    setMeals(prev => [...prev, { ...mealToDuplicate, id: newId }]);
+  }, [meals, setSuccessMessage]);
 
   const removeMeal = useCallback((id) => {
-    if (meals.length > 1) {
-      setMeals(prev => prev.filter((_, index) => index !== id));
-      setSuccessMessage("Almuerzo eliminado correctamente.");
+    const updatedMeals = meals.filter(meal => meal.id !== id);
+    // Reasignar los IDs para que comiencen desde 0
+    const reindexedMeals = updatedMeals.map((meal, index) => ({
+      ...meal,
+      id: index
+    }));
+    setMeals(reindexedMeals);
+    if (reindexedMeals.length === 0) {
+      setSuccessMessage("Todos los almuerzos han sido eliminados.");
     } else {
-      setErrorMessage("Debes tener al menos un almuerzo en tu pedido.");
+      setSuccessMessage("Almuerzo eliminado correctamente.");
     }
-  }, [meals, setSuccessMessage, setErrorMessage]);
+  }, [meals, setSuccessMessage]);
 
   const sendToWhatsApp = useCallback(() => {
     setIsLoading(true);
