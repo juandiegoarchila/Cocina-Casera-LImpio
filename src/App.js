@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { soups, soupReplacements, principles, proteins, drinks, sides, times, paymentMethods } from './mock/menuOptions';
+import { db } from './config/firebase';
+import { collection, onSnapshot } from 'firebase/firestore'; // Cambia getDocs por onSnapshot
 import useLocalStorage from './hooks/useLocalStorage';
 import Header from './components/Header';
 import MealList from './components/MealList';
@@ -7,6 +8,8 @@ import OrderSummary from './components/OrderSummary';
 import LoadingIndicator from './components/LoadingIndicator';
 import ErrorMessage from './components/ErrorMessage';
 import SuccessMessage from './components/SuccessMessage';
+import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import AdminPage from './components/AdminPage';
 
 const initialMeal = {
   id: 0,
@@ -25,13 +28,52 @@ const initialMeal = {
 };
 
 const App = () => {
-  const [meals, setMeals] = useState([]); // Estado inicial vacío
+  const [meals, setMeals] = useState([]);
   const [address, setAddress] = useLocalStorage('userAddress', '');
   const [errorMessage, setErrorMessage] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [incompleteMealIndex, setIncompleteMealIndex] = useState(null);
   const [incompleteSlideIndex, setIncompleteSlideIndex] = useState(null);
+  const [soups, setSoups] = useState([]);
+  const [soupReplacements, setSoupReplacements] = useState([]);
+  const [principles, setPrinciples] = useState([]);
+  const [proteins, setProteins] = useState([]);
+  const [drinks, setDrinks] = useState([]);
+  const [sides, setSides] = useState([]);
+  const [times, setTimes] = useState([]);
+  const [paymentMethods, setPaymentMethods] = useState([]);
+
+  // Escuchar cambios en Firestore en tiempo real
+  useEffect(() => {
+    const collections = [
+      'soups', 'soupReplacements', 'principles', 'proteins', 
+      'drinks', 'sides', 'times', 'paymentMethods'
+    ];
+    const setters = [
+      setSoups, setSoupReplacements, setPrinciples, setProteins, 
+      setDrinks, setSides, setTimes, setPaymentMethods
+    ];
+
+    const unsubscribers = collections.map((col, index) => {
+      return onSnapshot(collection(db, col), (snapshot) => {
+        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setters[index](data);
+        console.log(`Datos actualizados para ${col}:`, data);
+        if (data.length === 0) {
+          console.warn(`La colección ${col} está vacía. Agrega datos desde /admin.`);
+        }
+      }, (error) => {
+        console.error(`Error al escuchar ${col}:`, error);
+        setErrorMessage(`Error al cargar datos. Revisa la consola para más detalles.`);
+      });
+    });
+
+    // Limpiar los listeners cuando el componente se desmonte
+    return () => {
+      unsubscribers.forEach(unsubscribe => unsubscribe());
+    };
+  }, []);
 
   useEffect(() => {
     setMeals(prev => prev.map(meal => ({ ...meal, address })));
@@ -68,7 +110,6 @@ const App = () => {
 
   const removeMeal = useCallback((id) => {
     const updatedMeals = meals.filter(meal => meal.id !== id);
-    // Reasignar los IDs para que comiencen desde 0
     const reindexedMeals = updatedMeals.map((meal, index) => ({
       ...meal,
       id: index
@@ -199,37 +240,48 @@ const App = () => {
   }, [successMessage]);
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <Header />
-      <main role="main" className="p-4 flex-grow max-w-4xl mx-auto w-full">
-        <div className="fixed top-14 right-3 z-40 space-y-1" aria-live="polite">
-          {isLoading && <LoadingIndicator />}
-          {errorMessage && <ErrorMessage message={errorMessage} />}
-          {successMessage && <SuccessMessage message={successMessage} />}
-        </div>
-        <p className="text-center text-gray-700 mb-1 sm:mb-2 md:mb-4 text-[10px] xs:text-xs sm:text-sm bg-white p-1 xs:p-2 rounded-lg shadow-sm">
-          ¡Pide tu almuerzo fácil y rápido! Almuerzo $13.000 (solo bandeja o sin sopa $12.000)
-        </p>
-        <MealList
-          meals={meals}
-          soups={soups}
-          soupReplacements={soupReplacements}
-          principles={principles}
-          proteins={proteins}
-          drinks={drinks}
-          sides={sides}
-          times={times}
-          paymentMethods={paymentMethods}
-          onMealChange={handleMealChange}
-          onRemoveMeal={removeMeal}
-          onAddMeal={addMeal}
-          onDuplicateMeal={duplicateMeal}
-          incompleteMealIndex={incompleteMealIndex}
-          incompleteSlideIndex={incompleteSlideIndex}
+    <Router>
+      <Routes>
+        <Route path="/admin" element={<AdminPage />} />
+        <Route
+          path="/"
+          element={
+            <div className="min-h-screen bg-gray-50 flex flex-col">
+              <Header />
+              <main role="main" className="p-4 flex-grow max-w-4xl mx-auto w-full">
+                <div className="fixed top-14 right-3 z-40 space-y-1" aria-live="polite">
+                  {isLoading && <LoadingIndicator />}
+                  {errorMessage && <ErrorMessage message={errorMessage} />}
+                  {successMessage && <SuccessMessage message={successMessage} />}
+                </div>
+                <p className="text-center text-gray-700 mb-1 sm:mb-2 md:mb-4 text-[10px] xs:text-xs sm:text-sm bg-white p-1 xs:p-2 rounded-lg shadow-sm">
+                  ¡Pide tu almuerzo fácil y rápido! Almuerzo $13.000 (solo bandeja o sin sopa $12.000)
+                </p>
+                <MealList
+                  meals={meals}
+                  soups={soups}
+                  soupReplacements={soupReplacements}
+                  principles={principles}
+                  proteins={proteins}
+                  drinks={drinks}
+                  sides={sides}
+                  times={times}
+                  paymentMethods={paymentMethods}
+                  onMealChange={handleMealChange}
+                  onRemoveMeal={removeMeal}
+                  onAddMeal={addMeal}
+                  onDuplicateMeal={duplicateMeal}
+                  incompleteMealIndex={incompleteMealIndex}
+                  incompleteSlideIndex={incompleteSlideIndex}
+                />
+                <OrderSummary meals={meals} onSendOrder={sendToWhatsApp} />
+              </main>
+            </div>
+          }
         />
-        <OrderSummary meals={meals} onSendOrder={sendToWhatsApp} />
-      </main>
-    </div>
+        <Route path="/test" element={<div className="text-center text-green-500">Ruta de prueba funcionando</div>} />
+      </Routes>
+    </Router>
   );
 };
 

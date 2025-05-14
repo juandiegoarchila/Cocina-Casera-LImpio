@@ -16,7 +16,7 @@ const MealList = ({
   onAddMeal,
   onDuplicateMeal
 }) => {
-  const [showTutorial, setShowTutorial] = useState(true); // Estado global para el tutorial
+  const [showTutorial, setShowTutorial] = useState(true);
 
   const completedMeals = meals.filter(m => 
     m.protein && m.soup && m.principle && m.drink && m.time && m.address && m.payment && m.cutlery
@@ -43,26 +43,30 @@ const MealList = ({
         </button>
       </div>
       <div className="space-y-1 xs:space-y-2 sm:space-y-4">
-        {meals.map((meal, index) => (
-          <MealItem
-            key={index}
-            id={index}
-            meal={meal}
-            onMealChange={onMealChange}
-            onRemoveMeal={onRemoveMeal}
-            onDuplicateMeal={onDuplicateMeal}
-            soups={soups}
-            soupReplacements={soupReplacements}
-            principles={principles}
-            proteins={proteins}
-            drinks={drinks}
-            sides={sides}
-            times={times}
-            paymentMethods={paymentMethods}
-            showTutorial={showTutorial} // Pasamos el estado
-            setShowTutorial={setShowTutorial} // Pasamos la función para actualizarlo
-          />
-        ))}
+        {meals.length === 0 ? (
+          <p className="text-center text-gray-600">No hay almuerzos. Haz clic en "Añadir un nuevo almuerzo" para comenzar.</p>
+        ) : (
+          meals.map((meal, index) => (
+            <MealItem
+              key={index}
+              id={index}
+              meal={meal}
+              onMealChange={onMealChange}
+              onRemoveMeal={onRemoveMeal}
+              onDuplicateMeal={onDuplicateMeal}
+              soups={soups}
+              soupReplacements={soupReplacements}
+              principles={principles}
+              proteins={proteins}
+              drinks={drinks}
+              sides={sides}
+              times={times}
+              paymentMethods={paymentMethods}
+              showTutorial={showTutorial}
+              setShowTutorial={setShowTutorial}
+            />
+          ))
+        )}
       </div>
       {meals.length > 0 && (
         <div className="bg-blue-50 p-1 xs:p-2 rounded-md border border-blue-100">

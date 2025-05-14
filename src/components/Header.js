@@ -10,7 +10,7 @@ const Header = () => {
           className="back-to-whatsapp text-[10px] xs:text-xs sm:text-sm hover:underline hover:text-white transition-all flex items-center"
           aria-label="Volver a WhatsApp para contactar con Cocina Casera"
         >
-          <span className="mr-1">Volver a WhatsApp</span>
+          <span className="mr-1">Di hola antes de empezar</span>
           <svg 
             xmlns="http://www.w3.org/2000/svg" 
             className="h-3 xs:h-4 w-3 xs:w-4" 
