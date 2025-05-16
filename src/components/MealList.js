@@ -44,7 +44,7 @@ const MealList = ({
       </div>
       <div className="space-y-1 xs:space-y-2 sm:space-y-4">
         {meals.length === 0 ? (
-          <p className="text-center text-gray-600">No hay almuerzos. Haz clic en "Añadir un nuevo almuerzo" para comenzar.</p>
+          <p className="text-center text-gray-600"></p>
         ) : (
           meals.map((meal, index) => (
             <MealItem

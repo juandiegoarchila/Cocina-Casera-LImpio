@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import OptionSelector from './OptionSelector';
-import SidesSelector from './SidesSelector';
 import TimeSelector from './TimeSelector';
 import AddressInput from './AddressInput';
 import PaymentSelector from './PaymentSelector';
@@ -25,8 +24,8 @@ const MealItem = ({
   isIncomplete = false,
   incompleteSlideIndex = null,
   address = '',
-  showTutorial, // Recibimos el estado como prop
-  setShowTutorial // Recibimos la función para actualizar el estado
+  showTutorial,
+  setShowTutorial
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const [currentSlide, setCurrentSlide] = useState(0);
@@ -40,7 +39,8 @@ const MealItem = ({
 
   const isSoupComplete = meal?.soup && (meal.soup?.name !== 'Sin sopa' || meal?.soupReplacement);
   const isPrincipleComplete = meal?.principle && (meal.principle?.name !== 'Sin principio' || meal?.principleReplacement);
-  const isComplete = isSoupComplete && isPrincipleComplete && meal?.protein && meal?.drink && meal?.time && meal?.address && meal?.payment && meal?.cutlery;
+  const isSidesComplete = Array.isArray(meal?.sides) && meal.sides.length > 0;
+  const isComplete = isSoupComplete && isPrincipleComplete && meal?.protein && meal?.drink && meal?.time && meal?.address && meal?.payment && meal?.cutlery && isSidesComplete;
 
   const completionPercentage = Math.round(
     ([
@@ -48,11 +48,12 @@ const MealItem = ({
       isPrincipleComplete,
       meal?.protein,
       meal?.drink,
+      meal?.cutlery,
       meal?.time,
       meal?.address,
       meal?.payment,
-      meal?.cutlery
-    ].filter(Boolean).length / 8) * 100
+      isSidesComplete
+    ].filter(Boolean).length / 9) * 100
   );
 
   const slides = [
@@ -61,6 +62,7 @@ const MealItem = ({
         <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
           <OptionSelector
             title="Sopa"
+            emoji="🥣"
             options={soups}
             selected={meal?.soup}
             onSelect={(option) => handleChange('soup', option)}
@@ -79,6 +81,7 @@ const MealItem = ({
         <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
           <OptionSelector
             title="Principio"
+            emoji="🍚"
             options={principles}
             selected={meal?.principle}
             onSelect={(option) => handleChange('principle', option)}
@@ -97,6 +100,7 @@ const MealItem = ({
         <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
           <OptionSelector
             title="Proteína"
+            emoji="🍗"
             options={proteins}
             selected={meal?.protein}
             onSelect={(option) => handleChange('protein', option)}
@@ -111,6 +115,7 @@ const MealItem = ({
         <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
           <OptionSelector
             title="Bebida"
+            emoji="🥤"
             options={drinks}
             selected={meal?.drink}
             onSelect={(option) => handleChange('drink', option)}
@@ -123,20 +128,20 @@ const MealItem = ({
     {
       component: (
         <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
-          <SidesSelector
-            sides={sides}
-            selectedSides={meal?.sides || []}
-            setSelectedSides={(sides) => handleChange('sides', sides)}
-            notes={meal?.notes || ''}
-            setNotes={(notes) => handleChange('notes', notes)}
+          <h4 className="text-sm font-semibold text-green-700 mb-2">Cubiertos</h4>
+          <CutlerySelector
+            cutlery={meal?.cutlery}
+            setCutlery={(cutlery) => handleChange('cutlery', cutlery)}
           />
-          <div className="mt-2 text-xs text-gray-500">
-            Selecciona los acompañamientos que desees y desliza o usa las flechas para avanzar cuando estés listo.
-          </div>
+          {!meal?.cutlery && (
+            <p className="text-[10px] text-red-600 bg-red-50 p-1 rounded mt-1">
+              Por favor, selecciona si necesitas cubiertos
+            </p>
+          )}
         </div>
       ),
-      isComplete: true,
-      label: 'Acompañamientos'
+      isComplete: !!meal?.cutlery,
+      label: 'Cubiertos'
     },
     {
       component: (
@@ -202,20 +207,36 @@ const MealItem = ({
     {
       component: (
         <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
-          <h4 className="text-sm font-semibold text-green-700 mb-2">Cubiertos</h4>
-          <CutlerySelector
-            cutlery={meal?.cutlery}
-            setCutlery={(cutlery) => handleChange('cutlery', cutlery)}
+          <OptionSelector
+            title="Acompañamiento"
+            emoji="🥗"
+            options={sides}
+            selected={Array.isArray(meal?.sides) ? meal.sides : []}
+            onSelect={(options) => handleChange('sides', options)}
+            multiple={true} // Asegurado que multiple sea true
           />
-          {!meal?.cutlery && (
+          {!isSidesComplete && (
             <p className="text-[10px] text-red-600 bg-red-50 p-1 rounded mt-1">
-              Por favor, selecciona si necesitas cubiertos
+              Por favor, selecciona al menos un acompañamiento
             </p>
           )}
+          <div className="mt-2 text-xs text-gray-500">
+            Puedes seleccionar múltiples acompañamientos si lo deseas.
+          </div>
+          <div className="mt-2">
+            <h4 className="text-sm font-semibold text-green-700 mb-1">Notas Adicionales</h4>
+            <textarea
+              value={meal?.notes || ''}
+              onChange={(e) => handleChange('notes', e.target.value)}
+              placeholder="Ejemplo: Poquito arroz, sin cebolla, etc."
+              className="w-full p-2 text-sm border rounded-md"
+              rows="2"
+            />
+          </div>
         </div>
       ),
-      isComplete: !!meal?.cutlery,
-      label: 'Cubiertos'
+      isComplete: isSidesComplete,
+      label: 'Acompañamiento'
     }
   ];
 
@@ -230,7 +251,8 @@ const MealItem = ({
     const updatedMeal = { ...meal, [field]: value };
     const updatedIsSoupComplete = updatedMeal?.soup && (updatedMeal.soup?.name !== 'Sin sopa' || updatedMeal?.soupReplacement);
     const updatedIsPrincipleComplete = updatedMeal?.principle && (updatedMeal.principle?.name !== 'Sin principio' || updatedMeal?.principleReplacement);
-    const willBeComplete = updatedIsSoupComplete && updatedIsPrincipleComplete && updatedMeal?.protein && updatedMeal?.drink && updatedMeal?.time && updatedMeal?.address && updatedMeal?.payment && updatedMeal?.cutlery;
+    const updatedIsSidesComplete = Array.isArray(updatedMeal?.sides) && updatedMeal.sides.length > 0;
+    const willBeComplete = updatedIsSoupComplete && updatedIsPrincipleComplete && updatedMeal?.protein && updatedMeal?.drink && updatedMeal?.time && updatedMeal?.address && updatedMeal?.payment && updatedMeal?.cutlery && updatedIsSidesComplete;
 
     if (willBeComplete) {
       const timeout = setTimeout(() => {
@@ -243,7 +265,7 @@ const MealItem = ({
       return;
     }
 
-    if (['sides', 'notes'].includes(field)) return;
+    if (field === 'sides' || field === 'notes') return;
 
     if ((field === 'soup' && value.name === 'Sin sopa' && !updatedMeal.soupReplacement) ||
         (field === 'principle' && value.name === 'Sin principio' && !updatedMeal.principleReplacement)) {
@@ -265,7 +287,7 @@ const MealItem = ({
         isSlideComplete = !!updatedMeal?.drink;
         break;
       case 4:
-        isSlideComplete = true;
+        isSlideComplete = !!updatedMeal?.cutlery;
         break;
       case 5:
         isSlideComplete = !!updatedMeal?.time;
@@ -277,7 +299,7 @@ const MealItem = ({
         isSlideComplete = !!updatedMeal?.payment;
         break;
       case 8:
-        isSlideComplete = !!updatedMeal?.cutlery;
+        isSlideComplete = updatedIsSidesComplete;
         break;
       default:
         break;
@@ -297,7 +319,7 @@ const MealItem = ({
 
   useEffect(() => {
     const handleKeyPress = (e) => {
-      if (e.key === 'Enter' && (currentSlide === 6 || currentSlide === 4)) {
+      if (e.key === 'Enter' && (currentSlide === 6 || currentSlide === 8)) {
         handleNext();
       }
     };
@@ -307,15 +329,24 @@ const MealItem = ({
 
   useEffect(() => {
     let timer;
-    if (currentSlide === 4 || currentSlide === 5) {
+    if (currentSlide === 5) {
       timer = setTimeout(() => {
         if (currentSlide < slides.length - 1) {
           setCurrentSlide(currentSlide + 1);
         }
       }, 3000);
+    } else if (currentSlide === 8) {
+      timer = setTimeout(() => {
+        if (isComplete && containerRef.current) {
+          containerRef.current.style.height = '0';
+          setTimeout(() => setIsExpanded(false), 300);
+        } else if (currentSlide < slides.length - 1) {
+          setCurrentSlide(currentSlide + 1);
+        }
+      }, 20000);
     }
     return () => clearTimeout(timer);
-  }, [currentSlide]);
+  }, [currentSlide, isComplete]);
 
   useEffect(() => {
     const handleUpdateSlide = (event) => {
@@ -400,7 +431,7 @@ const MealItem = ({
   };
 
   const handleTutorialComplete = () => {
-    setShowTutorial(false); // Actualizamos el estado global
+    setShowTutorial(false);
   };
 
   return (
@@ -459,7 +490,7 @@ const MealItem = ({
               aria-label={`Eliminar Almuerzo #${id + 1}`}
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 00-1-1z" clipRule="evenodd" />
+                <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 00-1-1z" clipRule="evenodd" />
               </svg>
               <span className="text-xs">Eliminar</span>
             </button>

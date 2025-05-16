@@ -1,4 +1,3 @@
-//src/components/OptionSelector.js
 import React from 'react';
 
 const OptionSelector = ({ 
@@ -11,18 +10,37 @@ const OptionSelector = ({
   replacements,
   replacementSelected,
   onReplacementSelect,
+  multiple = false, // Nuevo prop para habilitar selección múltiple
   className = ''
 }) => {
   const [showReplacement, setShowReplacement] = React.useState(!!replacementSelected);
 
   const handleSelect = (option) => {
-    onSelect(option);
-    if (option.name === 'Sin sopa' || option.name === 'Sin principio') {
-      setShowReplacement(true);
+    let updatedSelected;
+    if (multiple) {
+      // Para selección múltiple, mantenemos un array de opciones
+      const currentSelected = Array.isArray(selected) ? [...selected] : [];
+      const optionIndex = currentSelected.findIndex(opt => opt.id === option.id);
+
+      if (optionIndex > -1) {
+        // Si ya está seleccionado, lo quitamos
+        currentSelected.splice(optionIndex, 1);
+      } else {
+        // Si no está seleccionado, lo añadimos
+        currentSelected.push(option);
+      }
+      updatedSelected = currentSelected;
     } else {
-      setShowReplacement(false);
-      if (onReplacementSelect) onReplacementSelect(null);
+      // Para selección simple
+      updatedSelected = option;
+      if (option.name === 'Sin sopa' || option.name === 'Sin principio') {
+        setShowReplacement(true);
+      } else {
+        setShowReplacement(false);
+        if (onReplacementSelect) onReplacementSelect(null);
+      }
     }
+    onSelect(updatedSelected);
   };
 
   const handleReplacementSelect = (replacement) => {
@@ -41,8 +59,8 @@ const OptionSelector = ({
             key={option.id}
             onClick={() => handleSelect(option)}
             className={`relative p-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center text-center min-h-[40px] shadow-sm ${
-              selected?.id === option.id
-                ? 'bg-primary-200 text-primary-800 border border-primary-300'
+              (Array.isArray(selected) ? selected.some(opt => opt.id === option.id) : selected?.id === option.id)
+                ? 'bg-green-200 text-green-800 border border-green-300'
                 : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
             }`}
             aria-label={`Seleccionar ${option.name}`}
@@ -60,7 +78,7 @@ const OptionSelector = ({
         ))}
       </div>
       {(showReplacement || replacementSelected) && replacements && (
-        <div className="mt-2 pl-2 border-l-2 border-primary-200">
+        <div className="mt-2 pl-2 border-l-2 border-green-200">
           <h4 className="text-[10px] font-medium mb-1 text-gray-600">Reemplazo:</h4>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {replacements.map(replacement => (
@@ -69,7 +87,7 @@ const OptionSelector = ({
                 onClick={() => handleReplacementSelect(replacement)}
                 className={`relative p-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center text-center min-h-[40px] shadow-sm ${
                   replacementSelected?.id === replacement.id
-                    ? 'bg-primary-200 text-primary-800 border border-primary-300'
+                    ? 'bg-green-200 text-green-800 border border-green-300'
                     : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
                 }`}
                 aria-label={`Seleccionar reemplazo ${replacement.name}`}

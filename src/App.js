@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { db } from './config/firebase';
-import { collection, onSnapshot } from 'firebase/firestore'; // Cambia getDocs por onSnapshot
+import { collection, onSnapshot } from 'firebase/firestore';
 import useLocalStorage from './hooks/useLocalStorage';
 import Header from './components/Header';
 import MealList from './components/MealList';
@@ -10,6 +10,7 @@ import ErrorMessage from './components/ErrorMessage';
 import SuccessMessage from './components/SuccessMessage';
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import AdminPage from './components/AdminPage';
+
 
 const initialMeal = {
   id: 0,
@@ -122,11 +123,67 @@ const App = () => {
     }
   }, [meals, setSuccessMessage]);
 
+  const isMobile = () => {
+    return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  };
+
+  const encodeMessage = (text) => {
+    return encodeURIComponent(text);
+  };
+
+  const generateMessageFromMeals = useCallback(() => {
+    let message = `👋 ¡Hola Cocina Casera! 🍴\nQuiero hacer mi pedido:\n\n`;
+
+    meals.forEach((meal, index) => {
+      const basePrice = (meal?.soup?.name === 'Sin sopa' || meal?.soup?.name === 'Solo bandeja') ? 12000 : 13000;
+      const paymentText = meal?.payment?.name === 'Efectivo' ? 'Efectivo al recibir' : `${meal?.payment?.name} al 313 850 5647`;
+      message += `🍽 Almuerzo #${index + 1} – $${basePrice.toLocaleString()} (${meal?.payment?.name || 'No especificado'})\n`;
+      message += `🥣 Sopa: ${meal?.soup?.name || 'No seleccionado'}${meal?.soupReplacement ? ` (Reemplazo: ${meal.soupReplacement?.name || ''})` : ''}\n`;
+      message += `🍚 Principio: ${meal?.principle?.name || 'No seleccionado'}${meal?.principleReplacement ? ` (Reemplazo: ${meal.principleReplacement?.name || ''})` : ''}\n`;
+      message += `🍗 Proteína: ${meal?.protein?.name || 'No seleccionado'}\n`;
+      message += `🥤 Bebida: ${meal?.drink?.name || 'No seleccionado'}\n`;
+      message += `🥗 Acompañamientos: ${meal?.sides?.length > 0 ? meal.sides.map(s => s?.name || '').join(', ') : 'Ninguno'}\n`;
+      message += `📝 Notas: ${meal?.notes || 'Ninguna'}\n`;
+      message += `🕒 Entrega: ${meal?.time?.name || 'No especificada'}\n`;
+      message += `📍 Dirección: ${meal?.address || 'No especificada'}\n`;
+      message += `💰 Pago por ${paymentText}\n`;
+      message += `🍴 Cubiertos: ${meal?.cutlery ? 'Sí' : 'No'}\n\n`;
+    });
+
+    const total = meals.reduce((sum, meal) => {
+      const basePrice = (meal?.soup?.name === 'Sin sopa' || meal?.soup?.name === 'Solo bandeja') ? 12000 : 13000;
+      return sum + basePrice;
+    }, 0);
+
+    const paymentSummary = meals.reduce((acc, meal) => {
+      const basePrice = (meal?.soup?.name === 'Sin sopa' || meal?.soup?.name === 'Solo bandeja') ? 12000 : 13000;
+      const paymentMethod = meal?.payment?.name || 'No especificado';
+      if (!acc[paymentMethod]) {
+        acc[paymentMethod] = 0;
+      }
+      acc[paymentMethod] += basePrice;
+      return acc;
+    }, {});
+
+    message += `💵 Resumen de pagos:\n`;
+    Object.entries(paymentSummary).forEach(([method, amount]) => {
+      message += `* $${amount.toLocaleString()} – ${method}\n`;
+    });
+
+    message += `\n💰 Total: $${total.toLocaleString()}\n`;
+    message += `🕐 Entrega estimada: 20–30 minutos.\n`;
+    message += `Si estás cerca del local, será aún más rápido.\n`;
+    message += `En caso de no tener efectivo, puedes pagar por Nequi o DaviPlata al 313 850 5647.`;
+
+    return message;
+  }, [meals]);
+
   const sendToWhatsApp = useCallback(() => {
     setIsLoading(true);
     setErrorMessage(null);
     setSuccessMessage(null);
 
+    // Validar campos incompletos
     const incompleteMeals = meals.map((meal, index) => {
       const missing = [];
       if (!meal?.soup || (meal.soup?.name === 'Sin sopa' && !meal?.soupReplacement)) missing.push('Sopa');
@@ -172,58 +229,49 @@ const App = () => {
       return;
     }
 
-    const cleanText = (text) => text?.replace(' NUEVO', '') || 'No seleccionado';
+    const message = generateMessageFromMeals();
+    const encodedMessage = encodeMessage(message);
 
-    const groupedMeals = meals.reduce((acc, meal, index) => {
-      const key = JSON.stringify(meal);
-      if (!acc[key]) {
-        acc[key] = { count: 0, indices: [] };
+    if (isMobile()) {
+      // En móviles, usar whatsapp://send para mostrar el diálogo de selección
+      const whatsappUrl = `whatsapp://send?phone=573023931292&text=${encodedMessage}`;
+      const fallbackUrl = `https://wa.me/573023931292?text=${encodedMessage}`;
+
+      const attemptWhatsApp = () => {
+        const startTime = Date.now();
+        window.location = whatsappUrl;
+
+        // Si no se abre en 2 segundos, usar el respaldo
+        setTimeout(() => {
+          if (Date.now() - startTime < 2000) {
+            window.open(fallbackUrl, '_blank');
+          }
+        }, 2000);
+      };
+
+      try {
+        attemptWhatsApp();
+        setSuccessMessage('¡Pedido enviado correctamente a WhatsApp!');
+      } catch (error) {
+        console.error('Error al abrir WhatsApp:', error);
+        setErrorMessage('No se pudo abrir WhatsApp. Por favor, intenta de nuevo.');
+        window.open(fallbackUrl, '_blank');
       }
-      acc[key].count += 1;
-      acc[key].indices.push(index + 1);
-      return acc;
-    }, {});
-
-    let message = `¡Hola Cocina Casera! 🍴\nQuiero hacer mi pedido:\n\n`;
-
-    Object.entries(groupedMeals).forEach(([key, { count, indices }]) => {
-      const meal = JSON.parse(key);
-      message += `*${count > 1 ? `${count} almuerzos iguales (#${indices.join(', #')})` : `Almuerzo #${indices[0]}`}*\n`;
-      message += `🥣 Sopa: ${cleanText(meal?.soup?.name)}${meal?.soupReplacement ? ` (Reemplazo: ${cleanText(meal.soupReplacement?.name)})` : ''}\n`;
-      message += `🍚 Principio: ${cleanText(meal?.principle?.name)}${meal?.principleReplacement ? ` (Reemplazo: ${cleanText(meal.principleReplacement?.name)})` : ''}\n`;
-      message += `🍗 Proteína: ${cleanText(meal?.protein?.name)}\n`;
-      message += `🥤 Bebida: ${cleanText(meal?.drink?.name)}\n`;
-      message += `🥗 Acompañamientos: ${meal?.sides?.length > 0 ? meal.sides.map(s => cleanText(s?.name)).join(', ') : 'Ninguno'}\n`;
-      message += `📝 Notas: ${meal?.notes || 'Ninguna'}\n`;
-      message += `🕒 Hora: ${cleanText(meal?.time?.name)}\n`;
-      message += `📍 Dirección: ${meal?.address || 'No especificada'}\n`;
-      message += `💰 Pago: ${cleanText(meal?.payment?.name)}\n`;
-      message += `🍴 Cubiertos: ${meal?.cutlery || 'No especificado'}\n\n`;
-    });
-
-    const total = meals.reduce((sum, meal) => {
-      const basePrice = (meal?.soup?.name === 'Sin sopa' || meal?.soup?.name === 'Solo bandeja') ? 12000 : 13000;
-      return sum + basePrice;
-    }, 0);
-
-    message += `*Total a pagar*: $${total.toLocaleString()}\n\n`;
-
-    const hasNequiOrDaviPlata = meals.some(meal => meal?.payment?.name === 'Nequi' || meal?.payment?.name === 'DaviPlata');
-    if (hasNequiOrDaviPlata) {
-      message += `💳 *Instrucciones de pago*: Envía el valor total de $${total.toLocaleString()} a este número 3138505647 al Nequi o DaviPlata.\n\n`;
+    } else {
+      // En PC, usar web.whatsapp.com para mensajes largos
+      const whatsappUrl = `https://web.whatsapp.com/send?phone=573023931292&text=${encodedMessage}`;
+      try {
+        window.open(whatsappUrl, '_blank');
+        setSuccessMessage('¡Pedido enviado correctamente a WhatsApp!');
+      } catch (error) {
+        console.error('Error al abrir WhatsApp:', error);
+        setErrorMessage('No se pudo abrir WhatsApp. Por favor, intenta de nuevo.');
+      }
     }
 
-    message += `¡Gracias! 😊`;
-
-    const encodedMessage = encodeURIComponent(message.trim());
-    const whatsappUrl = `https://api.whatsapp.com/send?phone=573023931292&text=${encodedMessage}`;
-    window.open(whatsappUrl, '_blank');
-
-    setSuccessMessage('¡Pedido enviado correctamente a WhatsApp!');
     setIsLoading(false);
-
     setTimeout(() => setSuccessMessage(null), 5000);
-  }, [meals]);
+  }, [meals, generateMessageFromMeals]);
 
   useEffect(() => {
     if (errorMessage) {

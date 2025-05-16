@@ -50,7 +50,7 @@ const steps: Step[] = [
   },
   {
     target: '.back-to-whatsapp',
-    content: 'Si tienes dudas o te arrepientes, haz clic aquí para volver a WhatsApp.',
+    content: 'Primera vez? Envía "Hola" antes de pedir. (Si ya hablaste con nosotros, ignora esto.)',
     placement: 'bottom',
   },
 ];
