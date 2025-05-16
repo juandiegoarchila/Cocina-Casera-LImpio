@@ -1,3 +1,4 @@
+//src/components/mealItem.js
 import React, { useState, useEffect, useRef } from 'react';
 import OptionSelector from './OptionSelector';
 import TimeSelector from './TimeSelector';

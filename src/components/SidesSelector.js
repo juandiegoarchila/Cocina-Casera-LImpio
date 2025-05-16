@@ -1,3 +1,4 @@
+//src/components/sidesSelector.js
 import React, { useState } from 'react';
 
 const SidesSelector = ({ sides, selectedSides, setSelectedSides, notes, setNotes }) => {

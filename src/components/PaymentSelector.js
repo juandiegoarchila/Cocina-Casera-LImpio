@@ -1,3 +1,4 @@
+//src/components/paymentSelector.js
 import React from 'react';
 
 const PaymentSelector = ({ paymentMethods, selectedPayment, setSelectedPayment }) => {

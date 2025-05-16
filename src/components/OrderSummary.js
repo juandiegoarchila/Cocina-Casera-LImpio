@@ -1,3 +1,4 @@
+//src/components/orderSummary.js
 import React, { useMemo } from 'react';
 
 const OrderSummary = ({ meals, onSendOrder }) => {

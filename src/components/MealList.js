@@ -1,3 +1,4 @@
+//src/components/mealItem.js
 import React, { useState } from 'react';
 import MealItem from './MealItem';
 

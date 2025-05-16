@@ -1,3 +1,4 @@
+//src/app.js
 import React, { useState, useEffect, useCallback } from 'react';
 import { db } from './config/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';

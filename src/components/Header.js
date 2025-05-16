@@ -1,3 +1,4 @@
+//src/components/AdminPage.js
 import React from 'react';
 
 const Header = () => {

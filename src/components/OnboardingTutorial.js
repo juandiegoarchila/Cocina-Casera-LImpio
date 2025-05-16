@@ -1,3 +1,4 @@
+//src/components/onboardingTutorial.js
 import React from 'react';
 import Joyride, { Step } from 'react-joyride';
 
