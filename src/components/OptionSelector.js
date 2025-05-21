@@ -1,4 +1,3 @@
-//src/components/optionSelector.js
 import React from 'react';
 
 const OptionSelector = ({ 
@@ -11,28 +10,25 @@ const OptionSelector = ({
   replacements,
   replacementSelected,
   onReplacementSelect,
-  multiple = false, // Nuevo prop para habilitar selección múltiple
+  multiple = false,
   className = ''
 }) => {
   const [showReplacement, setShowReplacement] = React.useState(!!replacementSelected);
 
   const handleSelect = (option) => {
+    if (option.isFinished) return;
     let updatedSelected;
     if (multiple) {
-      // Para selección múltiple, mantenemos un array de opciones
       const currentSelected = Array.isArray(selected) ? [...selected] : [];
       const optionIndex = currentSelected.findIndex(opt => opt.id === option.id);
 
       if (optionIndex > -1) {
-        // Si ya está seleccionado, lo quitamos
         currentSelected.splice(optionIndex, 1);
       } else {
-        // Si no está seleccionado, lo añadimos
         currentSelected.push(option);
       }
       updatedSelected = currentSelected;
     } else {
-      // Para selección simple
       updatedSelected = option;
       if (option.name === 'Sin sopa' || option.name === 'Sin principio') {
         setShowReplacement(true);
@@ -45,6 +41,7 @@ const OptionSelector = ({
   };
 
   const handleReplacementSelect = (replacement) => {
+    if (replacement.isFinished) return;
     if (onReplacementSelect) onReplacementSelect(replacement);
   };
 
@@ -59,8 +56,11 @@ const OptionSelector = ({
           <button
             key={option.id}
             onClick={() => handleSelect(option)}
+            disabled={option.isFinished}
             className={`relative p-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center text-center min-h-[40px] shadow-sm ${
-              (Array.isArray(selected) ? selected.some(opt => opt.id === option.id) : selected?.id === option.id)
+              option.isFinished
+                ? 'bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed'
+                : (Array.isArray(selected) ? selected.some(opt => opt.id === option.id) : selected?.id === option.id)
                 ? 'bg-green-200 text-green-800 border border-green-300'
                 : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
             }`}
@@ -70,9 +70,14 @@ const OptionSelector = ({
               {option.emoji && <span className="mr-1 text-base">{option.emoji}</span>}
               {option.name.replace(' NUEVO', '')}
             </span>
-            {option.isNew && (
+            {option.isNew && !option.isFinished && (
               <span className="absolute top-0 right-7 transform translate-x-1/2 -translate-y-1/2 bg-red-500 text-white text-[10px] font-semibold rounded-full px-2 py-0.5">
                 NUEVO
+              </span>
+            )}
+            {option.isFinished && (
+              <span className="absolute top-0 right-7 transform translate-x-1/2 -translate-y-1/2 bg-gray-500 text-white text-[10px] font-semibold rounded-full px-2 py-0.5">
+                AGOTADO
               </span>
             )}
           </button>
@@ -86,8 +91,11 @@ const OptionSelector = ({
               <button
                 key={replacement.id}
                 onClick={() => handleReplacementSelect(replacement)}
+                disabled={replacement.isFinished}
                 className={`relative p-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center text-center min-h-[40px] shadow-sm ${
-                  replacementSelected?.id === replacement.id
+                  replacement.isFinished
+                    ? 'bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed'
+                    : replacementSelected?.id === replacement.id
                     ? 'bg-green-200 text-green-800 border border-green-300'
                     : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
                 }`}
@@ -97,9 +105,14 @@ const OptionSelector = ({
                   {replacement.emoji && <span className="mr-1 text-base">{replacement.emoji}</span>}
                   {replacement.name}
                 </span>
-                {replacement.isNew && (
+                {replacement.isNew && !replacement.isFinished && (
                   <span className="absolute top-0 right-0 transform translate-x-1/2 -translate-y-1/2 bg-red-500 text-white text-[10px] font-semibold rounded-full px-2 py-0.5">
                     NUEVO
+                  </span>
+                )}
+                {replacement.isFinished && (
+                  <span className="absolute top-0 right-0 transform translate-x-1/2 -translate-y-1/2 bg-gray-500 text-white text-[10px] font-semibold rounded-full px-2 py-0.5">
+                    AGOTADO
                   </span>
                 )}
               </button>

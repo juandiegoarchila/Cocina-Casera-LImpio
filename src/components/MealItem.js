@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import OptionSelector from './OptionSelector';
 import TimeSelector from './TimeSelector';
 import AddressInput from './AddressInput';
@@ -213,7 +213,7 @@ const MealItem = ({
             options={sides}
             selected={Array.isArray(meal?.sides) ? meal.sides : []}
             onSelect={(options) => handleChange('sides', options)}
-            multiple={true} // Asegurado que multiple sea true
+            multiple={true}
           />
           {!isSidesComplete && (
             <p className="text-[10px] text-red-600 bg-red-50 p-1 rounded mt-1">
@@ -368,19 +368,64 @@ const MealItem = ({
     };
   }, [id, collapseTimeout]);
 
+  // Dynamic height adjustment with debouncing
   useEffect(() => {
-    if (containerRef.current && slideRef.current && isExpanded) {
-      const updateHeight = () => {
-        if (slideRef.current && slideRef.current.children && slideRef.current.children[currentSlide]) {
-          const slideHeight = slideRef.current.children[currentSlide].offsetHeight;
-          containerRef.current.style.height = `${slideHeight + 8}px`;
-        }
-      };
-      updateHeight();
-    } else if (containerRef.current && !isExpanded) {
-      containerRef.current.style.height = '0';
+    if (!containerRef.current || !slideRef.current || !isExpanded) {
+      if (containerRef.current) {
+        containerRef.current.style.height = '0';
+      }
+      return;
     }
-  }, [currentSlide, meal, isExpanded]);
+
+    let timeoutId;
+    let observedElement = null;
+
+    const updateHeight = () => {
+      if (slideRef.current && slideRef.current.children && slideRef.current.children[currentSlide]) {
+        const slideHeight = slideRef.current.children[currentSlide].offsetHeight;
+        containerRef.current.style.height = `${slideHeight + 8}px`;
+      } else {
+        // Fallback height if slide is not available
+        containerRef.current.style.height = 'auto';
+      }
+    };
+
+    // Debounce height updates
+    const debouncedUpdateHeight = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(updateHeight, 100);
+    };
+
+    // Initial height update
+    debouncedUpdateHeight();
+
+    // Use ResizeObserver to monitor content changes
+    const observer = new ResizeObserver(() => {
+      debouncedUpdateHeight();
+    });
+
+    // Observe the current slide if available
+    if (slideRef.current && slideRef.current.children[currentSlide]) {
+      observedElement = slideRef.current.children[currentSlide];
+      observer.observe(observedElement);
+    }
+
+    // Listen for options changes
+    const handleOptionsChange = () => {
+      debouncedUpdateHeight();
+    };
+
+    window.addEventListener('optionsUpdated', handleOptionsChange);
+
+    return () => {
+      if (observedElement) {
+        observer.unobserve(observedElement);
+      }
+      observer.disconnect(); // Ensure observer is fully disconnected
+      window.removeEventListener('optionsUpdated', handleOptionsChange);
+      clearTimeout(timeoutId);
+    };
+  }, [currentSlide, isExpanded, soups, soupReplacements, principles, proteins, drinks, sides, times, paymentMethods]);
 
   const handleNext = () => {
     if (currentSlide < slides.length - 1 && slideRef.current) {
@@ -505,7 +550,7 @@ const MealItem = ({
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
-            style={{ transition: 'height 0.3s ease-in-out', height: isExpanded ? '' : '0' }}
+            style={{ transition: 'height 0.3s ease-in-out' }}
           >
             <div
               ref={slideRef}

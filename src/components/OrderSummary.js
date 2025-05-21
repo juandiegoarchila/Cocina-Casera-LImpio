@@ -1,11 +1,11 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { calculateMealPrice } from '../utils/MealCalculations';
 import { isValidTime, isValidNote, formatNotes } from '../utils/MealLogic';
 
 const OrderSummary = ({ meals, onSendOrder, calculateTotal, paymentSummary }) => {
   const cleanText = (text) => text?.replace(' NUEVO', '') || 'No seleccionado';
 
-  const total = useMemo(() => calculateTotal(), [calculateTotal, meals]);
+  const total = useMemo(() => calculateTotal(), [calculateTotal]);
 
   const groupedMeals = useMemo(() => {
     const groups = [];
