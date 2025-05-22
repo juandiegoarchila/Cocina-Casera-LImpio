@@ -1,6 +1,6 @@
 // src/App.js
-import React, { useState, useEffect, lazy, Suspense } from 'react'; // Importar lazy y Suspense
-import { db, auth } from './config/firebase'; // Mantener db y auth aquí porque se usan globalmente (Auth y Listeners)
+import React, { useState, useEffect, lazy, Suspense } from 'react';
+import { db, auth } from './config/firebase';
 import { collection, onSnapshot, doc, addDoc, setDoc } from 'firebase/firestore';
 import { signInAnonymously } from 'firebase/auth';
 import useLocalStorage from './hooks/useLocalStorage';
@@ -11,15 +11,15 @@ import LoadingIndicator from './components/LoadingIndicator';
 import ErrorMessage from './components/ErrorMessage';
 import SuccessMessage from './components/SuccessMessage';
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
-// import AdminPage from './components/Admin/AdminPage'; // ¡Eliminar importación directa!
-// import Login from './components/Auth/Login'; // ¡Eliminar importación directa!
-// import ForgotPassword from './components/Auth/ForgotPassword'; // ¡Eliminar importación directa!
+
 import { useAuth } from './components/Auth/AuthProvider';
 import { initializeMealData, handleMealChange, addMeal, duplicateMeal, removeMeal, sendToWhatsApp } from './utils/MealLogic';
 import { calculateMealPrice, calculateTotal, paymentSummary } from './utils/MealCalculations';
 import { isMobile, encodeMessage } from './utils/Helpers';
 
-// Lazy load the components that are not always needed on the initial load
+// PASO NUEVO: Importar el Footer
+import Footer from './components/Footer'; // Asegúrate de que la ruta sea correcta
+
 const AdminPage = lazy(() => import('./components/Admin/AdminPage'));
 const Login = lazy(() => import('./components/Auth/Login'));
 const ForgotPassword = lazy(() => import('./components/Auth/ForgotPassword'));
@@ -43,12 +43,26 @@ const App = () => {
     const [paymentMethods, setPaymentMethods] = useState([]);
     const [isOrderingDisabled, setIsOrderingDisabled] = useState(false);
 
-    // Mover los listeners de Firebase para las opciones al componente MealList
-    // Opcionalmente, si estos datos son CRÍTICOS para el render inicial, puedes dejarlos aquí.
-    // Pero si solo se usan en MealList, es mejor que MealList los gestione internamente
-    // para reducir el trabajo inicial del App.js. Por ahora, los mantendremos aquí
-    // ya que toda la lógica de pedido depende de ellos. Si el rendimiento sigue bajo
-    // en la página principal, los moveremos.
+    // --- NUEVO: useEffect para la duración de los mensajes ---
+    useEffect(() => {
+        if (errorMessage) {
+            const timer = setTimeout(() => {
+                setErrorMessage(null);
+            }, 10000); // 10 segundos
+            return () => clearTimeout(timer);
+        }
+    }, [errorMessage]);
+
+    useEffect(() => {
+        if (successMessage) {
+            const timer = setTimeout(() => {
+                setSuccessMessage(null);
+            }, 10000); // 10 segundos
+            return () => clearTimeout(timer);
+        }
+    }, [successMessage]);
+    // --- FIN NUEVO ---
+
     useEffect(() => {
         const collections = ['soups', 'soupReplacements', 'principles', 'proteins', 'drinks', 'sides', 'times', 'paymentMethods'];
         const setters = [setSoups, setSoupReplacements, setPrinciples, setProteins, setDrinks, setSides, setTimes, setPaymentMethods];
@@ -58,12 +72,22 @@ const App = () => {
                 const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 setters[index](data);
                 console.log(`Updated ${col}:`, data);
-                if (data.length === 0 && process.env.NODE_ENV !== 'production') {
-                    console.warn(`La colección ${col} está vacía. Agrega datos desde /admin.`);
-                    setErrorMessage(`La colección ${col} está vacía. Agrega datos desde /admin.`);
-                } else if (data.length === 0) {
-                    setErrorMessage('No hay opciones disponibles. Intenta de nuevo más tarde.');
+
+                // --- LÓGICA DE MENSAJE DE ERROR MEJORADA ---
+                if (data.length === 0) {
+                    if (process.env.NODE_ENV !== 'production') {
+                        // En desarrollo, muestra el error técnico claro
+                        console.warn(`La colección ${col} está vacía. Agrega datos desde /admin.`);
+                        setErrorMessage(`La colección ${col} está vacía. Agrega datos desde /admin.`);
+                    } else {
+                        // En producción, muestra un mensaje amigable o no muestra nada
+                        setErrorMessage('Algunas opciones no están disponibles. Intenta de nuevo más tarde.');
+                        // O, si prefieres no mostrar error y que el componente de selección se adapte:
+                        // setErrorMessage(null);
+                    }
                 }
+                // --- FIN LÓGICA MEJORADA ---
+
                 window.dispatchEvent(new Event('optionsUpdated'));
             }, (error) => {
                 console.error(`Error al escuchar ${col}:`, error);
@@ -158,7 +182,6 @@ const App = () => {
 
     return (
         <Router>
-            {/* Suspense fallback para mientras se cargan los componentes */}
             <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center">Cargando aplicación...</div>}>
                 <Routes>
                     <Route path="/login" element={<Login />} />
@@ -168,7 +191,7 @@ const App = () => {
                         <div className="min-h-screen bg-gray-50 flex flex-col">
                             <Header />
                             <main role="main" className="p-2 sm:p-4 flex-grow w-full max-w-4xl mx-auto">
-                                <div className="fixed top-14 right-2 sm:right-3 space-y-2 z-50" aria-live="polite">
+                                <div className="fixed top-14 right-2 sm:right-3 space-y-2 z-[9999]" aria-live="polite"> {/* Ajustado z-index */}
                                     {isLoading && <LoadingIndicator />}
                                     {errorMessage && <ErrorMessage message={errorMessage} />}
                                     {successMessage && <SuccessMessage message={successMessage} />}
@@ -217,6 +240,8 @@ const App = () => {
                                     </>
                                 )}
                             </main>
+                            {/* PASO NUEVO: Renderizar el Footer aquí */}
+                            <Footer />
                         </div>
                     } />
                     <Route path="/test" element={<div className="text-center text-green-500">Ruta de prueba funcionando</div>} />
