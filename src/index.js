@@ -1,12 +1,15 @@
-//src/index.js
-import React, { StrictMode } from "react";
-import { createRoot } from "react-dom/client";
+import React from 'react';
+import ReactDOM from 'react-dom';
 import "./styles.css";
-import App from "./App";
 
-const root = createRoot(document.getElementById("root"));
-root.render(
-  <StrictMode>
-    <App />
-  </StrictMode>
+import App from './App';
+import { AuthProvider } from './components/Auth/AuthProvider'; // Adjust the import path as needed
+
+ReactDOM.render(
+  <React.StrictMode>
+    <AuthProvider>
+      <App />
+    </AuthProvider>
+  </React.StrictMode>,
+  document.getElementById('root')
 );

@@ -11,12 +11,13 @@ const OptionSelector = ({
   replacementSelected,
   onReplacementSelect,
   multiple = false,
-  className = ''
+  className = '',
+  disabled = false
 }) => {
   const [showReplacement, setShowReplacement] = React.useState(!!replacementSelected);
 
   const handleSelect = (option) => {
-    if (option.isFinished) return;
+    if (disabled || option.isFinished) return;
     let updatedSelected;
     if (multiple) {
       const currentSelected = Array.isArray(selected) ? [...selected] : [];
@@ -41,7 +42,7 @@ const OptionSelector = ({
   };
 
   const handleReplacementSelect = (replacement) => {
-    if (replacement.isFinished) return;
+    if (disabled || replacement.isFinished) return;
     if (onReplacementSelect) onReplacementSelect(replacement);
   };
 
@@ -56,9 +57,9 @@ const OptionSelector = ({
           <button
             key={option.id}
             onClick={() => handleSelect(option)}
-            disabled={option.isFinished}
-            className={`relative p-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center text-center min-h-[40px] shadow-sm ${
-              option.isFinished
+            disabled={disabled || option.isFinished}
+            className={`relative p-2 rounded-lg text-sm font-medium transition-all duration-200 flex flex-col items-start text-left min-h-[40px] shadow-sm ${
+              disabled || option.isFinished
                 ? 'bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed'
                 : (Array.isArray(selected) ? selected.some(opt => opt.id === option.id) : selected?.id === option.id)
                 ? 'bg-green-200 text-green-800 border border-green-300'
@@ -70,6 +71,9 @@ const OptionSelector = ({
               {option.emoji && <span className="mr-1 text-base">{option.emoji}</span>}
               {option.name.replace(' NUEVO', '')}
             </span>
+            {option.description && (
+              <span className="text-xs text-gray-500 mt-1">{option.description}</span>
+            )}
             {option.isNew && !option.isFinished && (
               <span className="absolute top-0 right-7 transform translate-x-1/2 -translate-y-1/2 bg-red-500 text-white text-[10px] font-semibold rounded-full px-2 py-0.5">
                 NUEVO
@@ -91,9 +95,9 @@ const OptionSelector = ({
               <button
                 key={replacement.id}
                 onClick={() => handleReplacementSelect(replacement)}
-                disabled={replacement.isFinished}
-                className={`relative p-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center text-center min-h-[40px] shadow-sm ${
-                  replacement.isFinished
+                disabled={disabled || replacement.isFinished}
+                className={`relative p-2 rounded-lg text-sm font-medium transition-all duration-200 flex flex-col items-start text-left min-h-[40px] shadow-sm ${
+                  disabled || replacement.isFinished
                     ? 'bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed'
                     : replacementSelected?.id === replacement.id
                     ? 'bg-green-200 text-green-800 border border-green-300'
@@ -105,6 +109,9 @@ const OptionSelector = ({
                   {replacement.emoji && <span className="mr-1 text-base">{replacement.emoji}</span>}
                   {replacement.name}
                 </span>
+                {replacement.description && (
+                  <span className="text-xs text-gray-500 mt-1">{replacement.description}</span>
+                )}
                 {replacement.isNew && !replacement.isFinished && (
                   <span className="absolute top-0 right-0 transform translate-x-1/2 -translate-y-1/2 bg-red-500 text-white text-[10px] font-semibold rounded-full px-2 py-0.5">
                     NUEVO
