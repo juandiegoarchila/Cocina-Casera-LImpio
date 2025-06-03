@@ -1,10 +1,11 @@
 import React from 'react';
 
-const TimeSelector = ({ times, selectedTime, setSelectedTime, onNext }) => {
+const TimeSelector = ({ times, selectedTime, setSelectedTime, onConfirm }) => {
+  // Ya no es necesario manejar onKeyDown para avanzar, el avance es explícito con el botón Confirmar.
+  // La función onKeyDown se mantiene para evitar que Enter envíe el formulario si es un input de texto.
   const handleKeyDown = (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      onNext(); // Avanzar al siguiente paso
     }
   };
 
@@ -38,6 +39,14 @@ const TimeSelector = ({ times, selectedTime, setSelectedTime, onNext }) => {
           aria-label="Ingresar una hora personalizada"
         />
       </div>
+      <button
+        onClick={onConfirm}
+        disabled={!selectedTime}
+        className={`mt-2 bg-green-500 hover:bg-green-600 text-white px-2 xs:px-3 py-0.5 xs:py-1 rounded-lg text-[10px] xs:text-xs sm:text-sm transition-colors ${!selectedTime ? 'opacity-50 cursor-not-allowed' : ''}`}
+        aria-label="Confirmar hora"
+      >
+        Confirmar hora
+      </button>
     </div>
   );
 };

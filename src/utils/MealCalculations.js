@@ -1,10 +1,14 @@
 export const calculateMealPrice = (meal) => {
   if (!meal) return 0;
-  const hasSoupOrReplacement = meal?.soup?.name && meal.soup.name !== 'Sin sopa' && meal.soup.name !== 'Solo bandeja' || meal?.soupReplacement;
-  return hasSoupOrReplacement ? 13000 : 12000;
+  const hasMojarra = meal?.protein?.name === 'Mojarra';
+  const basePrice = hasMojarra ? 15000 : (meal?.soup?.name && meal.soup.name !== 'Sin sopa' && meal.soup.name !== 'Solo bandeja' || meal?.soupReplacement ? 13000 : 12000);
+  const additionsPrice = meal?.additions?.reduce((sum, item) => sum + (item.price || 0), 0) || 0;
+  return basePrice + additionsPrice;
 };
 
-export const calculateTotal = (meals) => meals.reduce((sum, meal) => sum + calculateMealPrice(meal), 0);
+export const calculateTotal = (meals) => {
+  return meals.reduce((sum, meal) => sum + calculateMealPrice(meal), 0);
+};
 
 export const paymentSummary = (meals) => {
   if (!meals || meals.length === 0) return {};

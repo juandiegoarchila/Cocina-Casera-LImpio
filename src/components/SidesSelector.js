@@ -1,21 +1,48 @@
-//src/components/sidesSelector.js
 import React, { useState } from 'react';
 
 const SidesSelector = ({ sides, selectedSides, setSelectedSides, notes, setNotes }) => {
   const [customSide, setCustomSide] = useState('');
 
-  const handleSideToggle = (side) => {
-    if (selectedSides.some(s => s.id === side.id)) {
-      setSelectedSides(selectedSides.filter(s => s.id !== side.id));
+  // Helper function to handle adding or increasing a side
+  const handleSideAdd = (side) => {
+    const existingSide = selectedSides.find(s => s.id === side.id);
+    if (existingSide) {
+      // Increase quantity if the side is already selected
+      const updatedSides = selectedSides.map(s =>
+        s.id === side.id ? { ...s, quantity: (s.quantity || 1) + 1 } : s
+      );
+      setSelectedSides(updatedSides);
     } else {
-      setSelectedSides([...selectedSides, side]);
+      // Add new side with quantity 1
+      setSelectedSides([...selectedSides, { ...side, quantity: 1 }]);
     }
   };
 
+  // Helper function to handle decreasing or removing a side
+  const handleSideRemove = (sideId) => {
+    const updatedSides = selectedSides
+      .map(side =>
+        side.id === sideId ? { ...side, quantity: (side.quantity || 1) - 1 } : side
+      )
+      .filter(side => side.quantity > 0); // Remove if quantity becomes 0
+    setSelectedSides(updatedSides);
+  };
+
+  // Helper function to add a custom side
   const addCustomSide = () => {
     if (customSide.trim()) {
-      const newSide = { id: `custom-${customSide}`, name: customSide };
-      setSelectedSides([...selectedSides, newSide]);
+      const newSide = { id: `custom-${customSide}`, name: customSide, quantity: 1 };
+      const existingCustomSide = selectedSides.find(s => s.id === newSide.id);
+      if (existingCustomSide) {
+        // Increase quantity if the custom side already exists
+        const updatedSides = selectedSides.map(s =>
+          s.id === newSide.id ? { ...s, quantity: (s.quantity || 1) + 1 } : s
+        );
+        setSelectedSides(updatedSides);
+      } else {
+        // Add new custom side
+        setSelectedSides([...selectedSides, newSide]);
+      }
       setCustomSide('');
     }
   };
@@ -27,15 +54,31 @@ const SidesSelector = ({ sides, selectedSides, setSelectedSides, notes, setNotes
       </h2>
       <div className="flex flex-col space-y-1 xs:space-y-2">
         {sides.map(side => (
-          <label key={side.id} className="flex items-center space-x-1 xs:space-x-2 text-[10px] xs:text-xs sm:text-sm">
-            <input
-              type="checkbox"
-              checked={selectedSides.some(s => s.id === side.id)}
-              onChange={() => handleSideToggle(side)}
-              className="h-3 xs:h-4 w-3 xs:w-4 text-green-600 border-gray-300 rounded focus:ring-green-400"
-            />
-            <span>{side.name}</span>
-          </label>
+          <div key={side.id} className="flex items-center justify-between text-[10px] xs:text-xs sm:text-sm">
+            <button
+              onClick={() => handleSideAdd(side)}
+              className="flex items-center space-x-1 xs:space-x-2 text-left hover:text-green-800 transition-colors"
+            >
+              <span>{side.name}</span>
+            </button>
+            {selectedSides.some(s => s.id === side.id) && (
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => handleSideRemove(side.id)}
+                  className="text-red-500 hover:text-red-700"
+                >
+                  <span role="img" aria-label="Remove">🗑️</span>
+                </button>
+                <span>{selectedSides.find(s => s.id === side.id).quantity || 1}</span>
+                <button
+                  onClick={() => handleSideAdd(side)}
+                  className="text-green-500 hover:text-green-700"
+                >
+                  <span role="img" aria-label="Add">➕</span>
+                </button>
+              </div>
+            )}
+          </div>
         ))}
         <div className="flex flex-col space-y-1 xs:space-y-2 mt-1 xs:mt-2">
           <input
