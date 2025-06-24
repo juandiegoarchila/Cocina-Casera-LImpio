@@ -1,7 +1,6 @@
-// App.js
-import { useState, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { db, auth } from './config/firebase';
-import { collection, onSnapshot, doc, addDoc, setDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, addDoc, setDoc, getDoc } from 'firebase/firestore';
 import { signInAnonymously } from 'firebase/auth';
 import useLocalStorage from './hooks/useLocalStorage';
 import Header from './components/Header';
@@ -16,6 +15,9 @@ import { initializeMealData, handleMealChange, addMeal, duplicateMeal, removeMea
 import { calculateMealPrice, calculateTotal, paymentSummary } from './utils/MealCalculations';
 import { isMobile, encodeMessage } from './utils/Helpers';
 import Footer from './components/Footer';
+import Modal from './components/Modal';
+import PrivacyPolicy from './components/PrivacyPolicy';
+
 
 const AdminPage = lazy(() => import('./components/Admin/AdminPage'));
 const Login = lazy(() => import('./components/Auth/Login'));
@@ -25,6 +27,11 @@ const App = () => {
   const { user, loading } = useAuth();
   const [meals, setMeals] = useState([]);
   const [address, setAddress] = useLocalStorage('userAddress', '');
+  const [phoneNumber, setPhoneNumber] = useLocalStorage('userPhoneNumber', '');
+  const [addressType, setAddressType] = useLocalStorage('userAddressType', 'house');
+  const [recipientName, setRecipientName] = useLocalStorage('userRecipientName', '');
+  const [unitDetails, setUnitDetails] = useLocalStorage('userUnitDetails', '');
+  const [localName, setLocalName] = useLocalStorage('userLocalName', '');
   const [errorMessage, setErrorMessage] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -40,6 +47,19 @@ const App = () => {
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [additions, setAdditions] = useState([]);
   const [isOrderingDisabled, setIsOrderingDisabled] = useState(false);
+  const [showCookieBanner, setShowCookieBanner] = useLocalStorage('cookieConsent', true);
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
+
+  const handleAcceptCookies = () => {
+    setShowCookieBanner(false);
+  };
+
+  useEffect(() => {
+    if (showCookieBanner) {
+      const timer = setTimeout(() => setShowCookieBanner(false), 10000);
+      return () => clearTimeout(timer);
+    }
+  }, [showCookieBanner]);
 
   useEffect(() => {
     if (errorMessage) {
@@ -55,6 +75,31 @@ const App = () => {
     }
   }, [successMessage]);
 
+  // OPTION 1: Initialize a meal with saved address details (Matches second image behavior)
+  // ESTE ES EL QUE DEBES COMENTAR, YA QUE CAUSA QUE LA LISTA NO SALGA VACÍA AL INICIO.
+  /*
+  useEffect(() => {
+    if (meals.length === 0) {
+      const initialMeal = initializeMealData({
+        address,
+        phoneNumber,
+        addressType,
+        recipientName,
+        unitDetails,
+        localName,
+      });
+      setMeals([initialMeal]);
+    }
+  }, [meals.length, address, phoneNumber, addressType, recipientName, unitDetails, localName]);
+  */
+
+  // OPTION 2: No automatic initialization (Matches first image behavior, manual addition)
+  // ESTE ES EL QUE DEBES TENER ACTIVO PARA QUE LA LISTA SIEMPRE SALGA VACÍA AL INICIO.
+  useEffect(() => {
+    // No automatic meal initialization; rely on manual addition via onAddMeal
+  }, []); // Dependencia vacía para que solo se ejecute una vez al montar
+
+  // Fetch menu options and global settings from Firebase
   useEffect(() => {
     const collections = ['soups', 'soupReplacements', 'principles', 'proteins', 'drinks', 'sides', 'times', 'paymentMethods', 'additions'];
     const setters = [setSoups, setSoupReplacements, setPrinciples, setProteins, setDrinks, setSides, setTimes, setPaymentMethods, setAdditions];
@@ -63,7 +108,9 @@ const App = () => {
       onSnapshot(collection(db, col), (snapshot) => {
         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         setters[index](data);
-        console.log(`Updated ${col}:`, data);
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`Updated ${col}:`, data);
+        }
         if (data.length === 0) {
           if (process.env.NODE_ENV !== 'production') {
             console.warn(`La colección ${col} está vacía. Agrega datos desde /admin.`);
@@ -74,8 +121,10 @@ const App = () => {
         }
         window.dispatchEvent(new Event('optionsUpdated'));
       }, (error) => {
-        console.error(`Error al escuchar ${col}:`, error);
-        setErrorMessage(process.env.NODE_ENV === 'production' 
+        if (process.env.NODE_ENV === 'development') {
+          console.error(`Error al escuchar ${col}:`, error);
+        }
+        setErrorMessage(process.env.NODE_ENV === 'production'
           ? 'No se pudieron cargar las opciones. Intenta de nuevo más tarde.'
           : `Error al cargar datos de ${col}. Revisa la consola para más detalles.`);
       })
@@ -89,7 +138,9 @@ const App = () => {
         setIsOrderingDisabled(false);
       }
     }, (error) => {
-      console.error('Error al escuchar settings/global:', error);
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Error al escuchar settings/global:', error);
+      }
       setErrorMessage('Error al cargar configuración. Intenta de nuevo más tarde.');
     });
 
@@ -107,18 +158,27 @@ const App = () => {
       if (!currentUser) {
         const userCredential = await signInAnonymously(auth);
         currentUser = userCredential.user;
-        console.log('Usuario anónimo creado:', currentUser.uid);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('Usuario anónimo creado:', currentUser.uid);
+        }
+      }
+
+      const userRef = doc(db, 'users', currentUser.uid);
+      const userDoc = await getDoc(userRef);
+      let currentRole = 1;
+
+      if (userDoc.exists()) {
+        currentRole = userDoc.data().role || 1;
       }
 
       const clientData = {
         email: currentUser.email || `anon_${currentUser.uid}@example.com`,
-        role: 1,
-        createdAt: new Date(),
+        role: currentRole,
         lastOrder: new Date(),
-        totalOrders: 1,
+        totalOrders: userDoc.exists() ? (userDoc.data().totalOrders || 0) + 1 : 1,
+        ...(userDoc.exists() ? {} : { createdAt: new Date() }),
       };
 
-      const userRef = doc(db, 'users', currentUser.uid);
       await setDoc(userRef, clientData, { merge: true });
 
       const order = {
@@ -133,7 +193,14 @@ const App = () => {
           drink: meal.drink?.name || '',
           sides: meal.sides?.map(side => side.name) || [],
           additions: meal.additions?.map(addition => ({ name: addition.name, protein: addition.protein || '' })) || [],
-          address: meal.address || '',
+          address: {
+            address: meal.address?.address || '',
+            phoneNumber: meal.address?.phoneNumber || '',
+            addressType: meal.address?.addressType || '',
+            recipientName: meal.address?.recipientName || '',
+            unitDetails: meal.address?.unitDetails || '',
+            localName: meal.address?.localName || '',
+          },
           payment: meal.payment?.name || '',
           time: meal.time?.name || '',
           notes: meal.notes || '',
@@ -149,14 +216,25 @@ const App = () => {
 
       setSuccessMessage('¡Pedido enviado y cliente registrado con éxito!');
     } catch (error) {
-      console.error('Error al registrar cliente o guardar pedido:', error);
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Error al registrar cliente o guardar pedido:', error);
+      }
       setErrorMessage('Error al procesar el pedido. Intenta de nuevo.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const initialMeal = initializeMealData(address);
+  // Esta `initialMeal` se usará solo cuando se haga clic en "Añadir un nuevo almuerzo".
+  // Su valor se basa en los estados `address`, `phoneNumber`, etc., que están sincronizados con `localStorage`.
+  const initialMeal = initializeMealData({
+    address,
+    phoneNumber,
+    addressType,
+    recipientName,
+    unitDetails,
+    localName,
+  });
   const total = calculateTotal(meals);
 
   const onSendOrder = () => {
@@ -188,14 +266,35 @@ const App = () => {
           <Route path="/admin/*" element={<AdminPage />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/" element={
-            <div className="min-h-screen bg-gray-50 flex flex-col">
+            <div className="min-h-screen bg-gray-50 flex flex-col relative">
               <Header />
-              <main role="main" className="p-2 sm:p-4 flex-grow w-full max-w-4xl mx-auto">
-                <div className="fixed top-14 right-2 sm:right-3 space-y-2 z-[9999]">
-                  {isLoading && <LoadingIndicator />}
-                  {errorMessage && <ErrorMessage message={errorMessage} />}
-                  {successMessage && <SuccessMessage message={successMessage} />}
+              {showCookieBanner && (
+                <div className="fixed bottom-0 left-0 right-0 bg-blue-100 text-gray-800 p-4 z-[10001] rounded-t-lg shadow-lg">
+                  <p className="text-sm font-medium">🍪 Usamos cookies para guardar tus preferencias y hacer tu experiencia más fácil. ¡Todo seguro!</p>
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      onClick={handleAcceptCookies}
+                      className="bg-green-500 hover:bg-green-600 text-white px-4 py-1 rounded text-sm font-semibold"
+                    >
+                      ¡Entendido!
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowCookieBanner(false);
+                        setShowPrivacyModal(true);
+                      }}
+                      className="bg-gray-300 hover:bg-gray-400 text-gray-800 px-4 py-1 rounded text-sm"
+                      aria-label="Ver política de privacidad"
+                    >
+                      Más info
+                    </button>
+                  </div>
                 </div>
+              )}
+              <Modal isOpen={showPrivacyModal} onClose={() => setShowPrivacyModal(false)}>
+                <PrivacyPolicy />
+              </Modal>
+              <main role="main" className="p-2 sm:p-4 flex-grow w-full max-w-4xl mx-auto">
                 {isOrderingDisabled ? (
                   <div className="text-center text-red-600 bg-red-50 p-3 sm:p-4 rounded-lg">
                     <p className="text-base sm:text-lg font-semibold">Pedidos cerrados hasta mañana</p>
@@ -219,6 +318,7 @@ const App = () => {
                       paymentMethods={paymentMethods}
                       onMealChange={(id, field, value) => handleMealChange(setMeals, id, field, value)}
                       onRemoveMeal={(id) => removeMeal(setMeals, setSuccessMessage, id, meals)}
+                      // Aquí se pasa initialMeal a addMeal para que el primer almuerzo tenga los datos guardados
                       onAddMeal={() => addMeal(setMeals, setSuccessMessage, meals, initialMeal)}
                       onDuplicateMeal={(meal) => duplicateMeal(setMeals, setSuccessMessage, meal, meals)}
                       incompleteMealIndex={incompleteMealIndex}
@@ -233,6 +333,34 @@ const App = () => {
                   </>
                 )}
               </main>
+              {/* Fixed message container with higher z-index and close buttons */}
+              <div className="fixed top-16 right-4 z-[10002] space-y-2 w-80 max-w-xs">
+                {isLoading && <LoadingIndicator />}
+                {errorMessage && (
+                  <div className="relative">
+                    <ErrorMessage message={errorMessage} />
+                    <button
+                      onClick={() => setErrorMessage(null)}
+                      className="absolute top-1 right-1 text-red-600 hover:text-red-800"
+                      aria-label="Cerrar mensaje de error"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+                {successMessage && (
+                  <div className="relative">
+                    <SuccessMessage message={successMessage} />
+                    <button
+                      onClick={() => setSuccessMessage(null)}
+                      className="absolute top-1 right-1 text-green-600 hover:text-green-800"
+                      aria-label="Cerrar mensaje de éxito"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+              </div>
               <Footer />
             </div>
           } />

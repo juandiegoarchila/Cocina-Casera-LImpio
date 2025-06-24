@@ -1,7 +1,7 @@
 {
       "scripts": {
             "start": "react-scripts start",
-            "build": "react-scripts build",
+            "build": "react-scripts build && terser build/static/js/*.js -o build/static/js/*.min.js",
             "test": "react-scripts test",
             "eject": "react-scripts eject"
       },
@@ -20,8 +20,10 @@
             "clsx": "^2.1.1",
             "eslint": "^9.25.1",
             "firebase": "^11.8.1",
+            "framer-motion": "^12.16.0",
             "glob": "^11.0.2",
             "inflight": "^1.0.6",
+            "lodash": "^4.17.21",
             "postcss": "^8.5.3",
             "react": "^18.0.0",
             "react-device-detect": "^2.2.3",
@@ -51,5 +53,10 @@
                   "last 1 firefox version",
                   "last 1 safari version"
             ]
+      },
+      "devDependencies": {
+            "source-map-explorer": "^2.5.3",
+            "terser": "^5.40.0",
+            "webpack-bundle-analyzer": "^4.10.2"
       }
 }

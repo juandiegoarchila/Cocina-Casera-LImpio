@@ -1,6 +1,6 @@
 import { isMobile, encodeMessage } from './Helpers';
 
-export const initializeMealData = (address) => ({
+export const initializeMealData = ({ address, phoneNumber, addressType, recipientName, unitDetails, localName }) => ({
   id: 0,
   soup: null,
   soupReplacement: null,
@@ -12,7 +12,14 @@ export const initializeMealData = (address) => ({
   additions: [],
   notes: '',
   time: null,
-  address,
+  address: {
+    address: address || '',
+    phoneNumber: phoneNumber || '',
+    addressType: addressType || 'house',
+    recipientName: recipientName || '',
+    unitDetails: unitDetails || '',
+    localName: localName || '',
+  },
   payment: null,
   cutlery: null,
 });
@@ -35,9 +42,15 @@ export const addMeal = (setMeals, setSuccessMessage, meals, initialMeal) => {
 };
 
 export const duplicateMeal = (setMeals, setSuccessMessage, mealToDuplicate, meals) => {
-  const newId = meals.length > 0 ? Math.max(...meals.map(meal => meal.id)) + 1 : 0;
   setSuccessMessage("Se ha duplicado el almuerzo.");
-  setMeals(prev => [...prev, { ...mealToDuplicate, id: newId }]);
+  setMeals((prev) => {
+    const newId = Math.max(...prev.map((meal) => meal.id), 0) + 1;
+    const newMeal = JSON.parse(JSON.stringify({
+      ...mealToDuplicate,
+      id: newId,
+    }));
+    return [...prev, newMeal];
+  });
 };
 
 export const removeMeal = (setMeals, setSuccessMessage, id, meals) => {
@@ -81,26 +94,33 @@ export const sendToWhatsApp = (
   calculateMealPrice,
   total
 ) => {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     setIsLoading(true);
     setErrorMessage(null);
     setSuccessMessage(null);
 
     const incompleteMeals = meals.map((meal, index) => {
       const missing = [];
-      const isCompleteRice = Array.isArray(meal?.principle) && 
+      const isCompleteRice = Array.isArray(meal?.principle) &&
         meal.principle.some(p => ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'].includes(p.name));
 
-      if (!meal?.soup || (meal.soup?.name === 'Sin sopa' && !meal?.soupReplacement)) missing.push('Sopa');
-      if (!meal?.principle || (meal.principle?.name === 'Sin principio' && !meal?.principleReplacement)) missing.push('Principio');
+      if (!meal?.soup && !meal?.soupReplacement) missing.push('Sopa o reemplazo de sopa');
+      if (!meal?.principle) missing.push('Principio');
       if (!isCompleteRice && !meal?.protein) missing.push('Proteína');
       if (!meal?.drink) missing.push('Bebida');
       if (!meal?.time) missing.push('Hora');
       if (!meal?.address?.address) missing.push('Dirección');
       if (!meal?.payment) missing.push('Método de pago');
       if (meal?.cutlery === null) missing.push('Cubiertos');
-      if (!isCompleteRice && meal?.sides?.length === 0) missing.push('Acompañamientos');
+      if (!isCompleteRice && (!meal?.sides || meal.sides.length === 0)) missing.push('Acompañamientos');
       if (meal?.address?.addressType === 'shop' && !meal?.address?.localName) missing.push('Nombre del local');
+
+      if (missing.length > 0) {
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`Meal ${index + 1} is incomplete. Missing fields:`, missing);
+          console.log(`Meal ${index + 1} data:`, meal);
+        }
+      }
 
       return { index, missing };
     }).filter(m => m.missing.length > 0);
@@ -108,21 +128,23 @@ export const sendToWhatsApp = (
     if (incompleteMeals.length > 0) {
       const firstIncomplete = incompleteMeals[0];
       const slideMap = {
-        'Sopa': 0,
+        'Sopa o reemplazo de sopa': 0,
         'Principio': 1,
-        'Proteína': 2,
+        'Proteína': null,
         'Bebida': 3,
-        'Acompañamientos': 8,
+        'Cubiertos': 4,
         'Hora': 5,
         'Dirección': 6,
         'Método de pago': 7,
-        'Cubiertos': 4,
+        'Acompañamientos': null,
         'Nombre del local': 6,
       };
       const firstMissingField = firstIncomplete.missing[0];
       setIncompleteMealIndex(firstIncomplete.index);
       setIncompleteSlideIndex(slideMap[firstMissingField] || 0);
-      setErrorMessage(`Por favor, completa el paso de ${firstMissingField} para el Almuerzo #${firstIncomplete.index + 1}.`);
+      setErrorMessage(
+        `Por favor, completa el campo "${firstMissingField}" para el Almuerzo #${firstIncomplete.index + 1}.`
+      );
       setTimeout(() => {
         const element = document.getElementById(`meal-item-${firstIncomplete.index}`);
         if (element) {
@@ -133,7 +155,7 @@ export const sendToWhatsApp = (
         }
       }, 100);
       setIsLoading(false);
-      reject('Incomplete meals');
+      resolve();
       return;
     }
 
@@ -159,237 +181,365 @@ export const sendToWhatsApp = (
   });
 };
 
+// Add export to cleanText
+export const cleanText = (text) => text?.replace(' NUEVO', '') || 'No seleccionado';
+
+// Add export to formatNotes
+export const formatNotes = (notes) => {
+  if (!notes) return '';
+  return notes
+    .split('. ')
+    .map(sentence => sentence.charAt(0).toUpperCase() + sentence.slice(1))
+    .join('. ');
+};
+
+// Add export to isValidTime
+export const isValidTime = (time) => time && time.name && time.name !== 'Lo antes posible';
+
+// Constants from OrderSummary.js
+const fieldsToCheck = ['Sopa', 'Principio', 'Proteína', 'Bebida', 'Cubiertos', 'Acompañamientos', 'Hora', 'Dirección', 'Pago', 'Adiciones'];
+const addressFields = ['address', 'addressType', 'recipientName', 'phoneNumber', 'unitDetails', 'localName'];
+const specialRiceOptions = ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'];
+
 export const generateMessageFromMeals = (meals, calculateMealPrice, total) => {
   let message = `👋 ¡Hola Cocina Casera! 🍴\nQuiero hacer mi pedido:\n\n`;
 
-  const groupedMeals = [];
-  const usedIndices = new Set();
-
-  for (let i = 0; i < meals.length; i++) {
-    if (usedIndices.has(i)) continue;
-
-    const meal1 = meals[i];
-    const group = { meals: [meal1], payments: new Set([meal1?.payment?.name]), originalIndices: [i], differences: [] };
-    usedIndices.add(i);
-
-    for (let j = i + 1; j < meals.length; j++) {
-      if (usedIndices.has(j)) continue;
-
-      const meal2 = meals[j];
-      const differences = [];
-
-      if (meal1.soup?.name !== meal2.soup?.name || meal1.soupReplacement?.name !== meal2.soupReplacement?.name) {
-        differences.push({ 
-          field: 'Sopa', 
-          value1: meal1.soup?.name || 'Sin sopa', 
-          value2: meal2.soup?.name || 'Sin sopa', 
-          replacement1: meal1.soupReplacement?.name, 
-          replacement2: meal2.soupReplacement?.name 
-        });
-      }
-      if (JSON.stringify(meal1.principle?.map(p => p.name).sort()) !== JSON.stringify(meal2.principle?.map(p => p.name).sort()) || meal1.principleReplacement?.name !== meal2.principleReplacement?.name) {
-        differences.push({
-          field: 'Principio',
-          value1: meal1.principle?.map(p => p.name).join(', ') || 'Sin principio',
-          value2: meal2.principle?.map(p => p.name).join(', ') || 'Sin principio',
-          replacement1: meal1.principleReplacement?.name,
-          replacement2: meal2.principleReplacement?.name
-        });
-      }
-      if (meal1.protein?.name !== meal2.protein?.name) differences.push({ field: 'Proteína', value1: meal1.protein?.name, value2: meal2.protein?.name });
-      if (meal1.drink?.name !== meal2.drink?.name) differences.push({ field: 'Bebida', value1: meal1.drink?.name, value2: meal2.drink?.name });
-      if (JSON.stringify(meal1.sides?.map(s => s.name).sort()) !== JSON.stringify(meal2.sides?.map(s => s.name).sort())) differences.push({ field: 'Acompañamientos', value1: meal1.sides?.map(s => s.name).join(', '), value2: meal2.sides?.map(s => s.name).join(', ') });
-      if (
-        JSON.stringify(meal1.additions?.map((a) => a.name).sort()) !== JSON.stringify(meal2.additions?.map((a) => a.name).sort()) ||
-        JSON.stringify(meal1.additions?.map((a) => a.protein || a.replacement).sort()) !== JSON.stringify(meal2.additions?.map((a) => a.protein || a.replacement).sort())
-      ) {
-        differences.push({ 
-          field: 'Adiciones', 
-          value1: meal1.additions?.map((a) => `${a.name}${a.protein || a.replacement ? ` (${a.protein || a.replacement})` : ''}`).join(', ') || 'Ninguna', 
-          value2: meal2.additions?.map((a) => `${a.name}${a.protein || a.replacement ? ` (${a.protein || a.replacement})` : ''}`).join(', ') || 'Ninguna' 
-        });
-      }
-      if (meal1.notes !== meal2.notes) differences.push({ field: 'Notas', value1: meal1.notes || 'Ninguna', value2: meal2.notes || 'Ninguna' });
-      if (meal1.time?.name !== meal2.time?.name) differences.push({ field: 'Entrega', value1: meal1.time?.name || 'Lo más pronto posible', value2: meal2.time?.name || 'Lo más pronto posible' });
-      if (meal1.address?.address !== meal2.address?.address) differences.push({ field: 'Dirección', value1: meal1.address?.address, value2: meal2.address?.address });
-      if (meal1.payment?.name !== meal2.payment?.name) differences.push({ field: 'Pago', value1: meal1.payment?.name || 'No especificado', value2: meal2.payment?.name || 'No especificado' });
-      if (meal1.cutlery !== meal2.cutlery) differences.push({ field: 'Cubiertos', value1: meal1.cutlery ? 'Sí' : 'No', value2: meal2.cutlery ? 'Sí' : 'No' });
-
-      if (differences.length <= 3) {
-        group.meals.push(meal2);
-        group.differences.push({ mealIndex: group.meals.length - 1, diffs: differences, originalIndex: j });
-        if (meal2?.payment?.name) group.payments.add(meal2.payment.name);
-        usedIndices.add(j);
-        group.originalIndices.push(j);
-      }
-    }
-    groupedMeals.push(group);
+  // Si no hay comidas, retorna mensaje básico
+  if (!meals || meals.length === 0) {
+    message += `🍽 0 almuerzos en total\n💰 Total: $0\n¡Gracias por tu pedido! 😊`;
+    return message;
   }
 
+  // Lógica de agrupación basada en useOrderSummary
+  const getFieldValue = (meal, field) => {
+    if (!meal) return '';
+    if (field === 'Sopa') {
+      if (meal.soup?.name === 'Solo bandeja') return 'solo bandeja';
+      if (meal.soupReplacement?.name) return JSON.stringify({ name: cleanText(meal.soupReplacement.name), type: 'por sopa' });
+      if (meal.soup?.name && meal.soup.name !== 'Sin sopa') return cleanText(meal.soup.name);
+      return 'Sin sopa';
+    } else if (field === 'Principio') {
+      const principleNames = meal.principle?.map(p => cleanText(p.name)).sort() || [];
+      const replacement = meal.principleReplacement?.name ? cleanText(meal.principleReplacement.name) : '';
+      return JSON.stringify([principleNames.join(','), replacement]);
+    } else if (field === 'Proteína') {
+      return cleanText(meal.protein?.name || 'Sin proteína');
+    } else if (field === 'Bebida') {
+      return cleanText(meal.drink?.name || 'Sin bebida');
+    } else if (field === 'Cubiertos') {
+      return meal.cutlery ? 'Sí' : 'No';
+    } else if (field === 'Acompañamientos') {
+      return JSON.stringify(meal.sides?.map(s => cleanText(s.name)).sort() || []);
+    } else if (field === 'Hora') {
+      return meal.time?.name || 'No especificada';
+    } else if (field === 'Dirección') {
+      return JSON.stringify(addressFields.map(f => meal.address?.[f] || ''));
+    } else if (field === 'Pago') {
+      return meal.payment?.name || 'No especificado';
+    } else if (field === 'Adiciones') {
+      return JSON.stringify(
+        meal.additions?.map(a => ({
+          name: cleanText(a.name),
+          protein: a.protein || '',
+          replacement: a.replacement || '',
+          quantity: a.quantity || 1,
+        })).sort((a, b) => a.name.localeCompare(b.name)) || []
+      );
+    }
+    return '';
+  };
+
+  const mealGroups = new Map();
+  meals.forEach((meal, index) => {
+    let assigned = false;
+    for (let [, groupData] of mealGroups) {
+      const refMeal = groupData.meals[0];
+      let differences = 0;
+      fieldsToCheck.forEach(field => {
+        if (getFieldValue(meal, field) !== getFieldValue(refMeal, field)) {
+          differences++;
+        }
+      });
+      if (differences <= 3) {
+        groupData.meals.push(meal);
+        groupData.indices.push(index);
+        if (meal.payment?.name) groupData.payments.add(meal.payment.name);
+        assigned = true;
+        break;
+      }
+    }
+    if (!assigned) {
+      const key = `${index}|${fieldsToCheck.map(field => getFieldValue(meal, field)).join('|')}`;
+      mealGroups.set(key, {
+        meals: [meal],
+        indices: [index],
+        payments: new Set(meal.payment?.name ? [meal.payment.name] : []),
+      });
+    }
+  });
+
+  const groupedMeals = Array.from(mealGroups.values()).map(groupData => {
+    const group = {
+      meals: groupData.meals,
+      payments: groupData.payments,
+      originalIndices: groupData.indices,
+    };
+    group.commonFieldsInGroup = new Set(fieldsToCheck.filter(field => {
+      const firstValue = getFieldValue(group.meals[0], field);
+      return group.meals.every(meal => getFieldValue(meal, field) === firstValue);
+    }));
+    group.commonAddressFieldsInGroup = {};
+    addressFields.forEach(field => {
+      group.commonAddressFieldsInGroup[field] = group.meals.every(meal => meal.address?.[field] === group.meals[0].address?.[field])
+        ? group.meals[0].address?.[field]
+        : null;
+    });
+    const identicalGroups = new Map();
+    group.meals.forEach((meal, idx) => {
+      const key = fieldsToCheck.map(field => getFieldValue(meal, field)).join('|');
+      if (!identicalGroups.has(key)) {
+        identicalGroups.set(key, { meals: [], indices: [] });
+      }
+      identicalGroups.get(key).meals.push(meal);
+      identicalGroups.get(key).indices.push(groupData.indices[idx]);
+    });
+    group.identicalGroups = Array.from(identicalGroups.values());
+    return group;
+  });
+
+  const firstMeal = meals[0];
+  const commonDeliveryTime = meals.every(meal => meal.time?.name === firstMeal?.time?.name) ? firstMeal?.time?.name : null;
+  const commonAddressFields = {};
+  addressFields.forEach(field => {
+    const isCommon = meals.every(meal => meal.address?.[field] === firstMeal?.address?.[field]);
+    commonAddressFields[field] = isCommon ? firstMeal?.address?.[field] : null;
+  });
+
+  // Encabezado
   const totalMeals = meals.length;
-  const identicalGroups = groupedMeals.filter(group => group.meals.length > 1);
-
   message += `🍽 ${totalMeals} almuerzos en total\n`;
-  if (identicalGroups.length > 0) identicalGroups.forEach(group => message += `• ${group.meals.length} almuerzos iguales\n`);
+  groupedMeals.forEach(group => {
+    if (group.meals.length > 1) {
+      message += `* ${group.meals.length} almuerzos iguales\n`;
+    }
+  });
   message += `💰 Total: $${total.toLocaleString('es-CO')}\n`;
+  message += `───────────────\n`;
 
+  // Detalle de almuerzos
   groupedMeals.forEach((group, index) => {
     const baseMeal = group.meals[0];
     const count = group.meals.length;
     const totalPrice = group.meals.reduce((sum, m) => sum + calculateMealPrice(m), 0);
     const paymentNames = Array.from(group.payments).filter(name => name && name !== 'No especificado');
     const paymentText = paymentNames.length > 0 ? `(${paymentNames.join(' y ')})` : '(No especificado)';
-    const drinkName = baseMeal?.drink?.name === 'Juego de mango' ? 'Jugo de mango' : baseMeal?.drink?.name || 'No seleccionado';
-    const timeName = isValidTime(baseMeal.time) ? baseMeal.time.name : 'Lo más pronto posible';
-    const note = formatNotes(baseMeal.notes);
+    const hasSpecialRice = baseMeal?.principle?.some(p => specialRiceOptions.includes(p.name));
 
-    message += `────────────────\n`;
-    message += count > 1 ? `🍽 ${count} Almuerzos iguales – $${totalPrice.toLocaleString('es-CO')} ${paymentText}\n\n` : `🍽 ${count} Almuerzo – $${totalPrice.toLocaleString('es-CO')} ${paymentText}\n\n`;
+    message += `🍽 ${count === 1 ? '1 Almuerzo' : `${count} Almuerzos iguales`} – $${totalPrice.toLocaleString('es-CO')} ${paymentText}\n`;
 
-    const hasSoupDifferences = group.differences.some(d => d.diffs.some(diff => diff.field === 'Sopa'));
-    const hasPrincipleDifferences = group.differences.some(d => d.diffs.some(diff => diff.field === 'Principio'));
-    const hasProteinDifferences = group.differences.some(d => d.diffs.some(diff => diff.field === 'Proteína'));
-    const hasDrinkDifferences = group.differences.some(d => d.diffs.some(diff => diff.field === 'Bebida'));
-    const hasSidesDifferences = group.differences.some(d => d.diffs.some(diff => diff.field === 'Acompañamientos'));
-    const hasAdditionsDifferences = group.differences.some(d => d.diffs.some(diff => diff.field === 'Adiciones'));
-    const hasNotesDifferences = group.differences.some(d => d.diffs.some(diff => diff.field === 'Notas'));
-    const hasTimeDifferences = group.differences.some(d => d.diffs.some(diff => diff.field === 'Entrega'));
-    const hasAddressDifferences = group.differences.some(d => d.diffs.some(diff => diff.field === 'Dirección'));
-    const hasPaymentDifferences = group.differences.some(d => d.diffs.some(diff => diff.field === 'Pago'));
-    const hasCutleryDifferences = group.differences.some(d => d.diffs.some(diff => diff.field === 'Cubiertos'));
+    // Mostrar todos los campos para un solo almuerzo, o solo campos comunes para múltiples almuerzos
+    if (count === 1) {
+      // Sopa
+      const soupValue = baseMeal.soup?.name === 'Solo bandeja' ? 'solo bandeja' :
+        baseMeal.soupReplacement?.name ? `${cleanText(baseMeal.soupReplacement.name)} (por sopa)` :
+        baseMeal.soup?.name && baseMeal.soup.name !== 'Sin sopa' ? cleanText(baseMeal.soup.name) : 'Sin sopa';
+      message += `${soupValue}\n`;
 
-    // 1. Sopa
-    if (!hasSoupDifferences) {
-      if (baseMeal?.soupReplacement?.name) message += `${baseMeal.soupReplacement.name} (por sopa)\n`;
-      else if (baseMeal?.soup?.name && baseMeal.soup.name !== 'Sin sopa' && baseMeal.soup.name !== 'Solo bandeja') message += `${baseMeal.soup.name}\n`;
-      else if (baseMeal?.soup?.name === 'Solo bandeja') message += `solo bandeja\n`;
-      else message += `Sin sopa\n`;
-    }
+      // Principio
+      const principleValue = baseMeal.principleReplacement?.name
+        ? `${cleanText(baseMeal.principleReplacement.name)} (por principio)`
+        : baseMeal.principle?.length > 0
+        ? `${baseMeal.principle.map(p => cleanText(p.name)).join(', ')}${baseMeal.principle.length > 1 ? ' (mixto)' : ''}`
+        : 'Sin principio';
+      message += `${principleValue}\n`;
 
-    // 2. Principio
-    if (!hasPrincipleDifferences) {
-      if (baseMeal?.principle?.length > 0) {
-        if (baseMeal?.principleReplacement?.name) {
-          message += `${baseMeal.principleReplacement.name} (por principio)\n`;
-        } else {
-          const principles = baseMeal.principle.map(p => p.name).join(' y ');
-          const isMix = baseMeal.principle.length > 1;
-          message += `${principles}${isMix ? ' (mixto)' : ''}\n`;
-        }
-      } else {
-        message += `Sin principio\n`;
+      // Proteína
+      if (!hasSpecialRice && baseMeal.protein?.name) {
+        message += `${cleanText(baseMeal.protein.name)}\n`;
+      }
+
+      // Bebida
+      const drinkValue = baseMeal.drink?.name === 'Juego de mango' ? 'Jugo de mango' : cleanText(baseMeal.drink?.name || 'Sin bebida');
+      message += `${drinkValue}\n`;
+
+      // Cubiertos
+      message += `Cubiertos: ${baseMeal.cutlery ? 'Sí' : 'No'}\n`;
+
+      // Acompañamientos
+      message += `Acompañamientos: ${hasSpecialRice ? 'Ya incluidos' : baseMeal.sides?.length > 0 ? baseMeal.sides.map(s => cleanText(s.name)).join(', ') : 'Sin acompañamientos'}\n`;
+
+      // Notas
+      const notesValue = formatNotes(baseMeal.notes) || 'Ninguna';
+      message += `Notas: ${notesValue}\n`;
+    } else {
+      // Mostrar campos comunes para múltiples almuerzos
+      if (group.commonFieldsInGroup.has('Sopa')) {
+        const soupValue = baseMeal.soup?.name === 'Solo bandeja' ? 'solo bandeja' :
+          baseMeal.soupReplacement?.name ? `${cleanText(baseMeal.soupReplacement.name)} (por sopa)` :
+          baseMeal.soup?.name && baseMeal.soup.name !== 'Sin sopa' ? cleanText(baseMeal.soup.name) : 'Sin sopa';
+        message += `${soupValue}\n`;
+      }
+      if (group.commonFieldsInGroup.has('Principio')) {
+        const principleValue = baseMeal.principleReplacement?.name
+          ? `${cleanText(baseMeal.principleReplacement.name)} (por principio)`
+          : baseMeal.principle?.length > 0
+          ? `${baseMeal.principle.map(p => cleanText(p.name)).join(', ')}${baseMeal.principle.length > 1 ? ' (mixto)' : ''}`
+          : 'Sin principio';
+        message += `${principleValue}\n`;
+      }
+      if (group.commonFieldsInGroup.has('Proteína') && !hasSpecialRice) {
+        message += `${cleanText(baseMeal.protein?.name || 'Sin proteína')}\n`;
+      }
+      if (group.commonFieldsInGroup.has('Cubiertos')) {
+        message += `Cubiertos: ${baseMeal.cutlery ? 'Sí' : 'No'}\n`;
+      }
+      if (group.commonFieldsInGroup.has('Acompañamientos')) {
+        message += `Acompañamientos: ${hasSpecialRice ? 'Ya incluidos' : baseMeal.sides?.length > 0 ? baseMeal.sides.map(s => cleanText(s.name)).join(', ') : 'Sin acompañamientos'}\n`;
+      }
+      if (group.commonFieldsInGroup.has('Bebida')) {
+        const commonDrink = baseMeal.drink?.name === 'Juego de mango' ? 'Jugo de mango' : cleanText(baseMeal.drink?.name || 'Sin bebida');
+        message += `${commonDrink}\n`;
       }
     }
 
-    // 3. Proteína
-    const isSpecialRice = baseMeal?.principle?.some(p => ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'].includes(p.name));
-    if (!isSpecialRice && !hasProteinDifferences && baseMeal?.protein?.name) {
-      message += `${baseMeal.protein.name}\n`;
-    } else if (!hasProteinDifferences && !baseMeal?.protein?.name && !isSpecialRice) {
-      message += `Sin proteína\n`;
-    }
+    message += `───────────────\n`;
 
-    // 4. Bebida
-    if (!hasDrinkDifferences) message += `${drinkName}\n`;
-
-    // 5. Cubiertos
-    if (!hasCutleryDifferences) message += `Cubiertos: ${baseMeal?.cutlery ? 'Sí' : 'No'}\n`;
-
-    // 9. Acompañamientos
-    if (!hasSidesDifferences && baseMeal?.sides?.length > 0) message += `${baseMeal.sides.map(s => s.name).join(', ')}\n`;
-    else if (!hasSidesDifferences && !isSpecialRice) message += `Sin acompañamientos\n`;
-
-    // 10. Adiciones opcionales
-    if (!hasAdditionsDifferences && baseMeal?.additions?.length > 0) {
-      message += `➕ Adiciones:\n`;
-      baseMeal.additions.forEach(a => {
-        message += `- ${a.name}${a.protein || a.replacement ? ` (${a.protein || a.replacement})` : ''} (${a.quantity || 1})\n`;
-      });
-    }
-
-    // Notes (not part of the 10 options but required in the message)
-    if (!hasNotesDifferences) message += `${note}\n`;
-
-    // Differences Section (moved here, after Adiciones and Notes, before Entrega)
-    if (group.differences.length > 0 && group.differences.some(d => d.diffs.length > 0)) {
-      message += `\n🔄 Diferencias:\n`;
-      const diffOrder = ['Sopa', 'Principio', 'Proteína', 'Bebida', 'Cubiertos', 'Entrega', 'Dirección', 'Pago', 'Acompañamientos', 'Adiciones', 'Notas'];
-      group.differences.forEach(diff => {
-        message += `* Almuerzo ${diff.originalIndex + 1}:\n`;
-        diff.diffs
-          .sort((a, b) => diffOrder.indexOf(a.field) - diffOrder.indexOf(b.field))
-          .forEach(d => {
-            let formattedValue;
-            if (d.field === 'Sopa') {
-              formattedValue = d.value2 === 'Sin sopa' && d.replacement2 ? `${d.replacement2} (por sopa)` : `${d.value2 || 'Sin sopa'}`;
-            } else if (d.field === 'Principio') {
-              formattedValue = d.value2 === 'Sin principio' && d.replacement2 ? `${d.replacement2} (por principio)` : `${d.value2 || 'Sin principio'}`;
-            } else if (d.field === 'Proteína') {
-              formattedValue = `${d.value2 || 'Sin proteína'}`;
-            } else if (d.field === 'Bebida') {
-              formattedValue = `${d.value2 || 'Sin bebida'}`;
-            } else if (d.field === 'Cubiertos') {
-              formattedValue = `Cubiertos: ${d.value2}`;
-            } else if (d.field === 'Entrega') {
-              formattedValue = `🕒 Entrega: ${d.value2}`;
-            } else if (d.field === 'Dirección') {
-              formattedValue = `📍 Dirección: ${d.value2 || 'No especificada'}`;
-            } else if (d.field === 'Pago') {
-              formattedValue = d.value2 !== 'No especificado' ? `${d.value2} = ${calculateMealPrice(meals[diff.originalIndex]).toLocaleString('es-CO')}` : 'No especificado';
-            } else if (d.field === 'Acompañamientos') {
-              formattedValue = `${d.value2 || 'Sin acompañamientos'}`;
-            } else if (d.field === 'Adiciones') {
-              formattedValue = `➕ Adiciones: ${d.value2 || 'Ninguna'}`;
-            } else if (d.field === 'Notas') {
-              formattedValue = `${d.value2 || 'Ninguna'}`;
-            } else {
-              formattedValue = `${d.value2 || 'Ninguno'}`;
-            }
+    // Mostrar diferencias solo si hay múltiples almuerzos y diferencias
+    const hasDifferences = count > 1 && (group.identicalGroups.length > 1 || group.identicalGroups.some(ig => ig.meals.length < group.meals.length));
+    if (hasDifferences) {
+      message += `🔄 Diferencias:\n`;
+      group.identicalGroups.forEach((identicalGroup, igIndex) => {
+        const indices = identicalGroup.indices.map(i => i + 1).sort((a, b) => a - b);
+        const indicesText = indices.length > 1
+          ? `*Almuerzos ${indices.slice(0, -1).join(', ')}${indices.length > 2 ? ',' : ''} y ${indices[indices.length - 1]}*`
+          : `*Almuerzo ${indices[0]}*`;
+        message += `${indicesText}:\n`;
+        const meal = identicalGroup.meals[0];
+        const mealHasSpecialRice = meal?.principle?.some(p => specialRiceOptions.includes(p.name));
+        fieldsToCheck.forEach((field) => {
+          if (group.commonFieldsInGroup.has(field) && getFieldValue(meal, field) === getFieldValue(baseMeal, field)) return;
+          let formattedValue;
+          if (field === 'Sopa') {
+            formattedValue = meal.soup?.name === 'Solo bandeja' ? 'solo bandeja' :
+              meal.soupReplacement?.name ? `${cleanText(meal.soupReplacement.name)} (por sopa)` :
+              meal.soup?.name && meal.soup.name !== 'Sin sopa' ? cleanText(meal.soup.name) : 'Sin sopa';
+          } else if (field === 'Principio') {
+            formattedValue = meal.principleReplacement?.name
+              ? `${cleanText(meal.principleReplacement.name)} (por principio)`
+              : `${meal.principle?.map(p => cleanText(p.name)).join(', ') || 'Sin principio'}${meal.principle?.length > 1 ? ' (mixto)' : ''}`;
+          } else if (field === 'Proteína') {
+            formattedValue = mealHasSpecialRice ? 'Proteína: Ya incluida en el arroz' : cleanText(meal.protein?.name || (meal.protein === null ? 'Sin proteína' : meal.protein.name));
+          } else if (field === 'Bebida') {
+            formattedValue = meal.drink?.name === 'Juego de mango' ? 'Jugo de mango' : cleanText(meal.drink?.name || 'Sin bebida');
+          } else if (field === 'Cubiertos') {
+            formattedValue = `Cubiertos: ${meal.cutlery ? 'Sí' : 'No'}`;
+          } else if (field === 'Acompañamientos') {
+            formattedValue = mealHasSpecialRice ? 'Acompañamientos: Ya incluidos' : `Acompañamientos: ${meal.sides?.length > 0 ? meal.sides.map(s => cleanText(s.name)).join(', ') : 'Ninguno'}`;
+          } else if (field === 'Hora') {
+            formattedValue = isValidTime(meal.time) ? cleanText(meal.time.name) : 'Lo más rápido';
+          } else if (field === 'Pago') {
+            formattedValue = cleanText(meal.payment?.name || 'No especificado');
+          } else if (field === 'Notas') {
+            formattedValue = `Notas: ${formatNotes(meal.notes) || 'Ninguna'}`;
+          } else if (field === 'Dirección') {
+            const addressLines = [];
+            addressFields.forEach((addrField) => {
+              if (group.commonAddressFieldsInGroup[addrField]) return; // No mostrar si es común en el grupo
+              const value = meal.address?.[addrField];
+              const addrType = meal.address?.addressType || '';
+              if (addrField === 'address' && value) {
+                addressLines.push(`📍 Dirección: ${value}`);
+              } else if (addrField === 'addressType' && value) {
+                addressLines.push(`🏠 Lugar de entrega: ${
+                  value === 'house' ? 'Casa/Apartamento Individual' :
+                  value === 'school' ? 'Colegio/Oficina' :
+                  value === 'complex' ? 'Conjunto Residencial' :
+                  value === 'shop' ? 'Tienda/Local' : 'No especificado'
+                }`);
+              } else if (addrField === 'recipientName' && addrType === 'school' && value) {
+                addressLines.push(`👤 Nombre del destinatario: ${value}`);
+              } else if (addrField === 'phoneNumber' && value) {
+                addressLines.push(`📞 Teléfono: ${value}`);
+              } else if (addrField === 'unitDetails' && addrType === 'complex' && value) {
+                addressLines.push(`🏢 Detalles: ${value}`);
+              } else if (addrField === 'localName' && addrType === 'shop' && value) {
+                addressLines.push(`🏬 Nombre del local: ${value}`);
+              }
+            });
+            formattedValue = addressLines.join('\n');
+          }
+          if (formattedValue && (getFieldValue(meal, field) !== getFieldValue(baseMeal, field) || !group.commonFieldsInGroup.has(field))) {
             message += `${formattedValue}\n`;
-          });
+          }
+        });
       });
     }
 
-    // 6. Entrega
-    if (!hasTimeDifferences) message += `\n🕒 Entrega: ${timeName}\n`;
-
-    // 7. Dirección
-    if (!hasAddressDifferences) {
-      message += `📍 Dirección: ${baseMeal?.address?.address || 'No especificada'}\n`;
-      if (baseMeal?.address?.addressType) {
-        message += `🏠 Lugar de entrega: ${
-          baseMeal.address.addressType === 'house' ? 'Casa/Apartamento Individual' :
-          baseMeal.address.addressType === 'school' ? 'Colegio/Oficina' :
-          baseMeal.address.addressType === 'complex' ? 'Conjunto Residencial' :
-          'Tienda/Local'
-        }\n`;
+    // Detalles de entrega
+    if (commonDeliveryTime || Object.keys(commonAddressFields).some(field => commonAddressFields[field])) {
+      message += `───────────────\n`;
+      if (commonDeliveryTime) {
+        message += `🕒 Entrega: ${isValidTime(firstMeal.time) ? cleanText(firstMeal.time.name) : 'Lo más rápido'}\n`;
       }
-      if (baseMeal?.address?.recipientName) message += `👤 Receptor: ${baseMeal.address.recipientName}\n`;
-      if (baseMeal?.address?.unitDetails) message += `🏢 Detalles: ${baseMeal.address.unitDetails}\n`;
-      if (baseMeal?.address?.localName) message += `🏬 Nombre del local: ${baseMeal.address.localName}\n`;
-      if (baseMeal?.address?.phoneNumber) message += `📞 Teléfono: ${baseMeal.address.phoneNumber}\n`;
+      addressFields.forEach((addrField) => {
+        if (commonAddressFields[addrField]) {
+          const value = commonAddressFields[addrField];
+          const addrType = commonAddressFields.addressType || '';
+          if (addrField === 'address' && value) {
+            message += `📍 Dirección: ${value}\n`;
+          } else if (addrField === 'addressType' && value) {
+            message += `🏠 Lugar de entrega: ${
+              value === 'house' ? 'Casa/Apartamento Individual' :
+              value === 'school' ? 'Colegio/Oficina' :
+              value === 'complex' ? 'Conjunto Residencial' :
+              value === 'shop' ? 'Tienda/Local' : 'No especificado'
+            }\n`;
+          } else if (addrField === 'recipientName' && addrType === 'school' && value) {
+            message += `👤 Nombre del destinatario: ${value}\n`;
+          } else if (addrField === 'phoneNumber' && value) {
+            message += `📞 Teléfono: ${value}\n`;
+          } else if (addrField === 'unitDetails' && addrType === 'complex' && value) {
+            message += `🏢 Detalles: ${value}\n`;
+          } else if (addrField === 'localName' && addrType === 'shop' && value) {
+            message += `🏬 Nombre del local: ${value}\n`;
+          }
+        }
+      });
+      message += `───────────────\n`;
     }
   });
 
-  // 8. Método de pago (for all meals)
-  message += `\n💳 Instrucciones de pago:\nEnvía al número 313 850 5647 (Nequi o DaviPlata):\n`;
-  Object.entries(paymentSummary(meals)).forEach(([method, amount]) => {
-    if (method !== 'No especificado' && amount > 0) {
-      message += `🔹 ${method}: $${amount.toLocaleString('es-CO')}\n`;
-    }
+  // Resumen de pagos
+  const paymentSummaryMap = paymentSummary(meals);
+  console.log('paymentSummaryMap:', paymentSummaryMap);
+  const allCashOrUnspecified = Object.keys(paymentSummaryMap).every(method => {
+    console.log('Checking method:', method);
+    return method === 'Efectivo' || method === 'No especificado';
   });
+  console.log('allCashOrUnspecified:', allCashOrUnspecified);
+  console.log('Total before payment summary:', total);
 
-  message += `\n💰 Total: $${total.toLocaleString('es-CO')}\n`;
-  message += `🕐 Entrega estimada: 20–30 minutos. Si estás cerca del local, será aún más rápido.\n`;
+  if (Object.keys(paymentSummaryMap).length > 0) {
+    if (allCashOrUnspecified) {
+      message += `Paga en efectivo al momento de la entrega.\n`;
+      message += `💵 Efectivo: $${(total || 0).toLocaleString('es-CO')}\n`;
+      message += `Si no tienes efectivo, puedes transferir por Nequi o DaviPlata al número: 313 850 5647.\n\n`;
+      message += `💰 Total: $${(total || 0).toLocaleString('es-CO')}\n`;
+      message += `🚚 Estimado: 25-30 min (10-15 si están cerca).\n`;
+    } else {
+      message += `💳 Instrucciones de pago:\n`;
+      message += `Envía al número 313 850 5647 (Nequi o DaviPlata):\n`;
+      Object.entries(paymentSummaryMap).forEach(([method, amount]) => {
+        if (method !== 'No especificado' && amount > 0) {
+          message += `🔹 ${method}: $${(amount || 0).toLocaleString('es-CO')}\n`;
+        }
+      });
+      message += `\n💰 Total: $${(total || 0).toLocaleString('es-CO')}\n`;
+      message += `🚚 Estimado: 25-30 min (10-15 si están cerca).\n`;
+    }
+  }
+
+  message += `\n¡Gracias por tu pedido! 😊`;
 
   return message;
-};
-
-export const isValidTime = (time) => time && time.name && time.name !== 'Lo más pronto posible';
-
-export const isValidNote = (note) => note && note.trim().length > 0;
-
-export const formatNotes = (notes) => {
-  if (!isValidNote(notes)) return 'Ninguna';
-  return notes.trim();
 };

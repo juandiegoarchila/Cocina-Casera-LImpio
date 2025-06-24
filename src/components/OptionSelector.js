@@ -29,9 +29,11 @@ const OptionSelector = ({
   const [showWarning, setShowWarning] = useState(false);
 
   // Initialize pendingSelection with the current selections
-  useEffect(() => {
+useEffect(() => {
     setPendingSelection(multiple ? (Array.isArray(selected) ? selected : []) : selected);
-    console.log('[OptionSelector] Initialized pendingSelection:', multiple ? (Array.isArray(selected) ? selected : []) : selected);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[OptionSelector] Initialized pendingSelection:', multiple ? (Array.isArray(selected) ? selected : []) : selected);
+    }
   }, [selected, multiple]);
 
   // Update showReplacement based on selection
@@ -55,20 +57,25 @@ const OptionSelector = ({
     } else if (title === 'Principio') {
       shouldShow = (multiple && Array.isArray(pendingSelection) && pendingSelection.some((opt) => opt.name === 'Remplazo por Principio')) ||
                    (!multiple && pendingSelection?.name === 'Remplazo por Principio');
-    }
-    setShowReplacement(shouldShow);
-    console.log(
-      '[OptionSelector] showReplacement updated:',
-      shouldShow,
-      'for pendingSelection:',
-      pendingSelection,
-      'replacements:',
-      replacements,
-      'title:',
-      title
-    );
-  }, [propShowReplacements, pendingSelection, title, replacements, currentConfiguring, multiple]);
+  }
+}, [propShowReplacements, pendingSelection, title, replacements, currentConfiguring, multiple]);
 
+useEffect(() => {
+    const shouldShow = propShowReplacements && Array.isArray(replacements) && replacements.length > 0;
+    setShowReplacement(shouldShow);
+    if (process.env.NODE_ENV === 'development') {
+      console.log(
+        '[OptionSelector] showReplacement updated:',
+        shouldShow,
+        'for pendingSelection:',
+        pendingSelection,
+        'replacements:',
+        replacements,
+        'title:',
+        title
+      );
+    }
+  }, [propShowReplacements, pendingSelection, title, replacements, currentConfiguring, multiple]);
   // Validate selections, but do not remove those being configured
   useEffect(() => {
     if (title === 'Adiciones (por almuerzo)') {
@@ -81,7 +88,9 @@ const OptionSelector = ({
       if (validSelections.length !== pendingSelection.length) {
         setPendingSelection(validSelections);
         onImmediateSelect(validSelections);
-        console.log('[OptionSelector] Cleaned invalid selections:', validSelections);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[OptionSelector] Cleaned invalid selections:', validSelections);
+        }
       }
     }
   }, [pendingSelection, title, onImmediateSelect, currentConfiguring]);

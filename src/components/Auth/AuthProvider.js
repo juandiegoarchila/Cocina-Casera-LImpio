@@ -12,7 +12,9 @@ export function AuthProvider({ children }) {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUser(user);
       setLoading(false);
-      console.log('Auth state changed:', user ? user.email : 'No user');
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Auth state changed:', user ? user.email : 'No user');
+      }
     });
 
     return () => unsubscribe();
@@ -21,10 +23,16 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      console.log('Login successful:', userCredential.user.email);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Login successful:', userCredential.user.email);
+      }
       return userCredential;
     } catch (error) {
-      console.error('Login failed:', error.message);
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Login failed:', error.message);
+      } else {
+        console.error('Login failed: An error occurred during authentication');
+      }
       throw new Error(error.message);
     }
   };

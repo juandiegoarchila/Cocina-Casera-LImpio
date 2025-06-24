@@ -22,9 +22,11 @@ const MealList = ({
 }) => {
   const [showTutorial, setShowTutorial] = useState(meals.length === 0);
 
-  // Debug: Log additions prop to verify updates
+// Debug: Log additions prop to verify updates
   useEffect(() => {
-    console.log('[MealList] Additions prop updated:', additions);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[MealList] Additions prop updated:', additions);
+    }
   }, [additions]);
 
   const completedMeals = meals.filter(m =>

@@ -1,3 +1,4 @@
+//src/utils/MealCalculations.js
 export const calculateMealPrice = (meal) => {
   if (!meal) return 0;
   const hasMojarra = meal?.protein?.name === 'Mojarra';

@@ -42,39 +42,39 @@ const AdminPage = () => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [theme, setTheme] = useState('dark');
 
-    useEffect(() => {
-        if (loading) return;
+useEffect(() => {
+    if (loading) return;
 
-        const checkAdminStatus = async () => {
-            try {
-                if (!user) {
-                    navigate('/login');
-                    return;
-                }
-
-                const q = query(
-                    collection(db, 'users'),
-                    where('email', '==', user.email),
-                    where('role', '==', 2)
-                );
-                const snapshot = await getDocs(q);
-                if (snapshot.empty) {
-                    setError('No tienes permisos de administrador');
-                    navigate('/login');
-                } else {
-                    setIsAdmin(true);
-                }
-            } catch (err) {
-                console.error('Error verificando admin:', err);
-                setError('Error verificando permisos');
+    const checkAdminStatus = async () => {
+        try {
+            if (!user) {
                 navigate('/login');
-            } finally {
-                setAdminLoading(false);
+                return;
             }
-        };
-
-        checkAdminStatus();
-    }, [user, loading, navigate]);
+            const q = query(
+                collection(db, 'users'),
+                where('email', '==', user.email),
+                where('role', '==', 2)
+            );
+            const snapshot = await getDocs(q);
+            if (snapshot.empty) {
+                setError('No tienes permisos de administrador');
+                navigate('/login');
+            } else {
+                setIsAdmin(true);
+            }
+        } catch (err) {
+            if (process.env.NODE_ENV === 'development') {
+                console.error('Error verificando admin:', err);
+            }
+            setError('Error verificando permisos');
+            navigate('/login');
+        } finally {
+            setAdminLoading(false);
+        }
+    };
+    checkAdminStatus();
+}, [user, loading, navigate]);
 
     const handleLogout = async () => {
         try {

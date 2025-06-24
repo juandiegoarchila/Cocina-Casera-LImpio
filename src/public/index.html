@@ -1,24 +1,28 @@
 <!DOCTYPE html>
-<html lang="es"> <head>
+<html lang="es">
+  <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cocina Casera - Pedidos Online</title> <meta name="description" content="Haz tus pedidos de almuerzo de Cocina Casera de forma rápida y sencilla."> <link rel="icon" href="/favicon.ico" type="image/x-icon">
-
+    <meta name="description" content="Pide tu almuerzo casero fácil y rápido con Cocina Casera.">
+    <title>Cocina Casera</title>
+    <!-- Preconnect para acelerar conexiones a Firebase -->
     <link rel="preconnect" href="https://firestore.googleapis.com">
     <link rel="dns-prefetch" href="https://firestore.googleapis.com">
-
     <link rel="preconnect" href="https://identitytoolkit.googleapis.com">
-    <link rel="dns-prefetch" href="https://identitytoolkit.googleapis.com">
-
-    <link rel="preconnect" href="https://securetoken.googleapis.com">
-    <link rel="dns-prefetch" href="https://securetoken.googleapis.com">
-
-    <link rel="preconnect" href="https://www.googleapis.com">
-    <link rel="dns-prefetch" href="https://www.googleapis.com">
-
-    </head>
+    <!-- Preload de recursos críticos (reemplaza las rutas con las tuyas) -->
+    <link rel="preload" href="/path-to-your-critical-font.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/path-to-your-critical-image.webp" as="image">
+    <!-- CSS crítico inline para above-the-fold (ajusta según tu diseño) -->
+    <style>
+      body { font-family: 'Arial', sans-serif; margin: 0; }
+      .header { background: #fff; padding: 1rem; }
+    </style>
+  </head>
   <body>
-    <noscript>Necesitas habilitar JavaScript para ejecutar esta aplicación.</noscript>
     <div id="root"></div>
-    </body>
+    <!-- Scripts de Firebase con defer para no bloquear renderizado -->
+    <script defer src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js"></script>
+    <script defer src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js"></script>
+    <script defer src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js"></script>
+  </body>
 </html>

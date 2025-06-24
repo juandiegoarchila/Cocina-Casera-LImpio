@@ -20,14 +20,26 @@ const InputField = ({ id, label, value, onChange, placeholder, icon, type = 'tex
   </div>
 );
 
-const AddressInput = ({ onConfirm }) => {
-  const [address, setAddress] = useLocalStorage('userAddress', '');
-  const [phoneNumber, setPhoneNumber] = useLocalStorage('userPhoneNumber', '');
-  const [addressType, setAddressType] = useLocalStorage('userAddressType', 'complex');
-  const [recipientName, setRecipientName] = useLocalStorage('userRecipientName', '');
-  const [unitDetails, setUnitDetails] = useLocalStorage('userUnitDetails', '');
-  const [localName, setLocalName] = useLocalStorage('userLocalName', ''); // New state for local name
-  const [isEditing, setIsEditing] = React.useState(false);
+const AddressInput = ({ onConfirm, initialAddress = {} }) => {
+  const [address, setAddress] = useLocalStorage('userAddress', initialAddress.address || '');
+  const [phoneNumber, setPhoneNumber] = useLocalStorage('userPhoneNumber', initialAddress.phoneNumber || '');
+  const [addressType, setAddressType] = useLocalStorage('userAddressType', initialAddress.addressType || 'complex');
+  const [recipientName, setRecipientName] = useLocalStorage('userRecipientName', initialAddress.recipientName || '');
+  const [unitDetails, setUnitDetails] = useLocalStorage('userUnitDetails', initialAddress.unitDetails || '');
+  const [localName, setLocalName] = useLocalStorage('userLocalName', initialAddress.localName || '');
+  const [isEditing, setIsEditing] = React.useState(!initialAddress.address);
+
+  // Initialize state with initialAddress if provided
+  React.useEffect(() => {
+    if (initialAddress.address) {
+      setAddress(initialAddress.address);
+      setPhoneNumber(initialAddress.phoneNumber || '');
+      setAddressType(initialAddress.addressType || 'complex');
+      setRecipientName(initialAddress.recipientName || '');
+      setUnitDetails(initialAddress.unitDetails || '');
+      setLocalName(initialAddress.localName || '');
+    }
+  }, [initialAddress]);
 
   const isValidPhone = (phone) => /^3\d{9}$/.test(phone);
   const phoneNumberError = phoneNumber && !isValidPhone(phoneNumber) ? 'Formato de teléfono no válido (Ej: 3001234567)' : '';
@@ -37,7 +49,7 @@ const AddressInput = ({ onConfirm }) => {
     isValidPhone(phoneNumber) &&
     (addressType !== 'school' || recipientName) &&
     (addressType !== 'complex' || unitDetails) &&
-    (addressType !== 'shop' || localName); // Add validation for localName when addressType is 'shop'
+    (addressType !== 'shop' || localName);
 
   const handleConfirm = () => {
     if (isFormValid) {
@@ -47,7 +59,7 @@ const AddressInput = ({ onConfirm }) => {
         addressType,
         recipientName: addressType === 'school' ? recipientName : '',
         unitDetails: addressType === 'complex' ? unitDetails : '',
-        localName: addressType === 'shop' ? localName : '', // Include localName in confirmed details
+        localName: addressType === 'shop' ? localName : '',
       };
       onConfirm(confirmedDetails);
       setIsEditing(false);
@@ -56,7 +68,6 @@ const AddressInput = ({ onConfirm }) => {
     }
   };
 
-  // If data is complete and user isn't editing, show saved data
   if (isFormValid && !isEditing) {
     return (
       <div className="bg-white p-4 rounded-lg shadow space-y-4 text-sm sm:text-base">
@@ -103,7 +114,6 @@ const AddressInput = ({ onConfirm }) => {
     );
   }
 
-  // Show input form if data is incomplete or user is editing
   return (
     <div className="bg-white p-4 rounded-lg shadow space-y-4 text-sm sm:text-base">
       <div className="mb-4">
@@ -117,14 +127,14 @@ const AddressInput = ({ onConfirm }) => {
             setAddressType(e.target.value);
             setRecipientName('');
             setUnitDetails('');
-            setLocalName(''); // Reset localName when address type changes
+            setLocalName('');
           }}
           className="w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
         >
           <option value="house">Casa/Apartamento Individual</option>
           <option value="school">Colegio/Oficina</option>
           <option value="complex">Conjunto Residencial</option>
-          <option value="shop">Tienda/Local</option> {/* New option */}
+          <option value="shop">Tienda/Local</option>
         </select>
       </div>
 

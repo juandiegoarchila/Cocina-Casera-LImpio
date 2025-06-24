@@ -1,13 +1,164 @@
+//src/components/OrderSummary.js
 import { useMemo } from 'react';
-import { calculateMealPrice } from '../utils/MealLogic';
-import { isValidTime, isValidNote, formatNotes } from '../utils/MealLogic';
+import { isValidTime, formatNotes } from '../utils/MealLogic';
+import { calculateMealPrice } from '../utils/MealCalculations';
 
-const OrderSummary = ({ meals, onSendOrder, calculateTotal }) => {
-  const cleanText = (text) => text?.replace(' NUEVO', '') || 'No seleccionado';
+// Constantes globales
+const fieldsToCheck = ['Sopa', 'Principio', 'Proteína', 'Bebida', 'Cubiertos', 'Acompañamientos', 'Hora', 'Dirección', 'Pago', 'Adiciones'];
+const addressFields = ['address', 'addressType', 'recipientName', 'phoneNumber', 'unitDetails', 'localName'];
+const specialRiceOptions = ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'];
 
-  const total = useMemo(() => calculateTotal(meals), [meals, calculateTotal]);
+// Función utilitaria para limpiar texto
+const cleanText = (text) => text?.replace(' NUEVO', '') || 'No seleccionado';
 
-  const paymentSummary = (meals) => {
+// Hook personalizado para manejar la lógica de resumen
+const useOrderSummary = (meals) => {
+  const getFieldValue = (meal, field) => {
+    if (!meal) return '';
+    if (field === 'Sopa') {
+      if (meal.soup?.name === 'Solo bandeja') return 'solo bandeja';
+      if (meal.soupReplacement?.name) return JSON.stringify({ name: cleanText(meal.soupReplacement.name), type: 'por sopa' });
+      if (meal.soup?.name && meal.soup.name !== 'Sin sopa') return cleanText(meal.soup.name);
+      return 'Sin sopa';
+    } else if (field === 'Principio') {
+      const principleNames = meal.principle?.map(p => cleanText(p.name)).sort() || [];
+      const replacement = meal.principleReplacement?.name ? cleanText(meal.principleReplacement.name) : '';
+      return JSON.stringify([principleNames.join(','), replacement]);
+    } else if (field === 'Proteína') {
+      return cleanText(meal.protein?.name || 'Sin proteína');
+    } else if (field === 'Bebida') {
+      return cleanText(meal.drink?.name || 'Sin bebida');
+    } else if (field === 'Cubiertos') {
+      return meal.cutlery ? 'Sí' : 'No';
+    } else if (field === 'Acompañamientos') {
+      return JSON.stringify(meal.sides?.map(s => cleanText(s.name)).sort() || []);
+    } else if (field === 'Hora') {
+      return meal.time?.name || 'No especificada';
+    } else if (field === 'Dirección') {
+      return JSON.stringify(addressFields.map(f => meal.address?.[f] || ''));
+    } else if (field === 'Pago') {
+      return meal.payment?.name || 'No especificado';
+    } else if (field === 'Adiciones') {
+      return JSON.stringify(
+        meal.additions?.map(a => ({
+          name: cleanText(a.name),
+          protein: a.protein || '',
+          replacement: a.replacement || '',
+          quantity: a.quantity || 1,
+        })).sort((a, b) => a.name.localeCompare(b.name)) || []
+      );
+    }
+    return '';
+  };
+
+  const groupedMeals = useMemo(() => {
+    if (!meals || meals.length === 0) {
+      return {
+        groupedMeals: [],
+        commonDeliveryTime: null,
+        commonAddressFields: {},
+        globalCommonFields: new Set(),
+        areAddressesGloballyCommon: false,
+        areCoreAddressesCommon: false,
+      };
+    }
+
+    const groups = [];
+    const firstMeal = meals[0];
+    const commonDeliveryTime = meals.every(meal => meal.time?.name === firstMeal?.time?.name) ? firstMeal?.time?.name : null;
+
+    const commonAddressFields = {};
+    let areAddressesGloballyCommon = true;
+    let areCoreAddressesCommon = true;
+    addressFields.forEach(field => {
+      const isCommon = meals.every(meal => meal.address?.[field] === firstMeal?.address?.[field]);
+      commonAddressFields[field] = isCommon ? firstMeal?.address?.[field] : null;
+      if (!isCommon && field !== 'recipientName' && field !== 'unitDetails' && field !== 'localName') {
+        areAddressesGloballyCommon = false;
+      }
+      if (!isCommon && (field === 'address' || field === 'phoneNumber')) {
+        areCoreAddressesCommon = false;
+      }
+    });
+
+    const globalCommonFields = new Set(fieldsToCheck.filter(field => {
+      const firstValue = getFieldValue(firstMeal, field);
+      return meals.every(meal => getFieldValue(meal, field) === firstValue);
+    }));
+
+    const mealGroups = new Map();
+    meals.forEach((meal, index) => {
+      let assigned = false;
+      for (let [, groupData] of mealGroups) {
+        const refMeal = groupData.meals[0];
+        let differences = 0;
+        fieldsToCheck.forEach(field => {
+          if (getFieldValue(meal, field) !== getFieldValue(refMeal, field)) {
+            differences++;
+          }
+        });
+        if (differences <= 3) {
+          groupData.meals.push(meal);
+          groupData.indices.push(index);
+          if (meal.payment?.name) groupData.payments.add(meal.payment.name);
+          assigned = true;
+          break;
+        }
+      }
+      if (!assigned) {
+        const key = `${index}|${fieldsToCheck.map(field => getFieldValue(meal, field)).join('|')}`;
+        mealGroups.set(key, {
+          meals: [meal],
+          indices: [index],
+          payments: new Set(meal.payment?.name ? [meal.payment.name] : []),
+        });
+      }
+    });
+
+    mealGroups.forEach((groupData) => {
+      const mealsInGroup = groupData.meals;
+      const group = {
+        meals: mealsInGroup,
+        payments: groupData.payments,
+        originalIndices: groupData.indices,
+      };
+      group.commonFieldsInGroup = new Set(fieldsToCheck.filter(field => {
+        const firstValue = getFieldValue(mealsInGroup[0], field);
+        return mealsInGroup.every(meal => getFieldValue(meal, field) === firstValue);
+      }));
+      group.commonAddressFieldsInGroup = {};
+      addressFields.forEach(field => {
+        const isCommon = mealsInGroup.every(meal => meal.address?.[field] === mealsInGroup[0].address?.[field]);
+        group.commonAddressFieldsInGroup[field] = isCommon ? mealsInGroup[0].address?.[field] : null;
+      });
+      const identicalGroups = new Map();
+      mealsInGroup.forEach((meal, idx) => {
+        const key = fieldsToCheck.map(field => getFieldValue(meal, field)).join('|');
+        if (!identicalGroups.has(key)) {
+          identicalGroups.set(key, { meals: [], indices: [] });
+        }
+        identicalGroups.get(key).meals.push(meal);
+        identicalGroups.get(key).indices.push(groupData.indices[idx]);
+      });
+      group.identicalGroups = Array.from(identicalGroups.values());
+      groups.push(group);
+    });
+
+    return {
+      groupedMeals: groups,
+      commonDeliveryTime,
+      commonAddressFields,
+      globalCommonFields,
+      areAddressesGloballyCommon,
+      areCoreAddressesCommon,
+    };
+  }, [meals]);
+
+  const total = useMemo(() => {
+    return meals.reduce((sum, meal) => sum + calculateMealPrice(meal), 0);
+  }, [meals]);
+
+  const paymentSummary = useMemo(() => {
     if (!meals || meals.length === 0) return {};
     return meals.reduce((acc, meal) => {
       const price = calculateMealPrice(meal);
@@ -15,580 +166,380 @@ const OrderSummary = ({ meals, onSendOrder, calculateTotal }) => {
       acc[paymentMethod] = (acc[paymentMethod] || 0) + price;
       return acc;
     }, {});
-  };
-
-  const groupedMeals = useMemo(() => {
-    const groups = [];
-    const usedIndices = new Set();
-
-    for (let i = 0; i < meals.length; i++) {
-      if (usedIndices.has(i)) continue;
-
-      const meal1 = meals[i];
-      const group = { meals: [meal1], payments: new Set([meal1?.payment?.name]), originalIndices: [i], differences: [] };
-      usedIndices.add(i);
-
-      for (let j = i + 1; j < meals.length; j++) {
-        if (usedIndices.has(j)) continue;
-
-        const meal2 = meals[j];
-        const differences = [];
-
-        if (meal1.soup?.name !== meal2.soup?.name || meal1.soupReplacement?.name !== meal2.soupReplacement?.name) {
-          differences.push({ 
-            field: 'Sopa', 
-            value1: meal1.soup?.name || 'Sin sopa', 
-            value2: meal2.soup?.name || 'Sin sopa', 
-            replacement1: meal1.soupReplacement?.name, 
-            replacement2: meal2.soupReplacement?.name 
-          });
-        }
-        if (JSON.stringify(meal1.principle?.map(p => p.name).sort()) !== JSON.stringify(meal2.principle?.map(p => p.name).sort()) || meal1.principleReplacement?.name !== meal2.principleReplacement?.name) {
-          differences.push({
-            field: 'Principio',
-            value1: meal1.principle?.map(p => p.name).join(', ') || 'Sin principio',
-            value2: meal2.principle?.map(p => p.name).join(', ') || 'Sin principio',
-            replacement1: meal1.principleReplacement?.name,
-            replacement2: meal2.principleReplacement?.name
-          });
-        }
-        if (meal1.protein?.name !== meal2.protein?.name) {
-          differences.push({ field: 'Proteína', value1: meal1.protein?.name, value2: meal2.protein?.name });
-        }
-        if (meal1.drink?.name !== meal2.drink?.name) {
-          differences.push({ field: 'Bebida', value1: meal1.drink?.name, value2: meal2.drink?.name });
-        }
-        if ((meal1.cutlery ?? false) !== (meal2.cutlery ?? false)) {
-          differences.push({ field: 'Cubiertos', value1: meal1.cutlery ? 'Sí' : 'No', value2: meal2.cutlery ? 'Sí' : 'No' });
-        }
-        if (JSON.stringify(meal1.sides?.map(s => s.name).sort()) !== JSON.stringify(meal2.sides?.map(s => s.name).sort())) {
-          differences.push({ 
-            field: 'Acompañamientos', 
-            value1: meal1.sides?.map(s => s.name).join(', ') || 'Sin acompañamientos', 
-            value2: meal2.sides?.map(s => s.name).join(', ') || 'Sin acompañamientos' 
-          });
-        }
-        if (
-          JSON.stringify(meal1.additions?.map((a) => a.name).sort()) !== JSON.stringify(meal2.additions?.map((a) => a.name).sort()) ||
-          JSON.stringify(meal1.additions?.map((a) => a.protein || a.replacement).sort()) !== JSON.stringify(meal2.additions?.map((a) => a.protein || a.replacement).sort())
-        ) {
-          differences.push({ 
-            field: 'Adiciones', 
-            value1: meal1.additions?.map((a) => `${a.name}${a.protein || a.replacement ? ` (${a.protein || a.replacement})` : ''}`).join(', ') || 'Ninguna', 
-            value2: meal2.additions?.map((a) => `${a.name}${a.protein || a.replacement ? ` (${a.protein || a.replacement})` : ''}`).join(', ') || 'Ninguna' 
-          });
-        }
-        if (meal1.notes !== meal2.notes) {
-          differences.push({ field: 'Notas', value1: meal1.notes || 'Ninguna', value2: meal2.notes || 'Ninguna' });
-        }
-        if (meal1.time?.name !== meal2.time?.name) {
-          differences.push({ field: 'Entrega', value1: meal1.time?.name || 'Lo más rápido', value2: meal2.time?.name || 'Lo más rápido' });
-        }
-        // Address comparison with optimized difference detection
-        if (
-          meal1.address?.address !== meal2.address?.address ||
-          meal1.address?.addressType !== meal2.address?.addressType ||
-          meal1.address?.phoneNumber !== meal2.address?.phoneNumber ||
-          meal1.address?.unitDetails !== meal2.address?.unitDetails ||
-          meal1.address?.localName !== meal2.address?.localName ||
-          meal1.address?.recipientName !== meal2.address?.recipientName
-        ) {
-          differences.push({ 
-            field: 'address', 
-            value1: meal1.address?.address, 
-            value2: meal2.address?.address,
-            addressDetails1: {
-              addressType: meal1.address?.addressType,
-              phoneNumber: meal1.address?.phoneNumber,
-              unitDetails: meal1.address?.unitDetails,
-              localName: meal1.address?.localName,
-              recipientName: meal1.address?.recipientName
-            },
-            addressDetails2: {
-              addressType: meal2.address?.addressType,
-              phoneNumber: meal2.address?.phoneNumber,
-              unitDetails: meal2.address?.unitDetails,
-              localName: meal2.address?.localName,
-              recipientName: meal2.address?.recipientName
-            }
-          });
-        }
-        if (meal1.payment?.name !== meal2.payment?.name) {
-          differences.push({ field: 'Pago', value1: meal1.payment?.name || 'No especificado', value2: meal2.payment?.name || 'No especificado' });
-        }
-
-        if (differences.length <= 3) {
-          group.meals.push(meal2);
-          group.differences.push({ mealIndex: group.meals.length - 1, diffs: differences, originalIndex: j });
-          if (meal2?.payment?.name) group.payments.add(meal2.payment.name);
-          usedIndices.add(j);
-          group.originalIndices.push(j);
-        }
-      }
-      groups.push(group);
-    }
-    return groups;
   }, [meals]);
 
+  return {
+    groupedMeals: groupedMeals.groupedMeals,
+    total,
+    paymentSummary,
+    commonDeliveryTime: groupedMeals.commonDeliveryTime,
+    commonAddressFields: groupedMeals.commonAddressFields,
+    globalCommonFields: groupedMeals.globalCommonFields,
+    areAddressesGloballyCommon: groupedMeals.areAddressesGloballyCommon,
+    areCoreAddressesCommon: groupedMeals.areCoreAddressesCommon,
+  };
+};
+
+// Componente para renderizar direcciones
+const AddressSummary = ({ commonAddressFields = {}, mealAddress, isCommon = false, globalCommonAddressFields = {} }) => {
+  const renderAddressField = (field, value, addrType) => {
+    // Omitir addressType y phoneNumber en bloques si son comunes globalmente
+    if ((field === 'address' || field === 'addressType' || field === 'phoneNumber') && globalCommonAddressFields[field] && !isCommon) {
+      return null;
+    }
+    if (field === 'address' && value) {
+      return (
+        <p key={field} className="text-xs sm:text-sm text-gray-600">
+          📍 Dirección: {value}
+        </p>
+      );
+    } else if (field === 'addressType' && value) {
+      return (
+        <p key={field} className="text-xs sm:text-sm text-gray-600 font-medium">
+          🏠 Lugar de entrega: {value === 'house' ? 'Casa/Apartamento Individual' :
+            value === 'school' ? 'Colegio/Oficina' :
+            value === 'complex' ? 'Conjunto Residencial' :
+            value === 'shop' ? 'Tienda/Local' : 'No especificado'}
+        </p>
+      );
+    } else if (field === 'recipientName' && addrType === 'school' && value) {
+      return <p key={field} className="text-xs sm:text-sm text-gray-600">👤 Nombre: {value}</p>;
+    } else if (field === 'phoneNumber' && value) {
+      return (
+        <p key={field} className="text-xs sm:text-sm text-gray-600 font-medium">
+          📞 Teléfono: {value}
+        </p>
+      );
+    } else if (field === 'unitDetails' && addrType === 'complex' && value) {
+      return <p key={field} className="text-xs sm:text-sm text-gray-600">🏢 Detalles: {value}</p>;
+    } else if (field === 'localName' && addrType === 'shop' && value) {
+      return <p key={field} className="text-xs sm:text-sm text-gray-600">🏬 Nombre del local: {value}</p>;
+    }
+    return null;
+  };
+
+  // Usar mealAddress si está definido, de lo contrario, usar commonAddressFields
+  const effectiveAddress = mealAddress || commonAddressFields;
+  const effectiveAddressType = effectiveAddress?.addressType || '';
+
   return (
-    <div className="order-summary bg-white p-2 xs:p-4 sm:p-6 rounded-lg shadow-lg mt-4 xs:mt-6 sm:mt-8">
-      <h2 className="text-sm xs:text-base sm:text-lg font-bold text-gray-800 mb-2 xs:mb-4">✅ Resumen del Pedido</h2>
+    <div className="relative">
+      {addressFields.map(field => {
+        const value = isCommon ? commonAddressFields[field] : effectiveAddress[field];
+        return renderAddressField(field, value, effectiveAddressType);
+      }).filter(Boolean)}
+    </div>
+  );
+};
+
+// Componente para renderizar campos de una comida
+const MealFields = ({ meal, commonFields }) => {
+  const hasSpecialRice = meal?.principle?.some(p => specialRiceOptions.includes(p.name));
+
+  const fields = [];
+  if (commonFields.has('Sopa') || commonFields.has('all')) {
+    if (meal?.soup?.name === 'Solo bandeja') {
+      fields.push(<p key="soup" className="text-xs sm:text-sm text-gray-600">solo bandeja</p>);
+    } else if (meal?.soupReplacement?.name) {
+      fields.push(
+        <p key="soup" className="text-xs sm:text-sm text-gray-600">
+          {`${cleanText(meal.soupReplacement.name)} (por sopa)`}
+        </p>
+      );
+    } else if (meal?.soup?.name && meal.soup.name !== 'Sin sopa') {
+      fields.push(<p key="soup" className="text-xs sm:text-sm text-gray-600">{cleanText(meal.soup.name)}</p>);
+    }
+  }
+  if (commonFields.has('Principio') || commonFields.has('all')) {
+    if (meal?.principle?.length > 0 || meal?.principleReplacement?.name) {
+      fields.push(
+        <p key="principle" className="text-xs sm:text-sm text-gray-600">
+          {meal?.principleReplacement?.name
+            ? `${cleanText(meal.principleReplacement.name)} (por principio)`
+            : `${meal.principle.map(p => cleanText(p.name)).join(', ')}${meal.principle.length > 1 ? ' (mixto)' : ''}`}
+        </p>
+      );
+    }
+  }
+  if ((commonFields.has('Proteína') || commonFields.has('all')) && !hasSpecialRice) {
+    fields.push(<p key="protein" className="text-xs sm:text-sm text-gray-600">{cleanText(meal.protein?.name || 'Sin proteína')}</p>);
+  } else if ((commonFields.has('Proteína') || commonFields.has('all')) && hasSpecialRice) {
+    fields.push(<p key="protein" className="text-xs sm:text-sm text-gray-600">Proteína: Ya incluida en el arroz</p>);
+  }
+  if (commonFields.has('Bebida') || commonFields.has('all')) {
+    if (meal?.drink?.name) {
+      const drinkName = meal.drink.name === 'Juego de mango' ? 'Jugo de mango' : cleanText(meal.drink.name);
+      fields.push(<p key="drink" className="text-xs sm:text-sm text-gray-600">{drinkName}</p>);
+    }
+  }
+  if (commonFields.has('Cubiertos') || commonFields.has('all')) {
+    fields.push(<p key="cutlery" className="text-xs sm:text-sm text-gray-600">Cubiertos: {meal?.cutlery ? 'Sí' : 'No'}</p>);
+  }
+  if (commonFields.has('Acompañamientos') || commonFields.has('all')) {
+    fields.push(
+      <p key="sides" className="text-xs sm:text-sm text-gray-600">
+        Acompañamientos: {hasSpecialRice ? 'Ya incluidos' : meal?.sides?.length > 0 ? meal.sides.map(s => cleanText(s.name)).join(', ') : 'Sin acompañamientos'}
+      </p>
+    );
+  }
+  if (commonFields.has('Adiciones') || commonFields.has('all')) {
+    if (meal?.additions?.length > 0) {
+      meal.additions.forEach((a, idx) => {
+        fields.push(
+          <p key={`addition-${idx}`} className="text-xs sm:text-sm text-gray-600">
+            - {cleanText(a.name)}{a.protein || a.replacement ? ` (${a.protein || a.replacement})` : ''} ({a.quantity || 1})
+          </p>
+        );
+      });
+    }
+  }
+  // Renderizar notas solo una vez
+  if (commonFields.has('all')) {
+    fields.push(<p key="notes" className="text-xs sm:text-sm text-gray-600">Notas: {formatNotes(meal.notes) || 'Ninguna'}</p>);
+  }
+  return fields;
+};
+
+// Componente para un grupo de comidas
+const MealGroup = ({ group, globalCommonFields, globalCommonAddressFields }) => {
+  const baseMeal = group.meals[0];
+  const count = group.meals.length;
+  const totalPrice = group.meals.reduce((sum, m) => sum + calculateMealPrice(m), 0);
+  const paymentNames = Array.from(group.payments).filter(name => name && name !== 'No especificado');
+  const paymentText = paymentNames.length > 0 ? `(${paymentNames.join(' y ')})` : '(No especificado)';
+  const hasDifferences = group.identicalGroups.length > 1 || group.identicalGroups.some(ig => ig.meals.length < group.meals.length);
+
+  const getFieldValue = (meal, field) => {
+    if (!meal) return null;
+    if (field === 'Sopa') {
+      if (meal.soup?.name === 'Solo bandeja') return 'solo bandeja';
+      if (meal.soupReplacement?.name) return `${cleanText(meal.soupReplacement.name)} (por sopa)`;
+      if (meal.soup?.name && meal.soup.name !== 'Sin sopa') return cleanText(meal.soup.name);
+      return 'Sin sopa';
+    } else if (field === 'Principio') {
+      return meal?.principleReplacement?.name
+        ? `${cleanText(meal.principleReplacement.name)} (por principio)`
+        : `${meal.principle?.map(p => cleanText(p.name)).join(', ') || 'Sin principio'}${meal.principle?.length > 1 ? ' (mixto)' : ''}`;
+    } else if (field === 'Proteína') {
+      const hasSpecialRice = meal?.principle?.some(p => specialRiceOptions.includes(p.name));
+      return hasSpecialRice ? 'Proteína: Ya incluida en el arroz' : cleanText(meal.protein?.name || 'Sin proteína');
+    } else if (field === 'Bebida') {
+      return meal.drink?.name === 'Juego de mango' ? 'Jugo de mango' : cleanText(meal.drink?.name || 'Sin bebida');
+    } else if (field === 'Cubiertos') {
+      return `Cubiertos: ${meal.cutlery ? 'Sí' : 'No'}`;
+    } else if (field === 'Acompañamientos') {
+    const hasSpecialRice = meal?.principle?.some(p => specialRiceOptions.includes(p.name));
+    return `Acompañamientos: ${hasSpecialRice ? 'Ya incluidos' : meal.sides?.length > 0 ? meal.sides.map(s => cleanText(s.name)).join(', ') : 'Ninguno'}`;
+    } else if (field === 'Hora') {
+      return meal.time?.name ? isValidTime(meal.time) ? cleanText(meal.time.name) : 'Lo más rápido' : null;
+    } else if (field === 'Pago') {
+      return meal.payment?.name || 'No especificado';
+    } else if (field === 'Adiciones') {
+      return meal.additions?.length > 0
+        ? meal.additions.map((a, aIdx) => (
+            <p key={`addition-${aIdx}`}>- {cleanText(a.name)}{a.protein || a.replacement ? ` (${a.protein || a.replacement})` : ''} ({a.quantity || 1})</p>
+          ))
+        : [<p key="no-additions">Sin adiciones</p>];
+    } else if (field === 'Dirección') {
+      return meal.address ? (
+        <AddressSummary
+          mealAddress={meal.address}
+          isCommon={false}
+          globalCommonAddressFields={globalCommonAddressFields}
+        />
+      ) : null;
+    }
+    return null;
+  };
+
+  return (
+    <div className="pb-2">
+      <h3 className="font-medium text-gray-800 text-xs sm:text-sm">
+        🍽 {count > 1 ? `${count} Almuerzos iguales – $${totalPrice.toLocaleString('es-CO')} ${paymentText}` : `${count} Almuerzo – $${totalPrice.toLocaleString('es-CO')} ${paymentText}`}
+      </h3>
+      <MealFields meal={baseMeal} commonFields={count > 1 ? group.commonFieldsInGroup : new Set(['all'])} />
+      {count === 1 && !globalCommonFields.has('Dirección') && baseMeal.address && (
+        <AddressSummary
+          mealAddress={baseMeal.address}
+          isCommon={false}
+          globalCommonAddressFields={globalCommonAddressFields}
+        />
+      )}
+      {count > 1 && group.commonFieldsInGroup.has('Dirección') && !globalCommonFields.has('Dirección') && baseMeal.address && (
+        <AddressSummary
+          mealAddress={baseMeal.address}
+          isCommon={false}
+          globalCommonAddressFields={globalCommonAddressFields}
+        />
+      )}
+      {hasDifferences && (
+        <div className="mt-1">
+          <p className="font-medium text-gray-800 text-xs sm:text-sm">🔄 Diferencias:</p>
+          {group.identicalGroups.map((identicalGroup, igIndex) => (
+            <div key={igIndex} className="ml-2">
+              <p className="font-medium text-gray-800 text-xs sm:text-sm">
+                * {identicalGroup.indices.length > 1 ? `Almuerzos ${identicalGroup.indices.map(i => i + 1).join(', ')}` : `Almuerzo ${identicalGroup.indices[0] + 1}`}:
+              </p>
+              {fieldsToCheck.map((field, dIdx) => {
+                if (group.commonFieldsInGroup.has(field)) return null;
+                const meal = identicalGroup.meals[0];
+                const formattedValue = getFieldValue(meal, field);
+                if (!formattedValue) return null;
+                if (field === 'Dirección') {
+                  // Renderizar solo los campos de dirección que no son comunes en el grupo
+                  return (
+                    <div key={dIdx} className="text-xs sm:text-sm text-gray-600 ml-2">
+                      {addressFields.map((addrField, addrIdx) => {
+                        const isCommonInGroup = group.commonAddressFieldsInGroup[addrField];
+                        if (isCommonInGroup) return null; // No renderizar si es común
+                        const value = meal.address?.[addrField];
+                        const addrType = meal.address?.addressType || '';
+                        if (addrField === 'address' && value) {
+                          return (
+                            <p key={addrIdx}>📍 Dirección: {value}</p>
+                          );
+                        } else if (addrField === 'addressType' && value) {
+                          return (
+                            <p key={addrIdx}>🏠 Lugar de entrega: {
+                              value === 'house' ? 'Casa/Apartamento Individual' :
+                              value === 'school' ? 'Colegio/Oficina' :
+                              value === 'complex' ? 'Conjunto Residencial' :
+                              value === 'shop' ? 'Tienda/Local' : 'No especificado'
+                            }</p>
+                          );
+                        } else if (addrField === 'recipientName' && addrType === 'school' && value) {
+                          return <p key={addrIdx}>👤 Nombre: {value}</p>;
+                        } else if (addrField === 'phoneNumber' && value) {
+                          return <p key={addrIdx}>📞 Teléfono: {value}</p>;
+                        } else if (addrField === 'unitDetails' && addrType === 'complex' && value) {
+                          return <p key={addrIdx}>🏢 Detalles: {value}</p>;
+                        } else if (addrField === 'localName' && addrType === 'shop' && value) {
+                          return <p key={addrIdx}>🏬 Nombre del local: {value}</p>;
+                        }
+                        return null;
+                      }).filter(Boolean)}
+                    </div>
+                  );
+                }
+                return (
+                  <div key={dIdx} className="text-xs sm:text-sm text-gray-600 ml-2">
+                    {Array.isArray(formattedValue) ? formattedValue : formattedValue}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Componente para resumen de pagos
+const PaymentSummary = ({ paymentSummary, total }) => {
+  const allCashOrUnspecified = Object.keys(paymentSummary).every(method => method === 'Efectivo' || method === 'No especificado');
+
+  return (
+    <div className="pt-2 border-t">
+      <p className="text-sm sm:text-base font-bold text-right text-gray-800">
+        Total: <span className="text-green-600">${total.toLocaleString('es-CO')}</span>
+      </p>
+      {allCashOrUnspecified ? (
+        <>
+          <p className="font-medium text-gray-800 text-xs sm:text-sm">Paga en efectivo al momento de la entrega.</p>
+          <p className="text-xs sm:text-sm text-gray-600">💵 Efectivo: ${total.toLocaleString('es-CO')}</p>
+          <p className="text-xs sm:text-sm text-gray-600">
+            Si no tienes efectivo, puedes transferir por Nequi o DaviPlata al número: 313 850 5647.
+          </p>
+        </>
+      ) : (
+        <>
+          <p className="font-medium text-gray-800 text-xs sm:text-sm">💳 Instrucciones de pago:</p>
+          <p className="text-xs sm:text-sm text-gray-600">Envía al número 313 850 5647 (Nequi o DaviPlata):</p>
+          {Object.entries(paymentSummary).map(([method, amount]) => (
+            method !== 'No especificado' && amount > 0 && (
+              <p key={method} className="text-xs sm:text-sm text-gray-600">
+                🔹 {method}: ${amount.toLocaleString('es-CO')}
+              </p>
+            )
+          ))}
+        </>
+      )}
+      <p className="font-medium text-gray-800 text-xs sm:text-sm">💰 Total: ${total.toLocaleString('es-CO')}</p>
+    </div>
+  );
+};
+
+// Componente principal
+const OrderSummary = ({ meals, onSendOrder, calculateTotal }) => {
+  const {
+    groupedMeals,
+    total,
+    paymentSummary,
+    commonDeliveryTime,
+    commonAddressFields,
+    globalCommonFields,
+  } = useOrderSummary(meals);
+
+  return (
+    <div className="bg-white p-3 rounded-lg shadow-lg mt-6 leading-relaxed">
+      <h2 className="text-lg font-bold text-gray-800 mb-4">✅ Resumen del Pedido</h2>
       {meals.length === 0 ? (
         <div>
-          <p className="text-[10px] xs:text-xs sm:text-sm text-gray-600">No hay almuerzos en tu pedido.</p>
-          <p className="total-price text-[10px] xs:text-sm sm:text-base font-bold text-right mt-2">
-            Total: <span className="text-green-600">$0</span>
+          <p className="text-sm text-gray-600">No hay almuerzos en tu pedido.</p>
+          <p className="text-base font-bold text-right mt-2 text-gray-800">
+            💰 Total: <span className="text-green-600">$0</span>
           </p>
         </div>
       ) : (
-        <div className="space-y-2 xs:space-y-4 sm:space-y-6">
-          <p className="text-[10px] xs:text-xs sm:text-sm text-gray-700">🍽 {meals.length} Almuerzos en total</p>
-          {groupedMeals.map(group => group.meals.length > 1 && (
-            <p key={`group-${group.meals[0].id}`} className="text-[10px] xs:text-xs sm:text-sm text-gray-700">
-              * {group.meals.length} Almuerzos iguales
-            </p>
-          ))}
-          <p className="text-[10px] xs:text-xs sm:text-sm font-bold text-gray-700">
-            💰 Total: <span className="text-green-600">${total.toLocaleString('es-CO')}</span>
+        <div className="space-y-3">
+          <p className="text-sm text-gray-700">
+            <span className="font-medium text-gray-800">🍽 {meals.length} almuerzos en total</span>
           </p>
-
-          {groupedMeals.map((group, index) => {
-            const baseMeal = group.meals[0];
-            const count = group.meals.length;
-            const totalPrice = group.meals.reduce((sum, m) => sum + calculateMealPrice(m), 0);
-            const paymentNames = Array.from(group.payments).filter(name => name && name !== 'No especificado');
-            const paymentText = paymentNames.length > 0 ? `(${paymentNames.join(' y ')})` : '(No especificado)';
-            const drinkName = baseMeal?.drink?.name === 'Juego de mango' ? 'Jugo de mango' : cleanText(baseMeal?.drink?.name);
-            const timeName = isValidTime(baseMeal.time) ? cleanText(baseMeal.time.name) : 'Lo más rápido';
-            const note = formatNotes(baseMeal.notes);
-
-            const hasSoupDifferences = group.differences.some(d => d.diffs.some(diff => diff.field === 'Sopa'));
-            const hasPrincipleDifferences = group.differences.some(d => d.diffs.some(diff => diff.field === 'Principio'));
-            const hasProteinDifferences = group.differences.some(d => d.diffs.some(diff => diff.field === 'Proteína'));
-            const hasDrinkDifferences = group.differences.some(d => d.diffs.some(diff => diff.field === 'Bebida'));
-            const hasSidesDifferences = group.differences.some(d => d.diffs.some(diff => diff.field === 'Acompañamientos'));
-            const hasAdditionsDifferences = group.differences.some(d => d.diffs.some(diff => diff.field === 'Adiciones'));
-            const hasNotesDifferences = group.differences.some(d => d.diffs.some(diff => diff.field === 'Notas'));
-            const hasTimeDifferences = group.differences.some(d => d.diffs.some(diff => diff.field === 'Entrega'));
-            const hasAddressDifferences = group.differences.some(d => d.diffs.some(diff => diff.field === 'address'));
-            const hasPaymentDifferences = group.differences.some(d => d.diffs.some(diff => diff.field === 'Pago'));
-            const hasCutleryDifferences = group.differences.some(d => d.diffs.some(diff => diff.field === 'Cubiertos'));
-
-            return (
-              <div key={index} className="border-b pb-2 xs:pb-4 last:border-b-0">
-                <h3 className="font-medium text-gray-800 mb-1 xs:mb-2 text-[10px] xs:text-xs sm:text-sm">
-                  {count > 1 ? `🍽 ${count} Almuerzos iguales – $${totalPrice.toLocaleString('es-CO')} ${paymentText}` : `🍽 ${count} Almuerzo – $${totalPrice.toLocaleString('es-CO')} ${paymentText}`}
-                </h3>
-
-                {/* 1. Sopa */}
-                {!hasSoupDifferences && (
-                  <p className="text-[10px] xs:text-xs sm:text-sm text-gray-600">
-                    {baseMeal?.soupReplacement?.name
-                      ? `${cleanText(baseMeal.soupReplacement.name)} (por sopa)`
-                      : baseMeal?.soup?.name && baseMeal.soup.name !== 'Sin sopa' && baseMeal.soup.name !== 'Solo bandeja'
-                      ? `${cleanText(baseMeal.soup.name)}`
-                      : baseMeal?.soup?.name === 'Solo bandeja'
-                      ? `solo bandeja`
-                      : `Sin sopa`}
-                  </p>
-                )}
-
-                {/* 2. Principio */}
-                {!hasPrincipleDifferences && (
-                  <p className="text-[10px] xs:text-xs sm:text-sm text-gray-600">
-                    {baseMeal?.principle?.length > 0
-                      ? baseMeal?.principleReplacement?.name
-                        ? `${cleanText(baseMeal.principleReplacement.name)} (por principio)`
-                        : `${baseMeal.principle.map(p => cleanText(p.name)).join(', ')}${baseMeal.principle.length > 1 ? ' (mixto)' : ''}`
-                      : `Sin principio`}
-                  </p>
-                )}
-
-                {/* 3. Proteína */}
-                {(() => {
-                  const isSpecialRice = baseMeal?.principle?.some(p => ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'].includes(p.name));
-                  return !isSpecialRice && !hasProteinDifferences && (
-                    <p className="text-[10px] xs:text-xs sm:text-sm text-gray-600">
-                      {baseMeal?.protein?.name ? `${cleanText(baseMeal.protein.name)}` : `Sin proteína`}
-                    </p>
-                  );
-                })()}
-
-                {/* 4. Bebida */}
-                {!hasDrinkDifferences && (
-                  <p className="text-[10px] xs:text-xs sm:text-sm text-gray-600">
-                    {drinkName}
-                  </p>
-                )}
-
-                {/* 5. Cubiertos */}
-                {!hasCutleryDifferences && (
-                  <p className="text-[10px] xs:text-xs sm:text-sm text-gray-600">
-                    Cubiertos: {baseMeal?.cutlery ? 'Sí' : 'No'}
-                  </p>
-                )}
-
-                {/* 9. Acompañamientos */}
-                {(() => {
-                  const isSpecialRice = baseMeal?.principle?.some(p => ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'].includes(p.name));
-                  return !hasSidesDifferences && (
-                    <p className="text-[10px] xs:text-xs sm:text-sm text-gray-600">
-                      {isSpecialRice 
-                        ? 'Acompañamientos ya incluidos'
-                        : baseMeal?.sides?.length > 0 
-                          ? `${baseMeal.sides.map(s => cleanText(s.name)).join(', ')}${baseMeal.sides.length > 1 ? ' (mixto)' : ''}` 
-                          : 'Sin acompañamientos'}
-                    </p>
-                  );
-                })()}
-
-                {/* 10. Adiciones opcionales */}
-                {!hasAdditionsDifferences && baseMeal?.additions?.length > 0 && (
-                  <div className="text-[10px] xs:text-xs sm:text-sm text-gray-600">
-                    <p>➕ Adiciones:</p>
-                    {baseMeal.additions.map((a, idx) => (
-                      <p key={idx} className="ml-2">
-                        - {cleanText(a.name)}{a.protein || a.replacement ? ` (${a.protein || a.replacement})` : ''} ({a.quantity || 1})
-                      </p>
-                    ))}
-                  </div>
-                )}
-
-                {/* Notes */}
-                {!hasNotesDifferences && note !== 'Ninguna' && (
-                  <p className="text-[10px] xs:text-xs sm:text-sm text-gray-600">
-                    Notas: {note}
-                  </p>
-                )}
-
-                {/* Differences Section */}
-                {group.differences.length > 0 && group.differences.some(d => d.diffs.length > 0) && (
-                  <div className="mt-1">
-                    <p className="text-[10px] xs:text-xs sm:text-sm font-medium text-gray-600">🔄 Diferencias:</p>
-                    {(() => {
-                      // Extract address differences for optimization
-                      const addressDiff = group.differences[0]?.diffs.find(diff => diff.field === 'address');
-                      const sharedAddress = addressDiff && addressDiff.value1 === addressDiff.value2 ? addressDiff.value1 : null;
-                      const sharedPhone = addressDiff && addressDiff.addressDetails1?.phoneNumber === addressDiff.addressDetails2?.phoneNumber ? addressDiff.addressDetails1?.phoneNumber : null;
-
-                      return (
-                        <>
-                          {sharedAddress && (
-                            <div className="text-[10px] xs:text-xs sm:text-sm text-gray-600 ml-2">
-                              <p>📍 Dirección compartida: {sharedAddress}</p>
-                              {sharedPhone && <p>📞 Teléfono compartido: {sharedPhone}</p>}
-                            </div>
-                          )}
-                          {group.differences.map((diff, idx) => {
-                            const meal2 = meals[diff.originalIndex];
-                            return (
-                              <div key={idx} className="ml-2">
-                                {idx === 0 && (
-                                  <div>
-                                    <p className="text-[10px] xs:text-xs sm:text-sm text-gray-600">
-                                      * Almuerzo {group.originalIndices[0] + 1}:
-                                    </p>
-                                    {hasSoupDifferences && (
-                                      <p className="text-[10px] xs:text-xs sm:text-sm text-gray-600 ml-2">
-                                        {baseMeal?.soupReplacement?.name
-                                          ? `${cleanText(baseMeal.soupReplacement.name)} (por sopa)`
-                                          : baseMeal?.soup?.name && baseMeal.soup.name !== 'Sin sopa' && baseMeal.soup.name !== 'Solo bandeja'
-                                          ? `${cleanText(baseMeal.soup.name)}`
-                                          : baseMeal?.soup?.name === 'Solo bandeja'
-                                          ? `solo bandeja`
-                                          : `Sin sopa`}
-                                      </p>
-                                    )}
-                                    {hasPrincipleDifferences && (
-                                      <p className="text-[10px] xs:text-xs sm:text-sm text-gray-600 ml-2">
-                                        {baseMeal?.principleReplacement?.name
-                                          ? `${cleanText(baseMeal.principleReplacement.name)} (por principio)`
-                                          : baseMeal?.principle?.length > 0
-                                          ? `${baseMeal.principle.map(p => cleanText(p.name)).join(', ')}${baseMeal.principle.length > 1 ? ' (mixto)' : ''}`
-                                          : `Sin principio`}
-                                      </p>
-                                    )}
-                                    {hasProteinDifferences && baseMeal?.protein?.name && (
-                                      <p className="text-[10px] xs:text-xs sm:text-sm text-gray-600 ml-2">
-                                        {cleanText(baseMeal.protein.name)}
-                                      </p>
-                                    )}
-                                    {hasDrinkDifferences && (
-                                      <p className="text-[10px] xs:text-xs sm:text-sm text-gray-600 ml-2">
-                                        {baseMeal?.drink?.name === 'Juego de mango' ? 'Jugo de mango' : cleanText(baseMeal.drink?.name)}
-                                      </p>
-                                    )}
-                                    {hasCutleryDifferences && (
-                                      <p className="text-[10px] xs:text-xs sm:text-sm text-gray-600 ml-2">
-                                        Cubiertos: {baseMeal?.cutlery ? 'Sí' : 'No'}
-                                      </p>
-                                    )}
-                                    {hasSidesDifferences && (
-                                      <p className="text-[10px] xs:text-xs sm:text-sm text-gray-600 ml-2">
-                                        {baseMeal?.principle?.some(p => ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'].includes(p.name))
-                                          ? 'Acompañamientos ya incluidos'
-                                          : baseMeal?.sides?.length > 0 
-                                            ? `${baseMeal.sides.map(s => cleanText(s.name)).join(', ')}${baseMeal.sides.length > 1 ? ' (mixto)' : ''}` 
-                                            : 'Sin acompañamientos'}
-                                      </p>
-                                    )}
-                                    {hasAdditionsDifferences && (
-                                      <div className="text-[10px] xs:text-xs sm:text-sm text-gray-600 ml-2">
-                                        <p>➕ Adiciones:</p>
-                                        {baseMeal.additions?.length > 0 ? (
-                                          baseMeal.additions.map((a, idx) => (
-                                            <p key={idx} className="ml-2">
-                                              - {cleanText(a.name)}{a.protein || a.replacement ? ` (${a.protein || a.replacement})` : ''} ({a.quantity || 1})
-                                            </p>
-                                          ))
-                                        ) : (
-                                          <p className="ml-2">Ninguna</p>
-                                        )}
-                                      </div>
-                                    )}
-                                    {hasNotesDifferences && (
-                                      <p className="text-[10px] xs:text-xs sm:text-sm text-gray-600 ml-2">
-                                        Notas: {formatNotes(baseMeal.notes)}
-                                      </p>
-                                    )}
-                                    {hasTimeDifferences && (
-                                      <p className="text-[10px] xs:text-xs sm:text-sm text-gray-600 ml-2">
-                                        🕒 Entrega: {isValidTime(baseMeal.time) ? cleanText(baseMeal.time.name) : 'Lo más rápido'}
-                                      </p>
-                                    )}
-                                    {hasAddressDifferences && !sharedAddress && (
-                                      <div className="text-[10px] xs:text-xs sm:text-sm text-gray-600 ml-2">
-                                        <p>📍 Dirección: {baseMeal?.address?.address || 'No especificada'}</p>
-                                        {baseMeal?.address?.addressType && (
-                                          <p>
-                                            🏠 Lugar de entrega: {baseMeal.address.addressType === 'house'
-                                              ? 'Casa/Apartamento Individual'
-                                              : baseMeal.address.addressType === 'school'
-                                              ? 'Colegio/Oficina'
-                                              : baseMeal.address.addressType === 'complex'
-                                              ? 'Conjunto Residencial'
-                                              : 'Tienda/Local'}
-                                          </p>
-                                        )}
-                                        {baseMeal?.address?.recipientName && (
-                                          <p>👤 Receptor: {baseMeal.address.recipientName}</p>
-                                        )}
-                                        {baseMeal?.address?.unitDetails && (
-                                          <p>🏢 Detalles: {baseMeal.address.unitDetails}</p>
-                                        )}
-                                        {baseMeal?.address?.localName && (
-                                          <p>🏬 Nombre del local: {baseMeal.address.localName}</p>
-                                        )}
-                                        {baseMeal?.address?.phoneNumber && (
-                                          <p>📞 Teléfono: {baseMeal.address.phoneNumber}</p>
-                                        )}
-                                      </div>
-                                    )}
-                                    {hasAddressDifferences && sharedAddress && (
-                                      <div className="text-[10px] xs:text-xs sm:text-sm text-gray-600 ml-2">
-                                        {baseMeal?.address?.addressType && (
-                                          <p>
-                                            🏠 Lugar de entrega: {baseMeal.address.addressType === 'house'
-                                              ? 'Casa/Apartamento Individual'
-                                              : baseMeal.address.addressType === 'school'
-                                              ? 'Colegio/Oficina'
-                                              : baseMeal.address.addressType === 'complex'
-                                              ? 'Conjunto Residencial'
-                                              : 'Tienda/Local'}
-                                          </p>
-                                        )}
-                                        {baseMeal?.address?.recipientName && (
-                                          <p>👤 Receptor: {baseMeal.address.recipientName}</p>
-                                        )}
-                                        {baseMeal?.address?.unitDetails && (
-                                          <p>🏢 Detalles: {baseMeal.address.unitDetails}</p>
-                                        )}
-                                        {baseMeal?.address?.localName && (
-                                          <p>🏬 Nombre del local: {baseMeal.address.localName}</p>
-                                        )}
-                                      </div>
-                                    )}
-                                    {hasPaymentDifferences && (
-                                      <p className="text-[10px] xs:text-xs sm:text-sm text-gray-600 ml-2">
-                                        Método de pago: {baseMeal?.payment?.name || 'No especificado'}
-                                      </p>
-                                    )}
-                                  </div>
-                                )}
-                                <p className="text-[10px] xs:text-xs sm:text-sm text-gray-600">
-                                  * Almuerzo {diff.originalIndex + 1}:
-                                </p>
-                                {diff.diffs.map((d, dIdx) => {
-                                  let formattedValue;
-                                  if (d.field === 'Sopa') {
-                                    formattedValue = d.replacement2
-                                      ? `${cleanText(d.replacement2)} (por sopa)`
-                                      : d.value2 && d.value2 !== 'Sin sopa' && d.value2 !== 'Solo bandeja'
-                                      ? `${cleanText(d.value2)}`
-                                      : d.value2 === 'Solo bandeja'
-                                      ? `solo bandeja`
-                                      : `Sin sopa`;
-                                  } else if (d.field === 'Principio') {
-                                    formattedValue = d.replacement2 
-                                      ? `${cleanText(d.replacement2)} (por principio)` 
-                                      : `${cleanText(d.value2)}${meal2?.principle?.length > 1 ? ' (mixto)' : ''}`;
-                                  } else if (d.field === 'Proteína') {
-                                    formattedValue = `${cleanText(d.value2) || 'Sin proteína'}`;
-                                  } else if (d.field === 'Bebida') {
-                                    formattedValue = d.value2 === 'Juego de mango' ? 'Jugo de mango' : `${cleanText(d.value2) || 'Sin bebida'}`;
-                                  } else if (d.field === 'Cubiertos') {
-                                    formattedValue = `Cubiertos: ${d.value2}`;
-                                  } else if (d.field === 'Entrega') {
-                                    formattedValue = `🕒 Entrega: ${d.value2 || 'Lo más rápido'}`;
-                                  } else if (d.field === 'address') {
-                                    formattedValue = !sharedAddress ? (
-                                      <div>
-                                        <p>📍 Dirección: {d.value2 || 'No especificada'}</p>
-                                        {d.addressDetails2?.addressType && (
-                                          <p>
-                                            🏠 Lugar de entrega: {d.addressDetails2.addressType === 'house'
-                                              ? 'Casa/Apartamento Individual'
-                                              : d.addressDetails2.addressType === 'school'
-                                              ? 'Colegio/Oficina'
-                                              : d.addressDetails2.addressType === 'complex'
-                                              ? 'Conjunto Residencial'
-                                              : 'Tienda/Local'}
-                                          </p>
-                                        )}
-                                        {d.addressDetails2?.recipientName && (
-                                          <p>👤 Receptor: {d.addressDetails2.recipientName}</p>
-                                        )}
-                                        {d.addressDetails2?.unitDetails && (
-                                          <p>🏢 Detalles: {d.addressDetails2.unitDetails}</p>
-                                        )}
-                                        {d.addressDetails2?.localName && (
-                                          <p>🏬 Nombre del local: {d.addressDetails2.localName}</p>
-                                        )}
-                                        {d.addressDetails2?.phoneNumber && (
-                                          <p>📞 Teléfono: {d.addressDetails2.phoneNumber}</p>
-                                        )}
-                                      </div>
-                                    ) : (
-                                      <div>
-                                        {d.addressDetails2?.addressType && (
-                                          <p>
-                                            🏠 Lugar de entrega: {d.addressDetails2.addressType === 'house'
-                                              ? 'Casa/Apartamento Individual'
-                                              : d.addressDetails2.addressType === 'school'
-                                              ? 'Colegio/Oficina'
-                                              : d.addressDetails2.addressType === 'complex'
-                                              ? 'Conjunto Residencial'
-                                              : 'Tienda/Local'}
-                                          </p>
-                                        )}
-                                        {d.addressDetails2?.recipientName && (
-                                          <p>👤 Receptor: {d.addressDetails2.recipientName}</p>
-                                        )}
-                                        {d.addressDetails2?.unitDetails && (
-                                          <p>🏢 Detalles: {d.addressDetails2.unitDetails}</p>
-                                        )}
-                                        {d.addressDetails2?.localName && (
-                                          <p>🏬 Nombre del local: {d.addressDetails2.localName}</p>
-                                        )}
-                                      </div>
-                                    );
-                                  } else if (d.field === 'Pago') {
-                                    formattedValue = `Método de pago: ${d.value2 !== 'No especificado' ? d.value2 : 'No especificado'}`;
-                                  } else if (d.field === 'Acompañamientos') {
-                                    formattedValue = meal2?.principle?.some(p => ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'].includes(p.name))
-                                      ? 'Acompañamientos ya incluidos'
-                                      : `${d.value2}${meal2?.sides?.length > 1 ? ' (mixto)' : ''}`;
-                                  } else if (d.field === 'Adiciones') {
-                                    formattedValue = `➤ Adiciones: ${d.value2 || 'Ninguna'}`;
-                                  } else if (d.field === 'Notas') {
-                                    formattedValue = `Notas: ${d.value2 || 'Ninguna'}`;
-                                  } else {
-                                    formattedValue = `${d.value2 || 'Ninguno'}`;
-                                  }
-                                  return (
-                                    <div key={dIdx} className="text-[10px] xs:text-xs sm:text-sm text-gray-600 ml-2">
-                                      {formattedValue}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            );
-                          })}
-                        </>
-                      );
-                    })()}
-                  </div>
-                )}
-
-                {/* 6. Entrega */}
-                {!hasTimeDifferences && (
-                  <p className="text-[10px] xs:text-xs sm:text-sm text-gray-600">
-                    🕒 Entrega: {timeName}
-                  </p>
-                )}
-
-                {/* 7. Dirección */}
-                {!hasAddressDifferences && (
-                  <div className="text-[10px] xs:text-xs sm:text-sm text-gray-600">
-                    <p>📍 Dirección: {baseMeal?.address?.address || 'No especificada'}</p>
-                    {baseMeal?.address?.addressType && (
-                      <p>
-                        🏠 Lugar de entrega: {baseMeal.address.addressType === 'house'
-                          ? 'Casa/Apartamento Individual'
-                          : baseMeal.address.addressType === 'school'
-                          ? 'Colegio/Oficina'
-                          : baseMeal.address.addressType === 'complex'
-                          ? 'Conjunto Residencial'
-                          : 'Tienda/Local'}
-                      </p>
-                    )}
-                    {baseMeal?.address?.recipientName && (
-                      <p>👤 Receptor: {baseMeal.address.recipientName}</p>
-                    )}
-                    {baseMeal?.address?.unitDetails && (
-                      <p>🏢 Detalles: {baseMeal.address.unitDetails}</p>
-                    )}
-                    {baseMeal?.address?.localName && (
-                      <p>🏬 Nombre del local: {baseMeal.address.localName}</p>
-                    )}
-                    {baseMeal?.address?.phoneNumber && (
-                      <p>📞 Teléfono: {baseMeal.address.phoneNumber}</p>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-
-          {/* 8. Método de pago (for all meals) */}
-          <div className="pt-2 xs:pt-4 border-t">
-            <p className="total-price text-[10px] xs:text-sm sm:text-base font-bold text-right">
-              Total: <span className="text-green-600">${total.toLocaleString('es-CO')}</span>
-            </p>
-            <p className="text-[10px] xs:text-xs sm:text-sm text-gray-600 mt-1">
-              💳 Instrucciones de pago: Envía al número 313 850 4417 (Nequi o DaviPlata):<br />
-              {Object.entries(paymentSummary(meals)).map(([method, amount]) => (
-                method !== 'No especificado' && amount > 0 && (
-                  <span key={method}>
-                    🔹 {method}: ${amount.toLocaleString('es-CO')}<br />
-                  </span>
-                )
-              ))}
-            </p>
-            <p className="text-[10px] xs:text-xs sm:text-sm text-gray-600 mt-1">
-              💰 Total: <span className="text-green-600">${total.toLocaleString('es-CO')}</span>
-            </p>
-            <p className="text-[10px] xs:text-xs sm:text-sm text-gray-600 mt-1">
-              🕐 Entrega estimada: 20–30 minutos. Si estás cerca del local, será aún más rápido.
-            </p>
-            <button
-              onClick={onSendOrder}
-              disabled={!meals || meals.length === 0}
-              className={`w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 rounded-lg mt-2 xs:mt-4 transition-colors text-xs xs:text-sm sm:text-base ${!meals || meals.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              Enviar Pedido por WhatsApp
-            </button>
-          </div>
+          {groupedMeals.map((group, index) => (
+            group.meals.length > 1 && (
+              <p key={`group-${index}`} className="text-sm text-gray-700">
+                * {group.meals.length} almuerzos iguales
+              </p>
+            )
+          ))}
+          <p className="text-sm text-gray-700">
+            <span className="font-medium text-gray-800">💰 Total: ${total.toLocaleString('es-CO')}</span>
+          </p>
+          <hr className="border-t border-gray-300 my-2" />
+          {groupedMeals.map((group, index) => (
+            <MealGroup
+              key={index}
+              group={group}
+              globalCommonFields={globalCommonFields}
+              globalCommonAddressFields={commonAddressFields}
+            />
+          ))}
+          <hr className="border-t border-gray-300 my-2" />
+          {meals.length > 0 && (
+            <div className="text-sm text-gray-600">
+              {commonDeliveryTime && (
+                <p className="font-medium text-gray-800">
+                  🕒 Entrega: {isValidTime(meals[0].time) ? cleanText(meals[0].time.name) : 'Lo más rápido'}
+                </p>
+              )}
+              {Object.keys(commonAddressFields).some(field => commonAddressFields[field]) && (
+                <AddressSummary commonAddressFields={commonAddressFields} isCommon={true} globalCommonAddressFields={commonAddressFields} />
+              )}
+              <hr className="border-t border-gray-300 my-2" />
+              <p className="text-sm text-gray-600">🚚 Estimado: 25-30 min (10-15 si están cerca).</p>
+            </div>
+          )}
+          <PaymentSummary paymentSummary={paymentSummary} total={total} />
+          <button
+            onClick={onSendOrder}
+            disabled={!meals || meals.length === 0}
+            className={`w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 rounded-lg mt-2 transition-colors text-sm ${
+              !meals || meals.length === 0 ? 'opacity-50 cursor-not-allowed' : ''
+            }`}
+          >
+            Enviar Pedido por WhatsApp
+          </button>
         </div>
       )}
     </div>

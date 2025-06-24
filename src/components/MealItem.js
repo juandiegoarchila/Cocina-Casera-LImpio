@@ -6,6 +6,7 @@ import PaymentSelector from './PaymentSelector';
 import CutlerySelector from './CutlerySelector';
 import ProgressBar from './ProgressBar';
 import OnboardingTutorial from './OnboardingTutorial';
+import { calculateMealPrice } from '../utils/MealCalculations';
 
 const MealItem = ({
   id,
@@ -363,7 +364,7 @@ const MealItem = ({
           <p className="mb-2 text-sm text-gray-600 text-center md:text-left">
             🎉 Ingresa tu dirección y teléfono <strong className="text-green-700">una sola vez</strong>. La próxima vez, solo haz clic en <strong className="text-blue-600">"Confirmar" ¡y listo!</strong>
           </p>
-          <AddressInput onConfirm={handleAddressConfirm} />
+          <AddressInput onConfirm={handleAddressConfirm} initialAddress={meal?.address || {}} />
           {!meal?.address?.address && (
             <p className="text-[10px] text-red-600 mt-1">
               Por favor, completa tu dirección y teléfono.
@@ -540,7 +541,7 @@ const MealItem = ({
   };
 
   const handlePrev = () => {
-    if (currentSlide > 0 && slideRef.current) {
+    if (currentSlide > 0 && currentSlide < slides.length) {
       setCurrentSlide(currentSlide - 1);
       slideRef.current.style.transform = `translateX(-${(currentSlide - 1) * 100}%)`;
     }
@@ -631,7 +632,7 @@ const MealItem = ({
               </div>
               <div>
                 <h3 className="font-bold text-sm text-gray-800">
-                  Almuerzo #{id + 1} - {displayMainItem}
+                  Almuerzo #{id + 1} - {displayMainItem} - ${calculateMealPrice(meal).toLocaleString('es-CO')}
                 </h3>
                 <ProgressBar progress={completionPercentage} className="w-24 sm:w-32 mt-1" />
               </div>
