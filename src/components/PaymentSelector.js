@@ -1,12 +1,20 @@
 import React from 'react';
+// Importa los logos SVG como componentes React
+import { ReactComponent as NequiLogo } from '../assets/nequi-logo.svg';
+import { ReactComponent as DaviplataLogo } from '../assets/daviplata-logo.svg';
+// Importa la imagen PNG para Efectivo
+// IMPORTANTE: REEMPLAZA './assets/efectivo.png' con la RUTA REAL a tu archivo PNG de efectivo.
+// Por ejemplo: si tu archivo se llama 'dinero.png' y está en 'src/assets/', la ruta sería '../assets/dinero.png';
+import EfectivoPNG from '../assets/efectivo.png';
+
 
 const PaymentSelector = ({ paymentMethods, selectedPayment, setSelectedPayment }) => {
   const getColorClass = (methodName) => {
     switch (methodName) {
       case 'Efectivo':
         return 'bg-green-200 text-green-800 border-green-300';
-      case 'DaviPlata':
-        return 'bg-yellow-200 text-yellow-800 border-yellow-300'; // Cambiado a amarillo
+      case 'Daviplata':
+        return 'bg-red-200 text-red-800 border-red-300';
       case 'Nequi':
         return 'bg-blue-200 text-blue-800 border-blue-300';
       default:
@@ -24,7 +32,7 @@ const PaymentSelector = ({ paymentMethods, selectedPayment, setSelectedPayment }
           <button
             key={method.id}
             onClick={() => setSelectedPayment(method)}
-            className={`payment-btn p-1 sm:p-2 rounded text-xs sm:text-sm font-medium transition-all duration-200 flex items-center justify-center text-center min-h-[30px] sm:min-h-[40px] shadow-sm ${
+            className={`payment-btn p-1 sm:p-2 rounded text-xs sm:text-sm font-medium transition-all duration-200 flex flex-col items-center justify-center text-center min-h-[30px] sm:min-h-[40px] shadow-sm gap-y-1 ${
               selectedPayment?.id === method.id
                 ? getColorClass(method.name)
                 : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
@@ -32,6 +40,18 @@ const PaymentSelector = ({ paymentMethods, selectedPayment, setSelectedPayment }
             aria-label={`Seleccionar ${method.name}`}
           >
             {method.name}
+
+            {method.name === 'Efectivo' && (
+              // Usando una imagen PNG para Efectivo
+              // Asegúrate de que el archivo PNG esté en la ruta especificada en el import.
+              <img src={EfectivoPNG} alt="Efectivo" className="h-20 w-20" />
+            )}
+            {method.name === 'Daviplata' && (
+              <DaviplataLogo className="h-20 w-20" />
+            )}
+            {method.name === 'Nequi' && (
+              <NequiLogo className="h-20 w-20" />
+            )}
           </button>
         ))}
       </div>

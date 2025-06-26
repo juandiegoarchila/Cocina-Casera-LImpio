@@ -509,37 +509,43 @@ export const generateMessageFromMeals = (meals, calculateMealPrice, total) => {
     }
   });
 
-  // Resumen de pagos
-  const paymentSummaryMap = paymentSummary(meals);
+// Resumen de pagos
+const paymentSummaryMap = paymentSummary(meals);
+if (process.env.NODE_ENV === 'development') {
   console.log('paymentSummaryMap:', paymentSummaryMap);
-  const allCashOrUnspecified = Object.keys(paymentSummaryMap).every(method => {
+}
+const allCashOrUnspecified = Object.keys(paymentSummaryMap).every(method => {
+  if (process.env.NODE_ENV === 'development') {
     console.log('Checking method:', method);
-    return method === 'Efectivo' || method === 'No especificado';
-  });
+  }
+  return method === 'Efectivo' || method === 'No especificado';
+});
+if (process.env.NODE_ENV === 'development') {
   console.log('allCashOrUnspecified:', allCashOrUnspecified);
   console.log('Total before payment summary:', total);
+}
 
-  if (Object.keys(paymentSummaryMap).length > 0) {
-    if (allCashOrUnspecified) {
-      message += `Paga en efectivo al momento de la entrega.\n`;
-      message += `💵 Efectivo: $${(total || 0).toLocaleString('es-CO')}\n`;
-      message += `Si no tienes efectivo, puedes transferir por Nequi o DaviPlata al número: 313 850 5647.\n\n`;
-      message += `💰 Total: $${(total || 0).toLocaleString('es-CO')}\n`;
-      message += `🚚 Estimado: 25-30 min (10-15 si están cerca).\n`;
-    } else {
-      message += `💳 Instrucciones de pago:\n`;
-      message += `Envía al número 313 850 5647 (Nequi o DaviPlata):\n`;
-      Object.entries(paymentSummaryMap).forEach(([method, amount]) => {
-        if (method !== 'No especificado' && amount > 0) {
-          message += `🔹 ${method}: $${(amount || 0).toLocaleString('es-CO')}\n`;
-        }
-      });
-      message += `\n💰 Total: $${(total || 0).toLocaleString('es-CO')}\n`;
-      message += `🚚 Estimado: 25-30 min (10-15 si están cerca).\n`;
-    }
+if (Object.keys(paymentSummaryMap).length > 0) {
+  if (allCashOrUnspecified) {
+    message += `Paga en efectivo al momento de la entrega.\n`;
+    message += `💵 Efectivo: $${(total || 0).toLocaleString('es-CO')}\n`;
+    message += `Si no tienes efectivo, puedes transferir por Nequi o DaviPlata al número: 313 850 5647.\n\n`;
+    message += `💰 Total: $${(total || 0).toLocaleString('es-CO')}\n`;
+    message += `🚚 Estimado: 25-30 min (10-15 si están cerca).\n`;
+  } else {
+    message += `💳 Instrucciones de pago:\n`;
+    message += `Envía al número 313 850 5647 (Nequi o DaviPlata):\n`;
+    Object.entries(paymentSummaryMap).forEach(([method, amount]) => {
+      if (method !== 'No especificado' && amount > 0) {
+        message += `🔹 ${method}: $${(amount || 0).toLocaleString('es-CO')}\n`;
+      }
+    });
+    message += `\n💰 Total: $${(total || 0).toLocaleString('es-CO')}\n`; // Fixed line
+    message += `🚚 Estimado: 25-30 min (10-15 si están cerca).\n`;
   }
+}
 
-  message += `\n¡Gracias por tu pedido! 😊`;
+message += `\n¡Gracias por tu pedido! 😊`;
 
-  return message;
+return message;
 };

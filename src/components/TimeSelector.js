@@ -1,11 +1,31 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 const TimeSelector = ({ times, selectedTime, setSelectedTime, onConfirm }) => {
-  // Ya no es necesario manejar onKeyDown para avanzar, el avance es explícito con el botón Confirmar.
-  // La función onKeyDown se mantiene para evitar que Enter envíe el formulario si es un input de texto.
+  const [error, setError] = useState(''); // Estado para mostrar errores
   const handleKeyDown = (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
+    }
+  };
+
+  // Validación de formato de hora completo (e.g., "1:00 PM", "12:30 AM")
+  const isValidTimeFormat = (value) => {
+    const timeRegex = /^([1-9]|1[0-2]):[0-5][0-9]\s?(AM|PM|am|pm)?$/;
+    return timeRegex.test(value);
+  };
+
+  const handleCustomTimeChange = (e) => {
+    const value = e.target.value;
+    // Permitimos cualquier entrada parcial o vacía, solo validamos al confirmar
+    setSelectedTime({ id: 0, name: value });
+    setError(''); // Limpiamos el error al escribir
+  };
+
+  const handleConfirm = () => {
+    if (!selectedTime || (selectedTime.id === 0 && !isValidTimeFormat(selectedTime.name))) {
+      setError('Por favor, ingresa una hora válida (e.g., 1:00 PM)');
+    } else {
+      onConfirm();
     }
   };
 
@@ -18,7 +38,10 @@ const TimeSelector = ({ times, selectedTime, setSelectedTime, onConfirm }) => {
         {times.map(time => (
           <button
             key={time.id}
-            onClick={() => setSelectedTime(time)}
+            onClick={() => {
+              setSelectedTime(time);
+              setError('');
+            }}
             className={`relative p-1 xs:p-2 rounded-lg text-[10px] xs:text-xs sm:text-sm font-medium transition-all duration-200 flex items-center justify-center text-center min-h-[30px] xs:min-h-[40px] shadow-sm ${
               selectedTime?.id === time.id
                 ? 'bg-green-200 text-green-800 border border-green-300'
@@ -31,18 +54,23 @@ const TimeSelector = ({ times, selectedTime, setSelectedTime, onConfirm }) => {
         ))}
         <input
           type="text"
-          placeholder="Otra hora"
+          placeholder="Otra hora (e.g., 1:00 PM)"
           value={selectedTime?.id === 0 ? selectedTime.name : ''}
-          onChange={(e) => setSelectedTime({ id: 0, name: e.target.value })}
+          onChange={handleCustomTimeChange}
           onKeyDown={handleKeyDown}
           className="col-span-2 mt-2 p-1 xs:p-2 text-[10px] xs:text-xs sm:text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-400 placeholder-gray-400 w-full"
           aria-label="Ingresar una hora personalizada"
         />
+        {error && (
+          <p className="text-[10px] xs:text-xs text-red-600 mt-1">{error}</p>
+        )}
       </div>
       <button
-        onClick={onConfirm}
+        onClick={handleConfirm}
         disabled={!selectedTime}
-        className={`mt-2 bg-green-500 hover:bg-green-600 text-white px-2 xs:px-3 py-0.5 xs:py-1 rounded-lg text-[10px] xs:text-xs sm:text-sm transition-colors ${!selectedTime ? 'opacity-50 cursor-not-allowed' : ''}`}
+        className={`mt-2 bg-green-500 hover:bg-green-600 text-white px-2 xs:px-3 py-0.5 xs:py-1 rounded-lg text-[10px] xs:text-xs sm:text-sm transition-colors ${
+          !selectedTime ? 'opacity-50 cursor-not-allowed' : ''
+        }`}
         aria-label="Confirmar hora"
       >
         Confirmar hora

@@ -122,7 +122,7 @@ useEffect(() => {
   }, [pendingSelection, showConfirmButton, title, multiple]);
 
   // Handle option click
-  const handleOptionClick = (option) => {
+const handleOptionClick = (option) => {
     if (disabled || option.isFinished) return;
 
     let updatedSelection = multiple ? [...pendingSelection] : null;
@@ -174,7 +174,6 @@ useEffect(() => {
         } else {
           shouldShowReplacement = option.name === 'Remplazo por Sopa' || option.name === 'Remplazo por Principio';
           if (multiple) {
-            // For Principio: Clear other selections when selecting "Remplazo por Principio"
             if (title === 'Principio' && option.name === 'Remplazo por Principio') {
               updatedSelection = [option];
             } else {
@@ -192,25 +191,50 @@ useEffect(() => {
         if (title === 'Principio' && multiple) {
           const isSpecialRice = ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'].includes(option.name);
           const hasSpecialRice = updatedSelection.some(opt => ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'].includes(opt.name));
+          const hasReplacement = updatedSelection.some(opt => opt.name === 'Remplazo por Principio');
 
-          if (isSpecialRice) {
+          if (isSpecialRice || option.name === 'Remplazo por Principio') {
             if (isCurrentlySelected) {
-              // Deselect the special rice dish, allowing non-rice principles to be selected
               updatedSelection = updatedSelection.filter((opt) => opt.id !== option.id);
+              if (hasReplacement) onImmediateReplacementSelect(null); // Limpia el reemplazo si deseleccionamos
             } else {
-              // If selecting a special rice dish, clear all other selections and set only this rice
-              updatedSelection = [option];
+              updatedSelection = [option]; // Limpia todo y establece solo la opción especial o reemplazo
+              if (option.name === 'Remplazo por Principio') {
+                setShowReplacement(true); // Activa el submenú para reemplazo
+              }
             }
           } else {
-            // For non-rice principles
-            if (hasSpecialRice) {
-              // If a special rice dish is already selected, deselect it to allow non-rice principles
-              updatedSelection = updatedSelection.filter(opt => !['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'].includes(opt.name));
+            if (hasSpecialRice || hasReplacement) {
+              updatedSelection = updatedSelection.filter(opt => !['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes', 'Remplazo por Principio'].includes(opt.name));
+              if (hasReplacement) onImmediateReplacementSelect(null); // Limpia el reemplazo al cambiar
             }
             const optionIndex = updatedSelection.findIndex((opt) => opt.id === option.id);
             if (optionIndex > -1) {
               updatedSelection.splice(optionIndex, 1);
             } else if (updatedSelection.length < 2) {
+              updatedSelection.push(option);
+            }
+          }
+        } else if (title === 'Acompañamiento' && multiple) {
+          if (option.name === 'Ninguno') {
+            if (isCurrentlySelected) {
+              updatedSelection = updatedSelection.filter((opt) => opt.id !== option.id);
+            } else {
+              if (updatedSelection.length === 0) {
+                updatedSelection = [option];
+              } else {
+                updatedSelection = [option];
+              }
+            }
+          } else {
+            const hasNinguno = updatedSelection.some(opt => opt.name === 'Ninguno');
+            if (hasNinguno) {
+              updatedSelection = updatedSelection.filter(opt => opt.name !== 'Ninguno');
+            }
+            const optionIndex = updatedSelection.findIndex((opt) => opt.id === option.id);
+            if (optionIndex > -1) {
+              updatedSelection.splice(optionIndex, 1);
+            } else {
               updatedSelection.push(option);
             }
           }

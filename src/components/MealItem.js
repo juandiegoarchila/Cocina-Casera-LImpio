@@ -66,8 +66,7 @@ const MealItem = ({
     isPrincipleComplete,
     isCompleteRice || !!meal?.protein,
     !!meal?.drink,
-    !!meal?.cutlery,
-    !!meal?.time,
+meal?.cutlery !== null, // Cambio aquí    !!meal?.time,
     !!meal?.address?.address,
     !!meal?.payment,
     isSidesComplete
@@ -127,6 +126,9 @@ const MealItem = ({
         break;
       case 'cutlery':
         currentSlideIsComplete = updatedMeal?.cutlery !== null;
+        if (currentSlideIsComplete && currentSlide < slides.length - 1) {
+          setTimeout(() => setCurrentSlide(currentSlide + 1), 300);
+        }
         break;
       case 'payment':
         currentSlideIsComplete = !!updatedMeal?.payment;
@@ -197,24 +199,31 @@ const MealItem = ({
     if (currentSlide < slides.length - 1) setTimeout(() => setCurrentSlide(currentSlide + 1), 300);
   };
 
-  const filteredSoups = soups.filter(soup => soup.name !== 'Solo bandeja' && soup.name !== 'Remplazo por Sopa');
-  const filteredPrinciples = principles.filter(principle => principle.name !== 'Remplazo por Principio');
+const filteredSoups = soups.filter(soup => soup.name !== 'Solo bandeja' && soup.name !== 'Remplazo por Sopa');
+  const filteredPrinciples = principles.filter(principle => 
+    principle.name !== 'Remplazo por Principio' && 
+    !['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'].includes(principle.name)
+  );
   const normalizedAdditions = additions.map(add => ({
     ...add,
     price: add.name === 'Mojarra' ? 8000 : add.price,
-    requiresReplacement: add.requiresReplacement || ['Proteína adicional', 'Sopa adicional', 'Principio adicional'].includes(add.name),
-  }));
+    requiresReplacement: add.requiresReplacement || ['Proteína adicional', 'Sopa adicional', 'Principio adicional', 'Bebida adicional'].includes(add.name),
+  })).filter(add => 
+    add.name !== 'Arroz con pollo' && 
+    add.name !== 'Arroz paisa' && 
+    add.name !== 'Arroz tres carnes'
+  );
 
   const getReplacementsForAdditions = () => {
     const selectedAdditions = meal?.additions || [];
     if (selectedAdditions.some(add => add.name === 'Sopa adicional' && !add.replacement)) return filteredSoups;
     if (selectedAdditions.some(add => add.name === 'Principio adicional' && !add.replacement)) return filteredPrinciples;
     if (selectedAdditions.some(add => add.name === 'Proteína adicional' && !add.protein)) return proteins.filter(p => p.name !== 'Mojarra');
-    return [];
+if (selectedAdditions.some(add => add.name === 'Bebida adicional' && !add.replacement)) return drinks.filter(d => d.name !== 'Sin bebida');    return [];
   };
 
   const shouldShowReplacements = meal?.additions?.some(
-    add => (add.name === 'Proteína adicional' && !add.protein) || (add.name === 'Sopa adicional' && !add.replacement) || (add.name === 'Principio adicional' && !add.replacement)
+    add => (add.name === 'Proteína adicional' && !add.protein) || (add.name === 'Sopa adicional' && !add.replacement) || (add.name === 'Principio adicional' && !add.replacement) || (add.name === 'Bebida adicional' && !add.replacement)
   );
 
   const slides = [
@@ -334,8 +343,7 @@ const MealItem = ({
           )}
         </div>
       ),
-      isComplete: meal?.cutlery !== null,
-      label: 'Cubiertos',
+isComplete: meal?.cutlery !== null, 
       associatedField: 'cutlery'
     },
     {
