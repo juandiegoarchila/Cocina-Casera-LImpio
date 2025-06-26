@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 
-// Use viewport width to determine if the device is mobile (below 768px)
+// Usa el ancho de la ventana para determinar si el dispositivo es móvil (menos de 768px)
 export const isMobile = () => window.innerWidth < 768;
 
 const OptionSelector = ({
@@ -28,17 +29,18 @@ const OptionSelector = ({
   const [currentConfiguring, setCurrentConfiguring] = useState(null);
   const [showWarning, setShowWarning] = useState(false);
 
-  // Initialize pendingSelection with the current selections
-useEffect(() => {
+  // Inicializa pendingSelection con las selecciones actuales
+  useEffect(() => {
     setPendingSelection(multiple ? (Array.isArray(selected) ? selected : []) : selected);
     if (process.env.NODE_ENV === 'development') {
-      console.log('[OptionSelector] Initialized pendingSelection:', multiple ? (Array.isArray(selected) ? selected : []) : selected);
+      console.log('[OptionSelector] pendingSelection inicializado:', multiple ? (Array.isArray(selected) ? selected : []) : selected);
     }
   }, [selected, multiple]);
 
-  // Update showReplacement based on selection
+  // Actualiza showReplacement según la selección
   useEffect(() => {
-    let shouldShow = propShowReplacements;
+    let shouldShow = propShowReplacements && Array.isArray(replacements) && replacements.length > 0;
+    
     if (title === 'Adiciones (por almuerzo)') {
       const needsReplacement = pendingSelection.some(
         (opt) => opt.requiresReplacement && !opt.protein && !opt.replacement
@@ -55,47 +57,53 @@ useEffect(() => {
     } else if (title === 'Sopa') {
       shouldShow = pendingSelection?.name === 'Remplazo por Sopa';
     } else if (title === 'Principio') {
-      shouldShow = (multiple && Array.isArray(pendingSelection) && pendingSelection.some((opt) => opt.name === 'Remplazo por Principio')) ||
-                   (!multiple && pendingSelection?.name === 'Remplazo por Principio');
-  }
-}, [propShowReplacements, pendingSelection, title, replacements, currentConfiguring, multiple]);
+      shouldShow =
+        (multiple && Array.isArray(pendingSelection) && pendingSelection.some((opt) => opt.name === 'Remplazo por Principio')) ||
+        (!multiple && pendingSelection?.name === 'Remplazo por Principio');
+    }
 
-useEffect(() => {
-    const shouldShow = propShowReplacements && Array.isArray(replacements) && replacements.length > 0;
     setShowReplacement(shouldShow);
     if (process.env.NODE_ENV === 'development') {
       console.log(
-        '[OptionSelector] showReplacement updated:',
+        '[OptionSelector] showReplacement actualizado:',
         shouldShow,
-        'for pendingSelection:',
+        'para pendingSelection:',
         pendingSelection,
-        'replacements:',
+        'reemplazos:',
         replacements,
-        'title:',
+        'título:',
         title
       );
     }
   }, [propShowReplacements, pendingSelection, title, replacements, currentConfiguring, multiple]);
-  // Validate selections, but do not remove those being configured
-  useEffect(() => {
-    if (title === 'Adiciones (por almuerzo)') {
-      const validSelections = pendingSelection.filter((opt) => {
-        if (opt.requiresReplacement && opt.id !== currentConfiguring) {
-          return opt.name === 'Proteína adicional' ? !!opt.protein : !!opt.replacement;
-        }
-        return true;
-      });
-      if (validSelections.length !== pendingSelection.length) {
-        setPendingSelection(validSelections);
-        onImmediateSelect(validSelections);
-        if (process.env.NODE_ENV === 'development') {
-          console.log('[OptionSelector] Cleaned invalid selections:', validSelections);
+
+  // Valida selecciones, pero no elimina las que están siendo configuradas
+useEffect(() => {
+  if (title === 'Adiciones (por almuerzo)') {
+    const validSelections = pendingSelection.filter((opt) => {
+      if (opt.id === currentConfiguring) {
+        return true; // Omite validación para el elemento en configuración
+      }
+      if (opt.requiresReplacement) {
+        if (opt.name === 'Proteína adicional') {
+          return !!opt.protein;
+        } else if (['Sopa adicional', 'Principio adicional', 'Bebida adicional'].includes(opt.name)) {
+          return !!opt.replacement;
         }
       }
+      return true;
+    });
+    if (validSelections.length !== pendingSelection.length) {
+      setPendingSelection(validSelections);
+      onImmediateSelect(validSelections);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[OptionSelector] Selecciones inválidas eliminadas:', validSelections);
+      }
     }
-  }, [pendingSelection, title, onImmediateSelect, currentConfiguring]);
+  }
+}, [pendingSelection, title, onImmediateSelect, currentConfiguring]);
 
-  // Show warning if an addition is incomplete when collapsing
+  // Muestra advertencia si una adición está incompleta al colapsar
   const handleCollapseCheck = () => {
     const hasIncompleteAddition = pendingSelection.some(
       (opt) =>
@@ -108,7 +116,7 @@ useEffect(() => {
     return hasIncompleteAddition;
   };
 
-  // Check if confirm button is disabled
+  // Verifica si el botón de confirmar está deshabilitado
   const isConfirmDisabled = useCallback(() => {
     if (!showConfirmButton) return false;
     if (title === 'Principio' && multiple) {
@@ -121,8 +129,8 @@ useEffect(() => {
     return multiple ? pendingSelection.length === 0 : !pendingSelection;
   }, [pendingSelection, showConfirmButton, title, multiple]);
 
-  // Handle option click
-const handleOptionClick = (option) => {
+  // Maneja el clic en una opción
+  const handleOptionClick = (option) => {
     if (disabled || option.isFinished) return;
 
     let updatedSelection = multiple ? [...pendingSelection] : null;
@@ -136,6 +144,7 @@ const handleOptionClick = (option) => {
       'Proteína adicional',
       'Sopa adicional',
       'Principio adicional',
+      'Bebida adicional',
     ];
 
     if (title === 'Adiciones (por almuerzo)') {
@@ -255,61 +264,60 @@ const handleOptionClick = (option) => {
     }
   };
 
-  // Handle replacement click
-  const handleReplacementClick = (replacement) => {
-    if (disabled || replacement.isFinished) return;
+  // Maneja el clic en un reemplazo
+const handleReplacementClick = (replacement) => {
+  if (disabled || replacement.isFinished) return;
 
-    if (title === 'Adiciones (por almuerzo)') {
-      if (currentConfiguring) {
-        const updatedSelection = pendingSelection.map((opt) => {
-          if (opt.id === currentConfiguring) {
-            return {
-              ...opt,
-              protein: opt.name === 'Proteína adicional' ? replacement.name : opt.protein,
-              replacement:
-                opt.name === 'Sopa adicional' || opt.name === 'Principio adicional'
-                  ? replacement.name
-                  : opt.replacement,
-            };
-          }
-          return opt;
-        });
-        setPendingSelection(updatedSelection);
-        onImmediateSelect(updatedSelection);
-        onImmediateReplacementSelect({ id: currentConfiguring, replacement });
-        setCurrentConfiguring(null);
-        const nextUnconfigured = updatedSelection.find(
-          (opt) => opt.requiresReplacement && !opt.protein && !opt.replacement
-        );
-        if (nextUnconfigured) {
-          setCurrentConfiguring(nextUnconfigured.id);
-          setShowReplacement(true);
-        } else {
-          setShowReplacement(false);
-        }
-      }
-    } else if (title === 'Sopa' || title === 'Principio') {
-      const updatedSelection = multiple
-        ? pendingSelection.map((opt) => ({
+  if (title === 'Adiciones (por almuerzo)') {
+    if (currentConfiguring) {
+      const updatedSelection = pendingSelection.map((opt) => {
+        if (opt.id === currentConfiguring) {
+          return {
             ...opt,
-            replacement:
-              opt.name === 'Remplazo por Sopa' || opt.name === 'Remplazo por Principio'
-                ? replacement.name
-                : opt.replacement,
-          }))
-        : { ...pendingSelection, replacement: replacement.name };
+            protein: opt.name === 'Proteína adicional' ? replacement.name : opt.protein,
+            replacement: ['Sopa adicional', 'Principio adicional', 'Bebida adicional'].includes(opt.name)
+              ? replacement.name
+              : opt.replacement,
+          };
+        }
+        return opt;
+      });
       setPendingSelection(updatedSelection);
       onImmediateSelect(updatedSelection);
-      onImmediateReplacementSelect(replacement);
-      setShowReplacement(false);
-      // For Principio: Auto-confirm after selecting a replacement
-      if (title === 'Principio') {
-        onConfirm({ selection: updatedSelection, replacement });
+      onImmediateReplacementSelect({ id: currentConfiguring, replacement });
+      onConfirm({ selection: updatedSelection, replacement });
+
+      // Verifica el siguiente elemento sin configurar
+      const nextUnconfigured = updatedSelection.find(
+        (opt) => opt.requiresReplacement && !opt.replacement && opt.name !== 'Proteína adicional' && opt.id !== currentConfiguring
+      );
+      if (nextUnconfigured) {
+        setCurrentConfiguring(nextUnconfigured.id);
+        setShowReplacement(true);
+      } else {
+        setCurrentConfiguring(null);
+        setShowReplacement(false);
       }
     }
-  };
+  } else if (title === 'Sopa' || title === 'Principio') {
+    const updatedSelection = multiple
+      ? pendingSelection.map((opt) => ({
+          ...opt,
+          replacement:
+            opt.name === 'Remplazo por Sopa' || opt.name === 'Remplazo por Principio'
+              ? replacement.name
+              : opt.replacement,
+        }))
+      : { ...pendingSelection, replacement: replacement.name };
+    setPendingSelection(updatedSelection);
+    onImmediateSelect(updatedSelection);
+    onImmediateReplacementSelect(replacement);
+    onConfirm({ selection: updatedSelection, replacement });
+    setShowReplacement(false);
+  }
+};
 
-  // Cancel replacement selection
+  // Cancela la selección de reemplazo
   const handleCancelReplacement = () => {
     if (title === 'Adiciones (por almuerzo)' && currentConfiguring) {
       const updatedSelection = pendingSelection.filter((opt) => opt.id !== currentConfiguring);
@@ -322,7 +330,7 @@ const handleOptionClick = (option) => {
     }
   };
 
-  // Deselect an addition or option
+  // Deselecciona una adición u opción
   const handleDeselect = () => {
     if (title === 'Adiciones (por almuerzo)' && currentConfiguring) {
       const updatedSelection = pendingSelection.filter((opt) => opt.id !== currentConfiguring);
@@ -340,14 +348,14 @@ const handleOptionClick = (option) => {
     }
   };
 
-  // Confirm selection for cases with confirm button
+  // Confirma la selección para casos con botón de confirmar
   const handleConfirm = () => {
     if (showConfirmButton && onConfirm) {
       onConfirm({ selection: pendingSelection, replacement: null });
     }
   };
 
-  // Check if an option is selected
+  // Verifica si una opción está seleccionada
   const isOptionSelected = useCallback(
     (option) => {
       const currentCheckSelection = showConfirmButton ? pendingSelection : selected;
@@ -362,7 +370,7 @@ const handleOptionClick = (option) => {
     [pendingSelection, selected, showConfirmButton, multiple]
   );
 
-  // Get the quantity of an option
+  // Obtiene la cantidad de una opción
   const getOptionQuantity = (option) => {
     if (title === 'Adiciones (por almuerzo)') {
       const selectedOption = pendingSelection.find((opt) => opt.id === option.id);
@@ -371,7 +379,7 @@ const handleOptionClick = (option) => {
     return 0;
   };
 
-  // Check if a replacement is selected
+  // Verifica si un reemplazo está seleccionado
   const isReplacementSelected = useCallback(
     (replacement) => {
       if (title === 'Adiciones (por almuerzo)') {
@@ -394,7 +402,7 @@ const handleOptionClick = (option) => {
     [pendingSelection, selected, currentConfiguring, title]
   );
 
-  // Parse display text and extract description if name includes "(Nuevo)"
+  // Analiza el texto de visualización y extrae la descripción si el nombre incluye "(Nuevo)"
   const getDisplayText = (option) => {
     const selectedOption = multiple
       ? Array.isArray(pendingSelection)
@@ -407,23 +415,23 @@ const handleOptionClick = (option) => {
     let baseName = option.name;
     let isNew = option.isNew || false;
 
-    // Parse "(Nuevo)" from name if present
+    // Analiza "(Nuevo)" del nombre si está presente
     if (baseName.includes('(Nuevo)')) {
       baseName = baseName.replace(' (Nuevo)', '');
       isNew = true;
     }
 
-    if (title === 'Adiciones (por almuerzo)') {
-      if (option.name === 'Proteína adicional' && selectedOption.protein) {
-        return `${baseName} (${selectedOption.protein})`;
-      }
-      if (
-        (option.name === 'Sopa adicional' || option.name === 'Principio adicional') &&
-        selectedOption.replacement
-      ) {
-        return `${baseName} (${selectedOption.replacement})`;
-      }
-    } else if (
+if (title === 'Adiciones (por almuerzo)') {
+  if (option.name === 'Proteína adicional' && selectedOption.protein) {
+    return `${baseName} (${selectedOption.protein})`;
+  }
+  if (
+    ['Sopa adicional', 'Principio adicional', 'Bebida adicional'].includes(option.name) &&
+    selectedOption.replacement
+  ) {
+    return `${baseName} (${selectedOption.replacement})`;
+  }
+}else if (
       (title === 'Sopa' && option.name === 'Remplazo por Sopa' && selectedOption.replacement) ||
       (title === 'Principio' && option.name === 'Remplazo por Principio' && selectedOption.replacement)
     ) {
@@ -471,27 +479,27 @@ const handleOptionClick = (option) => {
         )}
         {title === 'Adiciones (por almuerzo)' && isSelected && (
           <div className="flex items-center space-x-1 mt-1">
-            <button
+            <div
               onClick={(e) => {
                 e.stopPropagation();
                 onRemove(option.id);
               }}
-              className="text-red-500 hover:text-red-700"
+              className="text-red-500 hover:text-red-700 cursor-pointer"
               aria-label={`Disminuir cantidad de ${option.name}`}
             >
-              <span role="img" aria-label="Remove">🗑️</span>
-            </button>
+              <span role="img" aria-label="Eliminar">🗑️</span>
+            </div>
             <span className="text-sm">{quantity}</span>
-            <button
+            <div
               onClick={(e) => {
                 e.stopPropagation();
                 onIncrease(option.id);
               }}
-              className="text-green-500 hover:text-green-700"
+              className="text-green-500 hover:text-green-700 cursor-pointer"
               aria-label={`Aumentar cantidad de ${option.name}`}
             >
-              <span role="img" aria-label="Add">➕</span>
-            </button>
+              <span role="img" aria-label="Agregar">➕</span>
+            </div>
           </div>
         )}
       </button>
@@ -616,27 +624,27 @@ const handleOptionClick = (option) => {
         </div>
         {title === 'Adiciones (por almuerzo)' && isSelected && (
           <div className="flex items-center space-x-1">
-            <button
+            <div
               onClick={(e) => {
                 e.stopPropagation();
                 onRemove(option.id);
               }}
-              className="text-red-500 hover:text-red-700"
+              className="text-red-500 hover:text-red-700 cursor-pointer"
               aria-label={`Disminuir cantidad de ${option.name}`}
             >
-              <span role="img" aria-label="Remove">🗑️</span>
-            </button>
+              <span role="img" aria-label="Eliminar">🗑️</span>
+            </div>
             <span className="text-sm">{quantity}</span>
-            <button
+            <div
               onClick={(e) => {
                 e.stopPropagation();
                 onIncrease(option.id);
               }}
-              className="text-green-500 hover:text-green-700"
+              className="text-green-500 hover:text-green-700 cursor-pointer"
               aria-label={`Aumentar cantidad de ${option.name}`}
             >
-              <span role="img" aria-label="Add">➕</span>
-            </button>
+              <span role="img" aria-label="Agregar">➕</span>
+            </div>
           </div>
         )}
         {isSelected && title !== 'Adiciones (por almuerzo)' && (

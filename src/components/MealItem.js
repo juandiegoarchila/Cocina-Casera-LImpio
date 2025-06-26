@@ -61,16 +61,17 @@ const MealItem = ({
   const displayMainItem = isCompleteRice ? selectedRiceName : meal?.protein?.name || 'Selecciona';
 
   const totalSteps = 9;
-  const completedSteps = [
-    isSoupComplete,
-    isPrincipleComplete,
-    isCompleteRice || !!meal?.protein,
-    !!meal?.drink,
-meal?.cutlery !== null, // Cambio aquí    !!meal?.time,
-    !!meal?.address?.address,
-    !!meal?.payment,
-    isSidesComplete
-  ].filter(Boolean).length;
+const completedSteps = [
+  isSoupComplete,
+  isPrincipleComplete,
+  isCompleteRice || !!meal?.protein,
+  !!meal?.drink,
+  meal?.cutlery !== null,
+  !!meal?.time,
+  !!meal?.address?.address,
+  !!meal?.payment,
+  isSidesComplete
+].filter(Boolean).length;
 
   const completionPercentage = Math.min(Math.round((completedSteps / totalSteps) * 100), 100);
 
@@ -86,73 +87,79 @@ meal?.cutlery !== null, // Cambio aquí    !!meal?.time,
 
   const handleTutorialComplete = () => setShowTutorial(false);
 
-  const handleImmediateChange = (field, value) => {
-    let updatedMeal = { ...meal, [field]: value };
-    let currentSlideIsComplete = false;
+const handleImmediateChange = (field, value) => {
+  let updatedMeal = { ...meal, [field]: value };
+  let currentSlideIsComplete = false;
 
-    if (field === 'principle') {
-      const isNewSelectionCompleteRice = Array.isArray(value) && value.some(p => ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'].includes(p.name));
-      if (isNewSelectionCompleteRice) {
-        updatedMeal = { ...updatedMeal, protein: null }; // Clear protein when special rice is selected
-        onMealChange(id, 'protein', null);
-      }
-      onMealChange(id, 'principle', value);
-      currentSlideIsComplete = updatedMeal?.principle && (
-        (Array.isArray(updatedMeal.principle) && updatedMeal.principle.length === 1 && updatedMeal.principle[0]?.name === 'Remplazo por Principio' && !!updatedMeal?.principleReplacement) ||
-        (Array.isArray(updatedMeal.principle) && updatedMeal.principle.length >= 1 && updatedMeal.principle.length <= 2 && !updatedMeal.principle.some(opt => opt.name === 'Remplazo por Principio'))
-      );
-      if (isNewSelectionCompleteRice && currentSlide < slides.length - 1) {
-        setTimeout(() => setCurrentSlide(currentSlide + 1), 300);
-      }
-    } else {
-      onMealChange(id, field, value);
+  if (field === 'principle') {
+    const isNewSelectionCompleteRice = Array.isArray(value) && value.some(p => ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'].includes(p.name));
+    if (isNewSelectionCompleteRice) {
+      updatedMeal = { ...updatedMeal, protein: null };
+      onMealChange(id, 'protein', null);
     }
-
-    switch (field) {
-      case 'soup':
-        currentSlideIsComplete = updatedMeal?.soup && (updatedMeal.soup.name !== 'Remplazo por Sopa' || updatedMeal.soupReplacement);
-        break;
-      case 'soupReplacement':
-        currentSlideIsComplete = updatedMeal.soup?.name === 'Remplazo por Sopa' && !!value;
-        break;
-      case 'principle':
-        // Already handled above
-        break;
-      case 'protein':
-        currentSlideIsComplete = isCompleteRice || !!updatedMeal?.protein;
-        break;
-      case 'drink':
-        currentSlideIsComplete = !!updatedMeal?.drink;
-        break;
-      case 'cutlery':
-        currentSlideIsComplete = updatedMeal?.cutlery !== null;
-        if (currentSlideIsComplete && currentSlide < slides.length - 1) {
-          setTimeout(() => setCurrentSlide(currentSlide + 1), 300);
-        }
-        break;
-      case 'payment':
-        currentSlideIsComplete = !!updatedMeal?.payment;
-        break;
-      case 'sides':
-        currentSlideIsComplete = isCompleteRice || (Array.isArray(value) && value.length > 0);
-        break;
-      case 'notes':
-      case 'additions':
-        currentSlideIsComplete = true;
-        if (field === 'additions' && isAdditionsExpanded) {
-          if (collapseTimeout) clearTimeout(collapseTimeout);
-          const timeout = setTimeout(() => setIsAdditionsExpanded(false), 15000);
-          setCollapseTimeout(timeout);
-        }
-        break;
-      default:
-        break;
-    }
-
-    if (currentSlideIsComplete && field !== 'additions' && field !== 'principle' && currentSlide < slides.length - 1) {
+    onMealChange(id, 'principle', value);
+    currentSlideIsComplete = updatedMeal?.principle && (
+      (Array.isArray(updatedMeal.principle) && updatedMeal.principle.length === 1 && updatedMeal.principle[0]?.name === 'Remplazo por Principio' && !!updatedMeal?.principleReplacement) ||
+      (Array.isArray(updatedMeal.principle) && updatedMeal.principle.length >= 1 && updatedMeal.principle.length <= 2 && !updatedMeal.principle.some(opt => opt.name === 'Remplazo por Principio'))
+    );
+    if (isNewSelectionCompleteRice && currentSlide < slides.length - 1) {
       setTimeout(() => setCurrentSlide(currentSlide + 1), 300);
     }
-  };
+  } else {
+    onMealChange(id, field, value);
+  }
+
+  switch (field) {
+    case 'soup':
+      currentSlideIsComplete = updatedMeal?.soup && (updatedMeal.soup.name !== 'Remplazo por Sopa' || updatedMeal.soupReplacement);
+      break;
+    case 'soupReplacement':
+      currentSlideIsComplete = updatedMeal.soup?.name === 'Remplazo por Sopa' && !!value;
+      break;
+    case 'principle':
+      // Already handled above
+      break;
+    case 'protein':
+      currentSlideIsComplete = isCompleteRice || !!updatedMeal?.protein;
+      break;
+    case 'drink':
+      currentSlideIsComplete = !!updatedMeal?.drink;
+      break;
+    case 'cutlery':
+      currentSlideIsComplete = updatedMeal?.cutlery !== null;
+      if (currentSlideIsComplete && currentSlide < slides.length - 1) {
+        setTimeout(() => setCurrentSlide(currentSlide + 1), 300);
+      }
+      break;
+    case 'time':
+      currentSlideIsComplete = !!updatedMeal?.time; // Asegura que se evalúe el nuevo valor
+      if (currentSlideIsComplete && currentSlide < slides.length - 1) {
+        setTimeout(() => setCurrentSlide(currentSlide + 1), 300); // Avanza el slide si está completo
+      }
+      break;
+    case 'payment':
+      currentSlideIsComplete = !!updatedMeal?.payment;
+      break;
+    case 'sides':
+      currentSlideIsComplete = isCompleteRice || (Array.isArray(value) && value.length > 0);
+      break;
+    case 'notes':
+    case 'additions':
+      currentSlideIsComplete = true;
+      if (field === 'additions' && isAdditionsExpanded) {
+        if (collapseTimeout) clearTimeout(collapseTimeout);
+        const timeout = setTimeout(() => setIsAdditionsExpanded(false), 15000);
+        setCollapseTimeout(timeout);
+      }
+      break;
+    default:
+      break;
+  }
+
+  if (currentSlideIsComplete && field !== 'additions' && field !== 'principle' && currentSlide < slides.length - 1) {
+    setTimeout(() => setCurrentSlide(currentSlide + 1), 300);
+  }
+};
 
   const handleOptionConfirm = (field, { selection, replacement }) => {
     if (field === 'principle') {
@@ -187,12 +194,11 @@ meal?.cutlery !== null, // Cambio aquí    !!meal?.time,
     }
   };
 
-  const handleTimeConfirm = () => {
-    if (pendingTime) {
-      onMealChange(id, 'time', pendingTime);
-      if (currentSlide < slides.length - 1) setTimeout(() => setCurrentSlide(currentSlide + 1), 300);
-    }
-  };
+const handleTimeConfirm = () => {
+  if (pendingTime) {
+    handleImmediateChange('time', pendingTime); 
+  }
+};
 
   const handleAddressConfirm = (confirmedDetails) => {
     onMealChange(id, 'address', confirmedDetails);
@@ -214,13 +220,20 @@ const filteredSoups = soups.filter(soup => soup.name !== 'Solo bandeja' && soup.
     add.name !== 'Arroz tres carnes'
   );
 
-  const getReplacementsForAdditions = () => {
-    const selectedAdditions = meal?.additions || [];
-    if (selectedAdditions.some(add => add.name === 'Sopa adicional' && !add.replacement)) return filteredSoups;
-    if (selectedAdditions.some(add => add.name === 'Principio adicional' && !add.replacement)) return filteredPrinciples;
-    if (selectedAdditions.some(add => add.name === 'Proteína adicional' && !add.protein)) return proteins.filter(p => p.name !== 'Mojarra');
-if (selectedAdditions.some(add => add.name === 'Bebida adicional' && !add.replacement)) return drinks.filter(d => d.name !== 'Sin bebida');    return [];
-  };
+const getReplacementsForAdditions = () => {
+  const selectedAdditions = meal?.additions || [];
+  const unconfiguredAdditions = selectedAdditions.filter(
+    (add) => add.requiresReplacement && !add.replacement && add.name !== 'Proteína adicional'
+  );
+  if (unconfiguredAdditions.length === 0) return [];
+
+  const firstUnconfigured = unconfiguredAdditions[0];
+  if (firstUnconfigured.name === 'Sopa adicional') return filteredSoups;
+  if (firstUnconfigured.name === 'Principio adicional') return filteredPrinciples;
+  if (firstUnconfigured.name === 'Proteína adicional') return proteins.filter((p) => p.name !== 'Mojarra');
+  if (firstUnconfigured.name === 'Bebida adicional') return drinks.filter((d) => d.name !== 'Sin bebida');
+  return [];
+};
 
   const shouldShowReplacements = meal?.additions?.some(
     add => (add.name === 'Proteína adicional' && !add.protein) || (add.name === 'Sopa adicional' && !add.replacement) || (add.name === 'Principio adicional' && !add.replacement) || (add.name === 'Bebida adicional' && !add.replacement)
@@ -779,19 +792,22 @@ isComplete: meal?.cutlery !== null,
                 });
                 handleImmediateChange('additions', updatedSelection);
               }}
-              onImmediateReplacementSelect={({ id: additionId, replacement }) => {
-                const updatedAdditions = (meal?.additions || []).map(add => {
-                  if (add.id === additionId) {
-                    return {
-                      ...add,
-                      protein: add.name === 'Proteína adicional' ? replacement?.name || '' : add.protein,
-                      replacement: (add.name === 'Sopa adicional' || add.name === 'Principio adicional') ? replacement?.name || '' : add.replacement,
-                    };
-                  }
-                  return add;
-                });
-                handleImmediateChange('additions', updatedAdditions);
-              }}
+onImmediateReplacementSelect={({ id: additionId, replacement }) => {
+  const updatedAdditions = (meal?.additions || []).map((add) => {
+    if (add.id === additionId) {
+      return {
+        ...add,
+        protein: add.name === 'Proteína adicional' ? replacement?.name || add.protein : add.protein,
+        replacement:
+          ['Sopa adicional', 'Principio adicional', 'Bebida adicional'].includes(add.name)
+            ? replacement?.name || add.replacement
+            : add.replacement,
+      };
+    }
+    return add;
+  });
+  handleImmediateChange('additions', updatedAdditions);
+}}
               onAdd={handleAddAddition}
               onRemove={handleRemoveAddition}
               onIncrease={handleIncreaseAddition}
