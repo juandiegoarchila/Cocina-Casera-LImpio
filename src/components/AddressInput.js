@@ -23,7 +23,7 @@ const InputField = ({ id, label, value, onChange, placeholder, icon, type = 'tex
 const AddressInput = ({ onConfirm, initialAddress = {} }) => {
   const [address, setAddress] = useLocalStorage('userAddress', initialAddress.address || '');
   const [phoneNumber, setPhoneNumber] = useLocalStorage('userPhoneNumber', initialAddress.phoneNumber || '');
-  const [addressType, setAddressType] = useLocalStorage('userAddressType', initialAddress.addressType || 'complex');
+const [addressType, setAddressType] = useLocalStorage('userAddressType', initialAddress.addressType || 'school');
   const [recipientName, setRecipientName] = useLocalStorage('userRecipientName', initialAddress.recipientName || '');
   const [unitDetails, setUnitDetails] = useLocalStorage('userUnitDetails', initialAddress.unitDetails || '');
   const [localName, setLocalName] = useLocalStorage('userLocalName', initialAddress.localName || '');
