@@ -50,7 +50,10 @@ export const duplicateMeal = (setMeals, setSuccessMessage, mealToDuplicate, meal
       ...mealToDuplicate,
       id: newId,
     }));
-    return [...prev, newMeal];
+    const originalIndex = prev.findIndex(meal => meal.id === mealToDuplicate.id);
+    const newMeals = [...prev];
+    newMeals.splice(originalIndex + 1, 0, newMeal);
+    return newMeals;
   });
 };
 
@@ -315,6 +318,16 @@ export const generateMessageFromMeals = (meals, calculateMealPrice, total) => {
     const isCommon = meals.every(meal => meal.address?.[field] === firstMeal?.address?.[field]);
     commonAddressFields[field] = isCommon ? firstMeal?.address?.[field] : null;
   });
+  // Considerar solo los campos de dirección relevantes según addressType
+  const relevantAddressFields = ['address', 'addressType', 'phoneNumber'];
+  if (commonAddressFields.addressType === 'school') {
+    relevantAddressFields.push('recipientName');
+  } else if (commonAddressFields.addressType === 'complex') {
+    relevantAddressFields.push('unitDetails');
+  } else if (commonAddressFields.addressType === 'shop') {
+    relevantAddressFields.push('localName');
+  }
+  const allDeliveryDetailsCommon = commonDeliveryTime && relevantAddressFields.every(field => commonAddressFields[field] !== null || !firstMeal?.address?.[field]);
 
   // Encabezado
   const totalMeals = meals.length;
@@ -328,82 +341,125 @@ export const generateMessageFromMeals = (meals, calculateMealPrice, total) => {
   message += `───────────────\n`;
 
   // Detalle de almuerzos
-  groupedMeals.forEach((group, index) => {
-    const baseMeal = group.meals[0];
-    const count = group.meals.length;
-    const totalPrice = group.meals.reduce((sum, m) => sum + calculateMealPrice(m), 0);
-    const paymentNames = Array.from(group.payments).filter(name => name && name !== 'No especificado');
-    const paymentText = paymentNames.length > 0 ? `(${paymentNames.join(' y ')})` : '(No especificado)';
-    const hasSpecialRice = baseMeal?.principle?.some(p => specialRiceOptions.includes(p.name));
+groupedMeals.forEach((group, index) => {
+  const baseMeal = group.meals[0];
+  const count = group.meals.length;
+  const totalPrice = group.meals.reduce((sum, m) => sum + calculateMealPrice(m), 0);
+  const paymentNames = Array.from(group.payments).filter(name => name && name !== 'No especificado');
+  const paymentText = paymentNames.length > 0 ? `(${paymentNames.join(' y ')})` : '(No especificado)';
+  const hasSpecialRice = baseMeal?.principle?.some(p => specialRiceOptions.includes(p.name));
 
-    message += `🍽 ${count === 1 ? '1 Almuerzo' : `${count} Almuerzos iguales`} – $${totalPrice.toLocaleString('es-CO')} ${paymentText}\n`;
+  message += `🍽 ${count === 1 ? '1 Almuerzo' : `${count} Almuerzos iguales`} – $${totalPrice.toLocaleString('es-CO')} ${paymentText}\n`;
 
-    // Mostrar todos los campos para un solo almuerzo, o solo campos comunes para múltiples almuerzos
-    if (count === 1) {
-      // Sopa
+  // Mostrar todos los campos para un solo almuerzo, o solo campos comunes para múltiples almuerzos
+  if (count === 1) {
+    // Sopa
+    const soupValue = baseMeal.soup?.name === 'Solo bandeja' ? 'solo bandeja' :
+      baseMeal.soupReplacement?.name ? `${cleanText(baseMeal.soupReplacement.name)} (por sopa)` :
+      baseMeal.soup?.name && baseMeal.soup.name !== 'Sin sopa' ? cleanText(baseMeal.soup.name) : 'Sin sopa';
+    message += `${soupValue}\n`;
+
+    // Principio
+    const principleValue = baseMeal.principleReplacement?.name
+      ? `${cleanText(baseMeal.principleReplacement.name)} (por principio)`
+      : baseMeal.principle?.length > 0
+      ? `${baseMeal.principle.map(p => cleanText(p.name)).join(', ')}${baseMeal.principle.length > 1 ? ' (mixto)' : ''}`
+      : 'Sin principio';
+    message += `${principleValue}\n`;
+
+    // Proteína
+    if (!hasSpecialRice && baseMeal.protein?.name) {
+      message += `${cleanText(baseMeal.protein.name)}\n`;
+    }
+
+    // Bebida
+    const drinkValue = baseMeal.drink?.name === 'Juego de mango' ? 'Jugo de mango' : cleanText(baseMeal.drink?.name || 'Sin bebida');
+    message += `${drinkValue}\n`;
+
+    // Cubiertos
+    message += `Cubiertos: ${baseMeal.cutlery ? 'Sí' : 'No'}\n`;
+
+    // Acompañamientos
+    message += `Acompañamientos: ${hasSpecialRice ? 'Ya incluidos' : baseMeal.sides?.length > 0 ? baseMeal.sides.map(s => cleanText(s.name)).join(', ') : 'Sin acompañamientos'}\n`;
+
+    // Adiciones
+    if (baseMeal.additions?.length > 0) {
+      baseMeal.additions.forEach((addition, idx) => {
+        message += `- ${cleanText(addition.name)}${addition.protein || addition.replacement ? ` (${addition.protein || addition.replacement})` : ''} (${addition.quantity || 1})\n`;
+      });
+    }
+
+    // Notas
+    const notesValue = formatNotes(baseMeal.notes) || 'Ninguna';
+    message += `Notas: ${notesValue}\n`;
+
+    // Dirección (solo si no es común para todos los almuerzos)
+    if (!allDeliveryDetailsCommon) {
+      const addressLines = [];
+      addressFields.forEach((addrField) => {
+        if (commonAddressFields[addrField]) return; // No mostrar si es común en todos los almuerzos
+        const value = baseMeal.address?.[addrField];
+        const addrType = baseMeal.address?.addressType || '';
+        if (addrField === 'address' && value) {
+          addressLines.push(`📍 Dirección: ${value}`);
+        } else if (addrField === 'addressType' && value) {
+          addressLines.push(`🏠 Lugar de entrega: ${
+            value === 'house' ? 'Casa/Apartamento Individual' :
+            value === 'school' ? 'Colegio/Oficina' :
+            value === 'complex' ? 'Conjunto Residencial' :
+            value === 'shop' ? 'Tienda/Local' : 'No especificado'
+          }`);
+        } else if (addrField === 'recipientName' && addrType === 'school' && value) {
+          addressLines.push(`👤 Nombre del destinatario: ${value}`);
+        } else if (addrField === 'phoneNumber' && value) {
+          addressLines.push(`📞 Teléfono: ${value}`);
+        } else if (addrField === 'unitDetails' && addrType === 'complex' && value) {
+          addressLines.push(`🏢 Detalles: ${value}`);
+        } else if (addrField === 'localName' && addrType === 'shop' && value) {
+          addressLines.push(`🏬 Nombre del local: ${value}`);
+        }
+      });
+      if (addressLines.length > 0) {
+        message += `${addressLines.join('\n')}\n`;
+      }
+    }
+  } else {
+    // Mostrar campos comunes para múltiples almuerzos
+    if (group.commonFieldsInGroup.has('Sopa')) {
       const soupValue = baseMeal.soup?.name === 'Solo bandeja' ? 'solo bandeja' :
         baseMeal.soupReplacement?.name ? `${cleanText(baseMeal.soupReplacement.name)} (por sopa)` :
         baseMeal.soup?.name && baseMeal.soup.name !== 'Sin sopa' ? cleanText(baseMeal.soup.name) : 'Sin sopa';
       message += `${soupValue}\n`;
-
-      // Principio
+    }
+    if (group.commonFieldsInGroup.has('Principio')) {
       const principleValue = baseMeal.principleReplacement?.name
         ? `${cleanText(baseMeal.principleReplacement.name)} (por principio)`
         : baseMeal.principle?.length > 0
         ? `${baseMeal.principle.map(p => cleanText(p.name)).join(', ')}${baseMeal.principle.length > 1 ? ' (mixto)' : ''}`
         : 'Sin principio';
       message += `${principleValue}\n`;
-
-      // Proteína
-      if (!hasSpecialRice && baseMeal.protein?.name) {
-        message += `${cleanText(baseMeal.protein.name)}\n`;
-      }
-
-      // Bebida
-      const drinkValue = baseMeal.drink?.name === 'Juego de mango' ? 'Jugo de mango' : cleanText(baseMeal.drink?.name || 'Sin bebida');
-      message += `${drinkValue}\n`;
-
-      // Cubiertos
-      message += `Cubiertos: ${baseMeal.cutlery ? 'Sí' : 'No'}\n`;
-
-      // Acompañamientos
-      message += `Acompañamientos: ${hasSpecialRice ? 'Ya incluidos' : baseMeal.sides?.length > 0 ? baseMeal.sides.map(s => cleanText(s.name)).join(', ') : 'Sin acompañamientos'}\n`;
-
-      // Notas
-      const notesValue = formatNotes(baseMeal.notes) || 'Ninguna';
-      message += `Notas: ${notesValue}\n`;
-    } else {
-      // Mostrar campos comunes para múltiples almuerzos
-      if (group.commonFieldsInGroup.has('Sopa')) {
-        const soupValue = baseMeal.soup?.name === 'Solo bandeja' ? 'solo bandeja' :
-          baseMeal.soupReplacement?.name ? `${cleanText(baseMeal.soupReplacement.name)} (por sopa)` :
-          baseMeal.soup?.name && baseMeal.soup.name !== 'Sin sopa' ? cleanText(baseMeal.soup.name) : 'Sin sopa';
-        message += `${soupValue}\n`;
-      }
-      if (group.commonFieldsInGroup.has('Principio')) {
-        const principleValue = baseMeal.principleReplacement?.name
-          ? `${cleanText(baseMeal.principleReplacement.name)} (por principio)`
-          : baseMeal.principle?.length > 0
-          ? `${baseMeal.principle.map(p => cleanText(p.name)).join(', ')}${baseMeal.principle.length > 1 ? ' (mixto)' : ''}`
-          : 'Sin principio';
-        message += `${principleValue}\n`;
-      }
-      if (group.commonFieldsInGroup.has('Proteína') && !hasSpecialRice) {
-        message += `${cleanText(baseMeal.protein?.name || 'Sin proteína')}\n`;
-      }
-      if (group.commonFieldsInGroup.has('Cubiertos')) {
-        message += `Cubiertos: ${baseMeal.cutlery ? 'Sí' : 'No'}\n`;
-      }
-      if (group.commonFieldsInGroup.has('Acompañamientos')) {
-        message += `Acompañamientos: ${hasSpecialRice ? 'Ya incluidos' : baseMeal.sides?.length > 0 ? baseMeal.sides.map(s => cleanText(s.name)).join(', ') : 'Sin acompañamientos'}\n`;
-      }
-      if (group.commonFieldsInGroup.has('Bebida')) {
-        const commonDrink = baseMeal.drink?.name === 'Juego de mango' ? 'Jugo de mango' : cleanText(baseMeal.drink?.name || 'Sin bebida');
-        message += `${commonDrink}\n`;
-      }
     }
+    if (group.commonFieldsInGroup.has('Proteína') && !hasSpecialRice) {
+      message += `${cleanText(baseMeal.protein?.name || 'Sin proteína')}\n`;
+    }
+    if (group.commonFieldsInGroup.has('Cubiertos')) {
+      message += `Cubiertos: ${baseMeal.cutlery ? 'Sí' : 'No'}\n`;
+    }
+    if (group.commonFieldsInGroup.has('Acompañamientos')) {
+      message += `Acompañamientos: ${hasSpecialRice ? 'Ya incluidos' : baseMeal.sides?.length > 0 ? baseMeal.sides.map(s => cleanText(s.name)).join(', ') : 'Sin acompañamientos'}\n`;
+    }
+    if (group.commonFieldsInGroup.has('Bebida')) {
+      const commonDrink = baseMeal.drink?.name === 'Juego de mango' ? 'Jugo de mango' : cleanText(baseMeal.drink?.name || 'Sin bebida');
+      message += `${commonDrink}\n`;
+    }
+    if (group.commonFieldsInGroup.has('Adiciones') && baseMeal.additions?.length > 0) {
+      baseMeal.additions.forEach((addition, idx) => {
+        message += `- ${cleanText(addition.name)}${addition.protein || addition.replacement ? ` (${addition.protein || addition.replacement})` : ''} (${addition.quantity || 1})\n`;
+      });
+    }
+  }
 
-    message += `───────────────\n`;
+  message += `───────────────\n`;
 
     // Mostrar diferencias solo si hay múltiples almuerzos y diferencias
     const hasDifferences = count > 1 && (group.identicalGroups.length > 1 || group.identicalGroups.some(ig => ig.meals.length < group.meals.length));
@@ -445,7 +501,7 @@ export const generateMessageFromMeals = (meals, calculateMealPrice, total) => {
           } else if (field === 'Dirección') {
             const addressLines = [];
             addressFields.forEach((addrField) => {
-              if (group.commonAddressFieldsInGroup[addrField]) return; // No mostrar si es común en el grupo
+              if (commonAddressFields[addrField]) return; // No mostrar si es común en todos los almuerzos
               const value = meal.address?.[addrField];
               const addrType = meal.address?.addressType || '';
               if (addrField === 'address' && value) {
@@ -474,79 +530,131 @@ export const generateMessageFromMeals = (meals, calculateMealPrice, total) => {
           }
         });
       });
+      message += `───────────────\n`; // Línea solo después de todas las diferencias
     }
 
-    // Detalles de entrega
-    if (commonDeliveryTime || Object.keys(commonAddressFields).some(field => commonAddressFields[field])) {
-      message += `───────────────\n`;
-      if (commonDeliveryTime) {
-        message += `🕒 Entrega: ${isValidTime(firstMeal.time) ? cleanText(firstMeal.time.name) : 'Lo más rápido'}\n`;
-      }
-      addressFields.forEach((addrField) => {
-        if (commonAddressFields[addrField]) {
-          const value = commonAddressFields[addrField];
-          const addrType = commonAddressFields.addressType || '';
-          if (addrField === 'address' && value) {
-            message += `📍 Dirección: ${value}\n`;
-          } else if (addrField === 'addressType' && value) {
-            message += `🏠 Lugar de entrega: ${
-              value === 'house' ? 'Casa/Apartamento Individual' :
-              value === 'school' ? 'Colegio/Oficina' :
-              value === 'complex' ? 'Conjunto Residencial' :
-              value === 'shop' ? 'Tienda/Local' : 'No especificado'
-            }\n`;
-          } else if (addrField === 'recipientName' && addrType === 'school' && value) {
-            message += `👤 Nombre del destinatario: ${value}\n`;
-          } else if (addrField === 'phoneNumber' && value) {
-            message += `📞 Teléfono: ${value}\n`;
-          } else if (addrField === 'unitDetails' && addrType === 'complex' && value) {
-            message += `🏢 Detalles: ${value}\n`;
-          } else if (addrField === 'localName' && addrType === 'shop' && value) {
-            message += `🏬 Nombre del local: ${value}\n`;
-          }
-        }
-      });
-      message += `───────────────\n`;
-    }
+// Detalles de entrega por grupo (solo si no son comunes para todos los almuerzos)
+if (!allDeliveryDetailsCommon) {
+  const groupDeliveryTime = group.meals.every(meal => meal.time?.name === baseMeal.time?.name) ? baseMeal.time?.name : null;
+  const groupAddressFields = {};
+  addressFields.forEach(field => {
+    groupAddressFields[field] = group.meals.every(meal => meal.address?.[field] === baseMeal.address?.[field]) ? baseMeal.address?.[field] : null;
   });
-
-// Resumen de pagos
-const paymentSummaryMap = paymentSummary(meals);
-if (process.env.NODE_ENV === 'development') {
-  console.log('paymentSummaryMap:', paymentSummaryMap);
-}
-const allCashOrUnspecified = Object.keys(paymentSummaryMap).every(method => {
-  if (process.env.NODE_ENV === 'development') {
-    console.log('Checking method:', method);
+  const relevantGroupAddressFields = ['address', 'addressType', 'phoneNumber'];
+  if (groupAddressFields.addressType === 'school') {
+    relevantGroupAddressFields.push('recipientName');
+  } else if (groupAddressFields.addressType === 'complex') {
+    relevantGroupAddressFields.push('unitDetails');
+  } else if (groupAddressFields.addressType === 'shop') {
+    relevantGroupAddressFields.push('localName');
   }
-  return method === 'Efectivo' || method === 'No especificado';
-});
-if (process.env.NODE_ENV === 'development') {
-  console.log('allCashOrUnspecified:', allCashOrUnspecified);
-  console.log('Total before payment summary:', total);
-}
-
-if (Object.keys(paymentSummaryMap).length > 0) {
-  if (allCashOrUnspecified) {
-    message += `Paga en efectivo al momento de la entrega.\n`;
-    message += `💵 Efectivo: $${(total || 0).toLocaleString('es-CO')}\n`;
-    message += `Si no tienes efectivo, puedes transferir por Nequi o DaviPlata al número: 313 850 5647.\n\n`;
-    message += `💰 Total: $${(total || 0).toLocaleString('es-CO')}\n`;
-    message += `🚚 Estimado: 25-30 min (10-15 si están cerca).\n`;
-  } else {
-    message += `💳 Instrucciones de pago:\n`;
-    message += `Envía al número 313 850 5647 (Nequi o DaviPlata):\n`;
-    Object.entries(paymentSummaryMap).forEach(([method, amount]) => {
-      if (method !== 'No especificado' && amount > 0) {
-        message += `🔹 ${method}: $${(amount || 0).toLocaleString('es-CO')}\n`;
+  const hasGroupDeliveryDetails = count > 1 && (groupDeliveryTime && !commonDeliveryTime || relevantGroupAddressFields.some(field => groupAddressFields[field] && !commonAddressFields[field]));
+  if (hasGroupDeliveryDetails) {
+    message += `───────────────\n`;
+    if (groupDeliveryTime && !commonDeliveryTime) {
+      message += `🕒 Entrega: ${isValidTime(baseMeal.time) ? cleanText(baseMeal.time.name) : 'Lo más rápido'}\n`;
+    }
+    relevantGroupAddressFields.forEach((addrField) => {
+      if (groupAddressFields[addrField] && !commonAddressFields[addrField]) {
+        const value = groupAddressFields[addrField];
+        const addrType = groupAddressFields.addressType || '';
+        if (addrField === 'address' && value) {
+          message += `📍 Dirección: ${value}\n`;
+        } else if (addrField === 'addressType' && value) {
+          message += `🏠 Lugar de entrega: ${
+            value === 'house' ? 'Casa/Apartamento Individual' :
+            value === 'school' ? 'Colegio/Oficina' :
+            value === 'complex' ? 'Conjunto Residencial' :
+            value === 'shop' ? 'Tienda/Local' : 'No especificado'
+          }\n`;
+        } else if (addrField === 'recipientName' && addrType === 'school' && value) {
+          message += `👤 Nombre del destinatario: ${value}\n`;
+        } else if (addrField === 'phoneNumber' && value) {
+          message += `📞 Teléfono: ${value}\n`;
+        } else if (addrField === 'unitDetails' && addrType === 'complex' && value) {
+          message += `🏢 Detalles: ${value}\n`;
+        } else if (addrField === 'localName' && addrType === 'shop' && value) {
+          message += `🏬 Nombre del local: ${value}\n`;
+        }
       }
     });
-    message += `\n💰 Total: $${(total || 0).toLocaleString('es-CO')}\n`; // Fixed line
-    message += `🚚 Estimado: 25-30 min (10-15 si están cerca).\n`;
+    // No añadir línea separadora si hay diferencias previas
+    if (!hasDifferences) {
+      message += `───────────────\n`;
+    }
   }
 }
+  });
 
-message += `\n¡Gracias por tu pedido! 😊`;
+// Detalles de entrega comunes (si todos los almuerzos comparten campos de dirección o tiempo)
+if (commonDeliveryTime || Object.keys(commonAddressFields).some(field => commonAddressFields[field])) {
+  if (commonDeliveryTime) {
+    message += `🕒 Entrega: ${isValidTime(firstMeal.time) ? cleanText(firstMeal.time.name) : 'Lo más rápido'}\n`;
+  }
+  relevantAddressFields.forEach((addrField) => {
+    if (commonAddressFields[addrField]) {
+      const value = commonAddressFields[addrField];
+      const addrType = commonAddressFields.addressType || '';
+      if (addrField === 'address' && value) {
+        message += `📍 Dirección: ${value}\n`;
+      } else if (addrField === 'addressType' && value) {
+        message += `🏠 Lugar de entrega: ${
+          value === 'house' ? 'Casa/Apartamento Individual' :
+          value === 'school' ? 'Colegio/Oficina' :
+          value === 'complex' ? 'Conjunto Residencial' :
+          value === 'shop' ? 'Tienda/Local' : 'No especificado'
+        }\n`;
+      } else if (addrField === 'recipientName' && addrType === 'school' && value) {
+        message += `👤 Nombre del destinatario: ${value}\n`;
+      } else if (addrField === 'phoneNumber' && value) {
+        message += `📞 Teléfono: ${value}\n`;
+      } else if (addrField === 'unitDetails' && addrType === 'complex' && value) {
+        message += `🏢 Detalles: ${value}\n`;
+      } else if (addrField === 'localName' && addrType === 'shop' && value) {
+        message += `🏬 Nombre del local: ${value}\n`;
+      }
+    }
+  });
+  message += `───────────────\n`;
+}
 
-return message;
+  // Resumen de pagos
+  const paymentSummaryMap = paymentSummary(meals);
+  if (process.env.NODE_ENV === 'development') {
+    console.log('paymentSummaryMap:', paymentSummaryMap);
+  }
+  const allCashOrUnspecified = Object.keys(paymentSummaryMap).every(method => {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Checking method:', method);
+    }
+    return method === 'Efectivo' || method === 'No especificado';
+  });
+  if (process.env.NODE_ENV === 'development') {
+    console.log('allCashOrUnspecified:', allCashOrUnspecified);
+    console.log('Total before payment summary:', total);
+  }
+
+  if (Object.keys(paymentSummaryMap).length > 0) {
+    if (allCashOrUnspecified) {
+      message += `Paga en efectivo al momento de la entrega.\n`;
+      message += `💵 Efectivo: $${(total || 0).toLocaleString('es-CO')}\n`;
+      message += `Si no tienes efectivo, puedes transferir por Nequi o DaviPlata al número: 313 850 5647.\n\n`;
+      message += `💰 Total: $${(total || 0).toLocaleString('es-CO')}\n`;
+      message += `🚚 Estimado: 25-30 min (10-15 si están cerca).\n`;
+    } else {
+      message += `💳 Instrucciones de pago:\n`;
+      message += `Envía al número 313 850 5647 (Nequi o DaviPlata):\n`;
+      Object.entries(paymentSummaryMap).forEach(([method, amount]) => {
+        if (method !== 'No especificado' && amount > 0) {
+          message += `🔹 ${method}: $${(amount || 0).toLocaleString('es-CO')}\n`;
+        }
+      });
+      message += `\n💰 Total: $${(total || 0).toLocaleString('es-CO')}\n`;
+      message += `🚚 Estimado: 25-30 min (10-15 si están cerca).\n`;
+    }
+  }
+
+  message += `\n¡Gracias por tu pedido! 😊`;
+
+  return message;
 };
