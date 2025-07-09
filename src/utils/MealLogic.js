@@ -1,3 +1,4 @@
+//src/utils/MealLogic.js
 import { isMobile, encodeMessage } from './Helpers';
 
 export const initializeMealData = ({ address, phoneNumber, addressType, recipientName, unitDetails, localName }) => ({

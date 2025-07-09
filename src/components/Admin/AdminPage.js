@@ -12,14 +12,6 @@ import {
   BellIcon, SunIcon, MoonIcon
 } from '@heroicons/react/24/outline';
 
-// Importaciones directas eliminadas, ahora lazy
-// import Dashboard from './Dashboard';
-// import MenuManagement from './MenuManagement';
-// import ClosingTime from './ClosingTime';
-// import OrderManagement from './OrderManagement';
-// import UserManagement from './UserManagement';
-// import Settings from './Settings';
-// import Notifications from './Notifications';
 
 // Lazy load components
 const Dashboard = lazy(() => import('./Dashboard'));

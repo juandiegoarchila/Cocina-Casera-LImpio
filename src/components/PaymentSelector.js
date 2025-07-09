@@ -1,10 +1,7 @@
+//src/components/PaymentSelector.js
 import React from 'react';
-// Importa los logos SVG como componentes React
 import { ReactComponent as NequiLogo } from '../assets/nequi-logo.svg';
 import { ReactComponent as DaviplataLogo } from '../assets/daviplata-logo.svg';
-// Importa la imagen PNG para Efectivo
-// IMPORTANTE: REEMPLAZA './assets/efectivo.png' con la RUTA REAL a tu archivo PNG de efectivo.
-// Por ejemplo: si tu archivo se llama 'dinero.png' y está en 'src/assets/', la ruta sería '../assets/dinero.png';
 import EfectivoPNG from '../assets/efectivo.png';
 
 

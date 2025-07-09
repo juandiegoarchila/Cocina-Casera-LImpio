@@ -1,3 +1,4 @@
+//src/components/MealItem.js
 import React, { useState, useEffect, useRef } from 'react';
 import OptionSelector from './OptionSelector';
 import TimeSelector from './TimeSelector';
@@ -6,6 +7,7 @@ import PaymentSelector from './PaymentSelector';
 import CutlerySelector from './CutlerySelector';
 import ProgressBar from './ProgressBar';
 import OnboardingTutorial from './OnboardingTutorial';
+import ErrorMessage from './ErrorMessage';
 import { calculateMealPrice } from '../utils/MealCalculations';
 
 const MealItem = ({
@@ -28,6 +30,10 @@ const MealItem = ({
   address = {},
   showTutorial,
   setShowTutorial,
+  maxMeals,
+  totalMeals,
+  successMessage, // Añadido como prop
+  setSuccessMessage, // Añadido como prop
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const [isAdditionsExpanded, setIsAdditionsExpanded] = useState(false);
@@ -35,6 +41,7 @@ const MealItem = ({
   const [collapseTimeout, setCollapseTimeout] = useState(null);
   const [touchStartX, setTouchStartX] = useState(0);
   const [isSwiping, setIsSwiping] = useState(false);
+  const [showMaxMealsError, setShowMaxMealsError] = useState(false); // State for error message
   const slideRef = useRef(null);
   const containerRef = useRef(null);
 
@@ -61,105 +68,105 @@ const MealItem = ({
   const displayMainItem = isCompleteRice ? selectedRiceName : meal?.protein?.name || 'Selecciona';
 
   const totalSteps = 9;
-const completedSteps = [
-  isSoupComplete,
-  isPrincipleComplete,
-  isCompleteRice || !!meal?.protein,
-  !!meal?.drink,
-  meal?.cutlery !== null,
-  !!meal?.time,
-  !!meal?.address?.address,
-  !!meal?.payment,
-  isSidesComplete
-].filter(Boolean).length;
+  const completedSteps = [
+    isSoupComplete,
+    isPrincipleComplete,
+    isCompleteRice || !!meal?.protein,
+    !!meal?.drink,
+    meal?.cutlery !== null,
+    !!meal?.time,
+    !!meal?.address?.address,
+    !!meal?.payment,
+    isSidesComplete,
+  ].filter(Boolean).length;
 
   const completionPercentage = Math.min(Math.round((completedSteps / totalSteps) * 100), 100);
 
-  const isComplete = isSoupComplete && 
-    isPrincipleComplete && 
-    (isCompleteRice || meal?.protein) && 
-    meal?.drink && 
-    meal?.time && 
-    meal?.address?.address && 
-    meal?.payment && 
-    meal?.cutlery && 
+  const isComplete = isSoupComplete &&
+    isPrincipleComplete &&
+    (isCompleteRice || meal?.protein) &&
+    meal?.drink &&
+    meal?.time &&
+    meal?.address?.address &&
+    meal?.payment &&
+    meal?.cutlery &&
     isSidesComplete;
 
   const handleTutorialComplete = () => setShowTutorial(false);
 
-const handleImmediateChange = (field, value) => {
-  let updatedMeal = { ...meal, [field]: value };
-  let currentSlideIsComplete = false;
+  const handleImmediateChange = (field, value) => {
+    let updatedMeal = { ...meal, [field]: value };
+    let currentSlideIsComplete = false;
 
-  if (field === 'principle') {
-    const isNewSelectionCompleteRice = Array.isArray(value) && value.some(p => ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'].includes(p.name));
-    if (isNewSelectionCompleteRice) {
-      updatedMeal = { ...updatedMeal, protein: null };
-      onMealChange(id, 'protein', null);
-    }
-    onMealChange(id, 'principle', value);
-    currentSlideIsComplete = updatedMeal?.principle && (
-      (Array.isArray(updatedMeal.principle) && updatedMeal.principle.length === 1 && updatedMeal.principle[0]?.name === 'Remplazo por Principio' && !!updatedMeal?.principleReplacement) ||
-      (Array.isArray(updatedMeal.principle) && updatedMeal.principle.length >= 1 && updatedMeal.principle.length <= 2 && !updatedMeal.principle.some(opt => opt.name === 'Remplazo por Principio'))
-    );
-    if (isNewSelectionCompleteRice && currentSlide < slides.length - 1) {
-      setTimeout(() => setCurrentSlide(currentSlide + 1), 300);
-    }
-  } else {
-    onMealChange(id, field, value);
-  }
-
-  switch (field) {
-    case 'soup':
-      currentSlideIsComplete = updatedMeal?.soup && (updatedMeal.soup.name !== 'Remplazo por Sopa' || updatedMeal.soupReplacement);
-      break;
-    case 'soupReplacement':
-      currentSlideIsComplete = updatedMeal.soup?.name === 'Remplazo por Sopa' && !!value;
-      break;
-    case 'principle':
-      // Already handled above
-      break;
-    case 'protein':
-      currentSlideIsComplete = isCompleteRice || !!updatedMeal?.protein;
-      break;
-    case 'drink':
-      currentSlideIsComplete = !!updatedMeal?.drink;
-      break;
-    case 'cutlery':
-      currentSlideIsComplete = updatedMeal?.cutlery !== null;
-      if (currentSlideIsComplete && currentSlide < slides.length - 1) {
+    if (field === 'principle') {
+      const isNewSelectionCompleteRice = Array.isArray(value) && value.some(p => ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'].includes(p.name));
+      if (isNewSelectionCompleteRice) {
+        updatedMeal = { ...updatedMeal, protein: null };
+        onMealChange(id, 'protein', null);
+      }
+      onMealChange(id, 'principle', value);
+      currentSlideIsComplete = updatedMeal?.principle && (
+        (Array.isArray(updatedMeal.principle) && updatedMeal.principle.length === 1 && updatedMeal.principle[0]?.name === 'Remplazo por Principio' && !!updatedMeal?.principleReplacement) ||
+        (Array.isArray(updatedMeal.principle) && updatedMeal.principle.length >= 1 && updatedMeal.principle.length <= 2 && !updatedMeal.principle.some(opt => opt.name === 'Remplazo por Principio'))
+      );
+      if (isNewSelectionCompleteRice && currentSlide < slides.length - 1) {
         setTimeout(() => setCurrentSlide(currentSlide + 1), 300);
       }
-      break;
-    case 'time':
-      currentSlideIsComplete = !!updatedMeal?.time; // Asegura que se evalúe el nuevo valor
-      if (currentSlideIsComplete && currentSlide < slides.length - 1) {
-        setTimeout(() => setCurrentSlide(currentSlide + 1), 300); // Avanza el slide si está completo
-      }
-      break;
-    case 'payment':
-      currentSlideIsComplete = !!updatedMeal?.payment;
-      break;
-    case 'sides':
-      currentSlideIsComplete = isCompleteRice || (Array.isArray(value) && value.length > 0);
-      break;
-    case 'notes':
-    case 'additions':
-      currentSlideIsComplete = true;
-      if (field === 'additions' && isAdditionsExpanded) {
-        if (collapseTimeout) clearTimeout(collapseTimeout);
-        const timeout = setTimeout(() => setIsAdditionsExpanded(false), 15000);
-        setCollapseTimeout(timeout);
-      }
-      break;
-    default:
-      break;
-  }
+    } else {
+      onMealChange(id, field, value);
+    }
 
-  if (currentSlideIsComplete && field !== 'additions' && field !== 'principle' && currentSlide < slides.length - 1) {
-    setTimeout(() => setCurrentSlide(currentSlide + 1), 300);
-  }
-};
+    switch (field) {
+      case 'soup':
+        currentSlideIsComplete = updatedMeal?.soup && (updatedMeal.soup.name !== 'Remplazo por Sopa' || updatedMeal.soupReplacement);
+        break;
+      case 'soupReplacement':
+        currentSlideIsComplete = updatedMeal.soup?.name === 'Remplazo por Sopa' && !!value;
+        break;
+      case 'principle':
+        // Already handled above
+        break;
+      case 'protein':
+        currentSlideIsComplete = isCompleteRice || !!updatedMeal?.protein;
+        break;
+      case 'drink':
+        currentSlideIsComplete = !!updatedMeal?.drink;
+        break;
+      case 'cutlery':
+        currentSlideIsComplete = updatedMeal?.cutlery !== null;
+        if (currentSlideIsComplete && currentSlide < slides.length - 1) {
+          setTimeout(() => setCurrentSlide(currentSlide + 1), 300);
+        }
+        break;
+      case 'time':
+        currentSlideIsComplete = !!updatedMeal?.time;
+        if (currentSlideIsComplete && currentSlide < slides.length - 1) {
+          setTimeout(() => setCurrentSlide(currentSlide + 1), 300);
+        }
+        break;
+      case 'payment':
+        currentSlideIsComplete = !!updatedMeal?.payment;
+        break;
+      case 'sides':
+        currentSlideIsComplete = isCompleteRice || (Array.isArray(value) && value.length > 0);
+        break;
+      case 'notes':
+      case 'additions':
+        currentSlideIsComplete = true;
+        if (field === 'additions' && isAdditionsExpanded) {
+          if (collapseTimeout) clearTimeout(collapseTimeout);
+          const timeout = setTimeout(() => setIsAdditionsExpanded(false), 45000);
+          setCollapseTimeout(timeout);
+        }
+        break;
+      default:
+        break;
+    }
+
+    if (currentSlideIsComplete && field !== 'additions' && field !== 'principle' && currentSlide < slides.length - 1) {
+      setTimeout(() => setCurrentSlide(currentSlide + 1), 300);
+    }
+  };
 
   const handleOptionConfirm = (field, { selection, replacement }) => {
     if (field === 'principle') {
@@ -168,7 +175,7 @@ const handleImmediateChange = (field, value) => {
 
       if (isNewSelectionCompleteRice) {
         newSelection = selection.filter(p => ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'].includes(p.name)).slice(-1);
-        onMealChange(id, 'protein', null); // Clear protein when special rice is selected
+        onMealChange(id, 'protein', null);
       } else if (selection.length > 2) {
         newSelection = selection.slice(0, 2);
       }
@@ -194,46 +201,46 @@ const handleImmediateChange = (field, value) => {
     }
   };
 
-const handleTimeConfirm = () => {
-  if (pendingTime) {
-    handleImmediateChange('time', pendingTime); 
-  }
-};
+  const handleTimeConfirm = () => {
+    if (pendingTime) {
+      handleImmediateChange('time', pendingTime);
+    }
+  };
 
   const handleAddressConfirm = (confirmedDetails) => {
     onMealChange(id, 'address', confirmedDetails);
     if (currentSlide < slides.length - 1) setTimeout(() => setCurrentSlide(currentSlide + 1), 300);
   };
 
-const filteredSoups = soups.filter(soup => soup.name !== 'Solo bandeja' && soup.name !== 'Remplazo por Sopa');
-  const filteredPrinciples = principles.filter(principle => 
-    principle.name !== 'Remplazo por Principio' && 
+  const filteredSoups = soups.filter(soup => soup.name !== 'Solo bandeja' && soup.name !== 'Remplazo por Sopa');
+  const filteredPrinciples = principles.filter(principle =>
+    principle.name !== 'Remplazo por Principio' &&
     !['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'].includes(principle.name)
   );
   const normalizedAdditions = additions.map(add => ({
     ...add,
     price: add.name === 'Mojarra' ? 8000 : add.price,
     requiresReplacement: add.requiresReplacement || ['Proteína adicional', 'Sopa adicional', 'Principio adicional', 'Bebida adicional'].includes(add.name),
-  })).filter(add => 
-    add.name !== 'Arroz con pollo' && 
-    add.name !== 'Arroz paisa' && 
+  })).filter(add =>
+    add.name !== 'Arroz con pollo' &&
+    add.name !== 'Arroz paisa' &&
     add.name !== 'Arroz tres carnes'
   );
 
-const getReplacementsForAdditions = () => {
-  const selectedAdditions = meal?.additions || [];
-  const unconfiguredAdditions = selectedAdditions.filter(
-    (add) => add.requiresReplacement && !add.replacement && add.name !== 'Proteína adicional'
-  );
-  if (unconfiguredAdditions.length === 0) return [];
+  const getReplacementsForAdditions = () => {
+    const selectedAdditions = meal?.additions || [];
+    const unconfiguredAdditions = selectedAdditions.filter(
+      (add) => add.requiresReplacement && (add.name === 'Proteína adicional' ? !add.protein : !add.replacement)
+    );
+    if (unconfiguredAdditions.length === 0) return [];
 
-  const firstUnconfigured = unconfiguredAdditions[0];
-  if (firstUnconfigured.name === 'Sopa adicional') return filteredSoups;
-  if (firstUnconfigured.name === 'Principio adicional') return filteredPrinciples;
-  if (firstUnconfigured.name === 'Proteína adicional') return proteins.filter((p) => p.name !== 'Mojarra');
-  if (firstUnconfigured.name === 'Bebida adicional') return drinks.filter((d) => d.name !== 'Sin bebida');
-  return [];
-};
+    const firstUnconfigured = unconfiguredAdditions[0];
+    if (firstUnconfigured.name === 'Sopa adicional') return filteredSoups;
+    if (firstUnconfigured.name === 'Principio adicional') return filteredPrinciples;
+    if (firstUnconfigured.name === 'Proteína adicional') return proteins.filter((p) => p.name !== 'Mojarra');
+    if (firstUnconfigured.name === 'Bebida adicional') return drinks.filter((d) => d.name !== 'Sin bebida');
+    return [];
+  };
 
   const shouldShowReplacements = meal?.additions?.some(
     add => (add.name === 'Proteína adicional' && !add.protein) || (add.name === 'Sopa adicional' && !add.replacement) || (add.name === 'Principio adicional' && !add.replacement) || (add.name === 'Bebida adicional' && !add.replacement)
@@ -356,7 +363,7 @@ const getReplacementsForAdditions = () => {
           )}
         </div>
       ),
-isComplete: meal?.cutlery !== null, 
+      isComplete: meal?.cutlery !== null,
       associatedField: 'cutlery'
     },
     {
@@ -432,7 +439,7 @@ isComplete: meal?.cutlery !== null,
                 <textarea
                   value={meal?.notes || ''}
                   onChange={(e) => handleImmediateChange('notes', e.target.value)}
-                  placeholder="Ejemplo: Sin ensalada dulce, más papa a la francesa, etc."
+                  placeholder="Ejemplo: Sin ensalada dulce, más papa a la francesa, etc"
                   className="w-full p-2 text-sm border rounded-md"
                   rows="2"
                 />
@@ -464,7 +471,7 @@ isComplete: meal?.cutlery !== null,
                 <textarea
                   value={meal?.notes || ''}
                   onChange={(e) => handleImmediateChange('notes', e.target.value)}
-                  placeholder="Ejemplo: Poquito arroz, más plátano en lugar de ensalada, etc."
+                  placeholder="Ejemplo: Poquito arroz, más plátano en lugar de ensalada, etc"
                   className="w-full p-2 text-sm border rounded-md"
                   rows="2"
                 />
@@ -476,7 +483,7 @@ isComplete: meal?.cutlery !== null,
       isComplete: isSidesComplete,
       label: 'Acompañamiento',
       associatedField: 'sides'
-    }
+    },
   ];
 
   useEffect(() => {
@@ -630,6 +637,16 @@ isComplete: meal?.cutlery !== null,
     handleImmediateChange('additions', updatedAdditions);
   };
 
+  const handleDuplicateClick = () => {
+    if (totalMeals >= maxMeals) {
+      setShowMaxMealsError(true);
+      setTimeout(() => setShowMaxMealsError(false), 3000); // Hide error after 3 seconds
+      return;
+    }
+    setShowMaxMealsError(false);
+    onDuplicateMeal(meal);
+  };
+
   return (
     <div id={`meal-item-${id}`} className="relative mb-2">
       {showTutorial && id === 0 && (
@@ -667,10 +684,11 @@ isComplete: meal?.cutlery !== null,
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  onDuplicateMeal(meal);
+                  handleDuplicateClick();
                 }}
-                className="duplicate-button p-1 text-green-700 hover:text-green-800 flex items-center transition-colors"
+                className={`duplicate-button p-1 text-green-700 hover:text-green-800 flex items-center transition-colors ${totalMeals >= maxMeals ? 'opacity-50 cursor-not-allowed' : ''}`}
                 aria-label={`Duplicar Almuerzo #${id + 1}`}
+                disabled={totalMeals >= maxMeals}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
                   <path fillRule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clipRule="evenodd" />
@@ -694,6 +712,20 @@ isComplete: meal?.cutlery !== null,
           </div>
         </div>
 
+{showMaxMealsError && (
+  <ErrorMessage
+    message="Has alcanzado el máximo de 15 almuerzos. No puedes duplicar más."
+    className="fixed top-4 right-4 z-50 bg-green-100 text-green-800"
+    onClose={() => setShowMaxMealsError(false)}
+  />
+)}
+{successMessage && !showMaxMealsError && (
+  <ErrorMessage
+    message={successMessage}
+    className="fixed top-12 right-4 z-50 bg-green-100 text-green-800 mt-2"
+    onClose={() => setSuccessMessage('')}
+  />
+)}
         {isExpanded && (
           <div className="p-2">
             <div
@@ -792,29 +824,26 @@ isComplete: meal?.cutlery !== null,
                 });
                 handleImmediateChange('additions', updatedSelection);
               }}
-onImmediateReplacementSelect={({ id: additionId, replacement }) => {
-  const updatedAdditions = (meal?.additions || []).map((add) => {
-    if (add.id === additionId) {
-      return {
-        ...add,
-        protein: add.name === 'Proteína adicional' ? replacement?.name || add.protein : add.protein,
-        replacement:
-          ['Sopa adicional', 'Principio adicional', 'Bebida adicional'].includes(add.name)
-            ? replacement?.name || add.replacement
-            : add.replacement,
-      };
-    }
-    return add;
-  });
-  handleImmediateChange('additions', updatedAdditions);
-}}
+              onImmediateReplacementSelect={({ id: additionId, replacement }) => {
+                const updatedAdditions = (meal?.additions || []).map((add) => {
+                  if (add.id === additionId) {
+                    return {
+                      ...add,
+                      protein: add.name === 'Proteína adicional' ? replacement?.name || add.protein : add.protein,
+                      replacement:
+                        ['Sopa adicional', 'Principio adicional', 'Bebida adicional'].includes(add.name)
+                          ? replacement?.name || add.replacement
+                          : add.replacement,
+                    };
+                  }
+                  return add;
+                });
+                handleImmediateChange('additions', updatedAdditions);
+              }}
               onAdd={handleAddAddition}
               onRemove={handleRemoveAddition}
               onIncrease={handleIncreaseAddition}
             />
-            <div className="mt-2 text-xs text-gray-500">
-              Selecciona extras para este almuerzo individual. (Opcional)
-            </div>
             {meal?.additions?.length > 0 && (
               <div className="mt-2 text-sm font-semibold text-gray-700">
                 Total Adiciones de este almuerzo: $

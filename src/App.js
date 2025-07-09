@@ -1,3 +1,4 @@
+//src/App.
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { db, auth } from './config/firebase';
 import { collection, onSnapshot, doc, addDoc, setDoc, getDoc } from 'firebase/firestore';
@@ -13,11 +14,9 @@ import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import { useAuth } from './components/Auth/AuthProvider';
 import { initializeMealData, handleMealChange, addMeal, duplicateMeal, removeMeal, sendToWhatsApp } from './utils/MealLogic';
 import { calculateMealPrice, calculateTotal, paymentSummary } from './utils/MealCalculations';
-import { isMobile, encodeMessage } from './utils/Helpers';
 import Footer from './components/Footer';
 import Modal from './components/Modal';
 import PrivacyPolicy from './components/PrivacyPolicy';
-
 
 const AdminPage = lazy(() => import('./components/Admin/AdminPage'));
 const Login = lazy(() => import('./components/Auth/Login'));
@@ -50,9 +49,7 @@ const App = () => {
   const [showCookieBanner, setShowCookieBanner] = useLocalStorage('cookieConsent', true);
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
 
-  const handleAcceptCookies = () => {
-    setShowCookieBanner(false);
-  };
+  const handleAcceptCookies = () => setShowCookieBanner(false);
 
   useEffect(() => {
     if (showCookieBanner) {
@@ -75,31 +72,8 @@ const App = () => {
     }
   }, [successMessage]);
 
-  // OPTION 1: Initialize a meal with saved address details (Matches second image behavior)
-  // ESTE ES EL QUE DEBES COMENTAR, YA QUE CAUSA QUE LA LISTA NO SALGA VACÍA AL INICIO.
-  /*
-  useEffect(() => {
-    if (meals.length === 0) {
-      const initialMeal = initializeMealData({
-        address,
-        phoneNumber,
-        addressType,
-        recipientName,
-        unitDetails,
-        localName,
-      });
-      setMeals([initialMeal]);
-    }
-  }, [meals.length, address, phoneNumber, addressType, recipientName, unitDetails, localName]);
-  */
+  useEffect(() => {}, []);
 
-  // OPTION 2: No automatic initialization (Matches first image behavior, manual addition)
-  // ESTE ES EL QUE DEBES TENER ACTIVO PARA QUE LA LISTA SIEMPRE SALGA VACÍA AL INICIO.
-  useEffect(() => {
-    // No automatic meal initialization; rely on manual addition via onAddMeal
-  }, []); // Dependencia vacía para que solo se ejecute una vez al montar
-
-  // Fetch menu options and global settings from Firebase
   useEffect(() => {
     const collections = ['soups', 'soupReplacements', 'principles', 'proteins', 'drinks', 'sides', 'times', 'paymentMethods', 'additions'];
     const setters = [setSoups, setSoupReplacements, setPrinciples, setProteins, setDrinks, setSides, setTimes, setPaymentMethods, setAdditions];
@@ -108,22 +82,15 @@ const App = () => {
       onSnapshot(collection(db, col), (snapshot) => {
         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         setters[index](data);
-        if (process.env.NODE_ENV === 'development') {
-          console.log(`Updated ${col}:`, data);
-        }
+        if (process.env.NODE_ENV === 'development') console.log(`Updated ${col}:`, data);
         if (data.length === 0) {
-          if (process.env.NODE_ENV !== 'production') {
-            console.warn(`La colección ${col} está vacía. Agrega datos desde /admin.`);
-            setErrorMessage(`La colección ${col} está vacía. Agrega datos desde /admin.`);
-          } else {
-            setErrorMessage('Algunas opciones no están disponibles. Intenta de nuevo más tarde.');
-          }
+          setErrorMessage(process.env.NODE_ENV !== 'production'
+            ? `La colección ${col} está vacía. Agrega datos desde /admin.`
+            : 'Algunas opciones no están disponibles. Intenta de nuevo más tarde.');
         }
         window.dispatchEvent(new Event('optionsUpdated'));
       }, (error) => {
-        if (process.env.NODE_ENV === 'development') {
-          console.error(`Error al escuchar ${col}:`, error);
-        }
+        if (process.env.NODE_ENV === 'development') console.error(`Error al escuchar ${col}:`, error);
         setErrorMessage(process.env.NODE_ENV === 'production'
           ? 'No se pudieron cargar las opciones. Intenta de nuevo más tarde.'
           : `Error al cargar datos de ${col}. Revisa la consola para más detalles.`);
@@ -131,16 +98,9 @@ const App = () => {
     );
 
     const settingsUnsubscribe = onSnapshot(doc(db, 'settings', 'global'), (doc) => {
-      if (doc.exists()) {
-        const data = doc.data();
-        setIsOrderingDisabled(data.isOrderingDisabled || false);
-      } else {
-        setIsOrderingDisabled(false);
-      }
+      setIsOrderingDisabled(doc.exists() ? doc.data().isOrderingDisabled || false : false);
     }, (error) => {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('Error al escuchar settings/global:', error);
-      }
+      if (process.env.NODE_ENV === 'development') console.error('Error al escuchar settings/global:', error);
       setErrorMessage('Error al cargar configuración. Intenta de nuevo más tarde.');
     });
 
@@ -158,18 +118,12 @@ const App = () => {
       if (!currentUser) {
         const userCredential = await signInAnonymously(auth);
         currentUser = userCredential.user;
-        if (process.env.NODE_ENV === 'development') {
-          console.log('Usuario anónimo creado:', currentUser.uid);
-        }
+        if (process.env.NODE_ENV === 'development') console.log('Usuario anónimo creado:', currentUser.uid);
       }
 
       const userRef = doc(db, 'users', currentUser.uid);
       const userDoc = await getDoc(userRef);
-      let currentRole = 1;
-
-      if (userDoc.exists()) {
-        currentRole = userDoc.data().role || 1;
-      }
+      const currentRole = userDoc.exists() ? userDoc.data().role || 1 : 1;
 
       const clientData = {
         email: currentUser.email || `anon_${currentUser.uid}@example.com`,
@@ -208,25 +162,20 @@ const App = () => {
         })),
         total: calculateTotal(meals),
         paymentSummary: paymentSummary(meals),
-        status: 'Pending',
+        status: 'Pendiente',
         createdAt: new Date(),
         updatedAt: new Date(),
       };
       await addDoc(collection(db, 'orders'), order);
-
-      setSuccessMessage('¡Pedido enviado y cliente registrado con éxito!');
     } catch (error) {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('Error al registrar cliente o guardar pedido:', error);
-      }
+      if (process.env.NODE_ENV === 'development') console.error('Error al registrar cliente o guardar pedido:', error);
       setErrorMessage('Error al procesar el pedido. Intenta de nuevo.');
+      throw error;
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Esta `initialMeal` se usará solo cuando se haga clic en "Añadir un nuevo almuerzo".
-  // Su valor se basa en los estados `address`, `phoneNumber`, etc., que están sincronizados con `localStorage`.
   const initialMeal = initializeMealData({
     address,
     phoneNumber,
@@ -237,21 +186,103 @@ const App = () => {
   });
   const total = calculateTotal(meals);
 
-  const onSendOrder = () => {
-    sendToWhatsApp(
-      setIsLoading,
-      setErrorMessage,
-      setSuccessMessage,
-      meals,
-      incompleteMealIndex,
-      setIncompleteMealIndex,
-      incompleteSlideIndex,
-      setIncompleteSlideIndex,
-      calculateMealPrice,
-      total
-    ).then(() => {
-      registerClientAndSaveOrder(meals);
-    });
+  const onSendOrder = async () => {
+    let incompleteMealIndex = null;
+    let incompleteSlideIndex = null;
+    let firstMissingField = '';
+
+    for (let i = 0; i < meals.length; i++) {
+      const meal = meals[i];
+      const isCompleteRice = Array.isArray(meal?.principle) && meal.principle.some(p => ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'].includes(p.name));
+      const missing = [];
+      const slideMap = {
+        'Sopa o reemplazo de sopa': 0,
+        'Principio': 1,
+        'Proteína': 2,
+        'Bebida': 3,
+        'Cubiertos': 4,
+        'Hora': 5,
+        'Dirección': 6,
+        'Método de pago': 7,
+        'Acompañamientos': 8,
+        'Nombre del local': 6,
+      };
+
+      // Check fields in exact slide order to ensure correct first missing field
+      if (!meal?.soup && !meal?.soupReplacement) {
+        missing.push('Sopa o reemplazo de sopa');
+      } else if (!meal?.principle) {
+        missing.push('Principio');
+      } else if (!isCompleteRice && !meal?.protein) {
+        missing.push('Proteína');
+      } else if (!meal?.drink) {
+        missing.push('Bebida');
+      } else if (meal?.cutlery === null) {
+        missing.push('Cubiertos');
+      } else if (!meal?.time) {
+        missing.push('Hora');
+      } else if (!meal?.address?.address) {
+        missing.push('Dirección');
+      } else if (!meal?.payment) {
+        missing.push('Método de pago');
+      } else if (!isCompleteRice && (!meal?.sides || meal.sides.length === 0)) {
+        missing.push('Acompañamientos');
+      } else if (meal?.address?.addressType === 'shop' && !meal?.address?.localName) {
+        missing.push('Nombre del local');
+      }
+
+      if (missing.length > 0) {
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`Meal ${i + 1} is incomplete. Missing fields:`, missing);
+          console.log(`Meal ${i + 1} data:`, meal);
+        }
+        incompleteMealIndex = i;
+        firstMissingField = missing[0]; // First missing field in slide order
+        incompleteSlideIndex = slideMap[firstMissingField] || 0;
+        break;
+      }
+    }
+
+    if (incompleteMealIndex !== null) {
+      setIncompleteMealIndex(incompleteMealIndex);
+      setIncompleteSlideIndex(incompleteSlideIndex);
+      setErrorMessage(`Por favor, completa el campo "${firstMissingField}" para el Almuerzo #${incompleteMealIndex + 1}.`);
+      setTimeout(() => {
+        const element = document.getElementById(`meal-item-${incompleteMealIndex}`);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          element.classList.add('highlight-incomplete');
+          setTimeout(() => element.classList.remove('highlight-incomplete'), 3000);
+          element.dispatchEvent(new CustomEvent('updateSlide', { detail: { slideIndex: incompleteSlideIndex } }));
+        }
+      }, 100);
+      return;
+    }
+
+    setErrorMessage(null);
+    setIsLoading(true);
+
+    try {
+      await sendToWhatsApp(
+        setIsLoading,
+        setErrorMessage,
+        setSuccessMessage,
+        meals,
+        incompleteMealIndex,
+        setIncompleteMealIndex,
+        incompleteSlideIndex,
+        setIncompleteSlideIndex,
+        calculateMealPrice,
+        total
+      );
+      await registerClientAndSaveOrder(meals);
+      setSuccessMessage('¡Pedido enviado y cliente registrado con éxito!');
+    } catch (error) {
+      if (process.env.NODE_ENV === 'development') console.error('Error al procesar el pedido:', error);
+      setErrorMessage('Error al procesar el pedido. Intenta de nuevo.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   if (loading) {
@@ -266,8 +297,7 @@ const App = () => {
           <Route path="/admin/*" element={<AdminPage />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/" element={
-            <div className="min-h-screen bg-gray-50 flex flex-col relative">
-              <Header />
+<div className="min-h-screen bg-gray-200 flex flex-col relative">              <Header />
               {showCookieBanner && (
                 <div className="fixed bottom-0 left-0 right-0 bg-blue-100 text-gray-800 p-4 z-[10001] rounded-t-lg shadow-lg">
                   <p className="text-sm font-medium">🍪 Usamos cookies para guardar tus preferencias y hacer tu experiencia más fácil. ¡Todo seguro!</p>
@@ -318,7 +348,6 @@ const App = () => {
                       paymentMethods={paymentMethods}
                       onMealChange={(id, field, value) => handleMealChange(setMeals, id, field, value)}
                       onRemoveMeal={(id) => removeMeal(setMeals, setSuccessMessage, id, meals)}
-                      // Aquí se pasa initialMeal a addMeal para que el primer almuerzo tenga los datos guardados
                       onAddMeal={() => addMeal(setMeals, setSuccessMessage, meals, initialMeal)}
                       onDuplicateMeal={(meal) => duplicateMeal(setMeals, setSuccessMessage, meal, meals)}
                       incompleteMealIndex={incompleteMealIndex}
@@ -333,33 +362,18 @@ const App = () => {
                   </>
                 )}
               </main>
-              {/* Fixed message container with higher z-index and close buttons */}
               <div className="fixed top-16 right-4 z-[10002] space-y-2 w-80 max-w-xs">
                 {isLoading && <LoadingIndicator />}
-                {errorMessage && (
-                  <div className="relative">
-                    <ErrorMessage message={errorMessage} />
-                    <button
-                      onClick={() => setErrorMessage(null)}
-                      className="absolute top-1 right-1 text-red-600 hover:text-red-800"
-                      aria-label="Cerrar mensaje de error"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                )}
-                {successMessage && (
-                  <div className="relative">
-                    <SuccessMessage message={successMessage} />
-                    <button
-                      onClick={() => setSuccessMessage(null)}
-                      className="absolute top-1 right-1 text-green-600 hover:text-green-800"
-                      aria-label="Cerrar mensaje de éxito"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                )}
+{errorMessage && (
+  <ErrorMessage message={errorMessage} onClose={() => setErrorMessage(null)} />
+)}
+
+{successMessage && (
+  <SuccessMessage message={successMessage} onClose={() => setSuccessMessage(null)} />
+)}
+
+
+                
               </div>
               <Footer />
             </div>

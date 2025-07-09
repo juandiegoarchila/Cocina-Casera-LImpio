@@ -1,4 +1,5 @@
 
+//src/components/OptionSelector.js
 import React, { useState, useEffect, useCallback } from 'react';
 
 // Usa el ancho de la ventana para determinar si el dispositivo es móvil (menos de 768px)
@@ -38,44 +39,48 @@ const OptionSelector = ({
   }, [selected, multiple]);
 
   // Actualiza showReplacement según la selección
-  useEffect(() => {
-    let shouldShow = propShowReplacements && Array.isArray(replacements) && replacements.length > 0;
-    
-    if (title === 'Adiciones (por almuerzo)') {
-      const needsReplacement = pendingSelection.some(
-        (opt) => opt.requiresReplacement && !opt.protein && !opt.replacement
+useEffect(() => {
+  let shouldShow = propShowReplacements && Array.isArray(replacements) && replacements.length > 0;
+  
+  if (title === 'Adiciones (por almuerzo)') {
+    const needsReplacement = pendingSelection.some(
+      (opt) =>
+        opt.requiresReplacement &&
+        (opt.name === 'Proteína adicional' ? !opt.protein : !opt.replacement)
+    );
+    shouldShow = needsReplacement;
+    if (needsReplacement && !currentConfiguring) {
+      const unconfigured = pendingSelection.find(
+        (opt) =>
+          opt.requiresReplacement &&
+          (opt.name === 'Proteína adicional' ? !opt.protein : !opt.replacement)
       );
-      shouldShow = needsReplacement;
-      if (needsReplacement && !currentConfiguring) {
-        const unconfigured = pendingSelection.find(
-          (opt) => opt.requiresReplacement && !opt.protein && !opt.replacement
-        );
-        if (unconfigured) {
-          setCurrentConfiguring(unconfigured.id);
-        }
+      if (unconfigured) {
+        setCurrentConfiguring(unconfigured.id);
       }
-    } else if (title === 'Sopa') {
-      shouldShow = pendingSelection?.name === 'Remplazo por Sopa';
-    } else if (title === 'Principio') {
-      shouldShow =
-        (multiple && Array.isArray(pendingSelection) && pendingSelection.some((opt) => opt.name === 'Remplazo por Principio')) ||
-        (!multiple && pendingSelection?.name === 'Remplazo por Principio');
     }
+  } else if (title === 'Sopa') {
+    shouldShow = pendingSelection?.name === 'Remplazo por Sopa';
+  } else if (title === 'Principio') {
+    shouldShow =
+      (multiple && Array.isArray(pendingSelection) && pendingSelection.some((opt) => opt.name === 'Remplazo por Principio')) ||
+      (!multiple && pendingSelection?.name === 'Remplazo por Principio');
+  }
 
-    setShowReplacement(shouldShow);
-    if (process.env.NODE_ENV === 'development') {
-      console.log(
-        '[OptionSelector] showReplacement actualizado:',
-        shouldShow,
-        'para pendingSelection:',
-        pendingSelection,
-        'reemplazos:',
-        replacements,
-        'título:',
-        title
-      );
-    }
-  }, [propShowReplacements, pendingSelection, title, replacements, currentConfiguring, multiple]);
+  setShowReplacement(shouldShow);
+  if (process.env.NODE_ENV === 'development') {
+    console.log(
+      '[OptionSelector] showReplacement actualizado:',
+      shouldShow,
+      'para pendingSelection:',
+      pendingSelection,
+      'reemplazos:',
+      replacements,
+      'título:',
+      title
+    );
+  }
+}, [propShowReplacements, pendingSelection, title, replacements, currentConfiguring, multiple]);
 
   // Valida selecciones, pero no elimina las que están siendo configuradas
 useEffect(() => {
