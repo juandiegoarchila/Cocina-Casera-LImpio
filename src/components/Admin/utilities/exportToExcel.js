@@ -6,10 +6,12 @@ export const exportToExcel = async (orders, totals, deliveryPersons, totalProtei
     const worksheet = workbook.addWorksheet('Gestión de Pedidos');
 
     const cleanText = (text) => {
-      if (text == null) return '';
+      if (text == null || text === undefined) return '';
       if (typeof text === 'string') return text.replace(' NUEVO', '').trim();
       if (typeof text === 'boolean') return text.toString();
-      if (typeof text === 'object' && text?.name) return text.name.replace(' NUEVO', '').trim();
+      if (typeof text === 'object' && text !== null && 'name' in text && typeof text.name === 'string') {
+        return text.name.replace(' NUEVO', '').trim();
+      }
       return String(text).replace(' NUEVO', '').trim();
     };
 
@@ -26,10 +28,10 @@ export const exportToExcel = async (orders, totals, deliveryPersons, totalProtei
     worksheet.addRow(['', 'PROTEÍNAS DEL DÍA']);
     const proteinHeaderRow = worksheet.lastRow.number;
     worksheet.mergeCells(proteinHeaderRow, 2, proteinHeaderRow, 3);
-    const proteinHeader = worksheet.getCell(`B${proteinHeaderRow}`);
-    proteinHeader.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-    proteinHeader.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0066CC' } };
-    proteinHeader.alignment = { horizontal: 'center' };
+    const ourHeader = worksheet.getCell(`B${proteinHeaderRow}`);
+    ourHeader.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    ourHeader.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0066CC' } };
+    ourHeader.alignment = { horizontal: 'center' };
 
     worksheet.getRow(proteinHeaderRow + 1).values = ['', 'Proteína', 'Unidades', '', ''];
     const proteinTableHeader = worksheet.getRow(proteinHeaderRow + 1);
@@ -50,21 +52,21 @@ export const exportToExcel = async (orders, totals, deliveryPersons, totalProtei
       : [
           ...proteins.slice(0, -2),
           {
-            name: proteins[proteins.length - 2].name,
-            quantity: proteins[proteins.length - 2].quantity,
+            name: proteins[proteins.length - 2]?.name || '-',
+            quantity: proteins[proteins.length - 2]?.quantity || '-',
             extra: 'TOTAL PROTEÍNAS:',
             extraValue: totalProteinUnits.toLocaleString('es-CO'),
           },
           {
-            name: proteins[proteins.length - 1].name,
-            quantity: proteins[proteins.length - 1].quantity,
+            name: proteins[proteins.length - 1]?.name || '-',
+            quantity: proteins[proteins.length - 1]?.quantity || '-',
             extra: 'Fecha actual:',
             extraValue: `${String(new Date().getDate()).padStart(2, '0')}/${String(new Date().getMonth() + 1).padStart(2, '0')}/${new Date().getFullYear()}`,
           },
         ];
 
     proteinData.forEach((protein, index) => {
-      const row = worksheet.addRow(['', protein.name, protein.quantity, protein.extra, protein.extraValue]);
+      const row = worksheet.addRow(['', cleanText(protein.name), protein.quantity, protein.extra, protein.extraValue]);
       row.eachCell((cell, colNumber) => {
         if (colNumber >= 2) {
           if (index >= proteinData.length - 2 || colNumber === 2 || colNumber === 3) {
@@ -85,16 +87,20 @@ export const exportToExcel = async (orders, totals, deliveryPersons, totalProtei
 
     // 🟢 2. Pedidos
     let mealCounter = 0;
-    const pedidos = orders.map((order) => {
+    const pedidos = orders.map((order, index) => {
       mealCounter += 1;
       const meal = order.meals?.[0] || {};
+      const paymentValue = order.payment || (typeof meal.payment === 'object' && meal.payment?.name) || meal.payment || 'Efectivo';
+      if (!paymentValue || (typeof paymentValue === 'object' && !('name' in paymentValue))) {
+        console.warn(`Invalid payment data in order ${order.id || index}:`, { order, paymentValue });
+      }
       return {
         N: mealCounter,
         Dirección: cleanText(meal.address?.address),
         Teléfono: cleanText(meal.address?.phoneNumber),
         Total: order.total || 0,
-        MétodoDePago: cleanText(order.payment || meal.payment?.name || meal.payment || 'Efectivo'),
-        Domiciliario: cleanText(order.deliveryPerson),
+        MétodoDePago: cleanText(paymentValue),
+        Domiciliario: cleanText(order.deliveryPerson || 'Sin asignar'),
       };
     });
 
@@ -145,7 +151,7 @@ export const exportToExcel = async (orders, totals, deliveryPersons, totalProtei
       ['Total Efectivo', totals.cash || 0],
       ['Total Daviplata', totals.daviplata || 0],
       ['Total Nequi', totals.nequi || 0],
-      ['Total General', (totals.cash + totals.daviplata + totals.nequi) || 0],
+      ['Total General', (totals.cash || 0) + (totals.daviplata || 0) + (totals.nequi || 0)],
     ];
 
     resumenData.forEach(([label, value]) => {
