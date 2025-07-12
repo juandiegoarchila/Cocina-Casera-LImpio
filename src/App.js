@@ -325,12 +325,16 @@ const App = () => {
                 <PrivacyPolicy />
               </Modal>
               <main role="main" className="p-2 sm:p-4 flex-grow w-full max-w-4xl mx-auto">
-                {isOrderingDisabled ? (
-                  <div className="text-center text-red-600 bg-red-50 p-3 sm:p-4 rounded-lg">
-                    <p className="text-base sm:text-lg font-semibold">Pedidos cerrados hasta mañana</p>
-                    <p className="text-xs sm:text-sm">Gracias por tu comprensión.</p>
-                  </div>
-                ) : (
+{isOrderingDisabled ? (
+  <div className="flex flex-col items-center justify-center text-center bg-red-50 text-red-700 p-4 sm:p-6 rounded-xl shadow-md space-y-2 mt-8 sm:mt-10">
+    <h2 className="text-xl sm:text-2xl font-bold">🚫 Restaurante cerrado</h2>
+    <p className="text-sm sm:text-base font-medium">Los pedidos estarán disponibles nuevamente mañana.</p>
+    <p className="text-sm sm:text-base text-gray-700">⏰ Horario de atención:</p>
+    <p className="text-sm sm:text-base text-gray-700"> <strong>7:00 AM - 4:00 PM</strong></p>
+
+    <p className="text-xs sm:text-sm text-gray-500 italic">Gracias por tu comprensión y preferencia.</p>
+  </div>
+) : (
                   <>
                     <p className="text-center text-gray-700 mb-2 sm:mb-4 text-sm xs:text-base sm:text-lg md:text-xl bg-white p-2 sm:p-3 md:p-4 rounded-lg shadow-sm">
                       ¡Pide tu almuerzo fácil y rápido! Almuerzo $13.000 (solo bandeja o sin sopa $12.000)

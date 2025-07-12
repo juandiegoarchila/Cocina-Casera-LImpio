@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Dialog, Transition, Menu } from '@headlessui/react'; // Import Menu
-import { XMarkIcon, PencilIcon, TrashIcon, InformationCircleIcon, EllipsisVerticalIcon } from '@heroicons/react/24/outline'; // Import EllipsisVerticalIcon
+import { Dialog, Transition, Menu } from '@headlessui/react';
+import { XMarkIcon, PencilIcon, TrashIcon, InformationCircleIcon, EllipsisVerticalIcon } from '@heroicons/react/24/outline';
 import { ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/20/solid';
 import { db } from '../../config/firebase';
 import { collection, onSnapshot, updateDoc, doc, deleteDoc, query, where, orderBy, limit, getDocs, runTransaction } from 'firebase/firestore';
 import { classNames } from '../../utils/classNames';
 
-// Import for export functionalities
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
@@ -60,7 +59,7 @@ const UserManagement = ({ setError, setSuccess, theme }) => {
   const [showUserDetailsModal, setShowUserDetailsModal] = useState(null);
   const [pagination, setPagination] = useState({ currentPage: 1, itemsPerPage: 10 });
   const [sortColumn, setSortColumn] = useState(null);
-  const [sortOrder, setSortOrder] = useState('asc');
+  const [sortOrder, setSortOrder] = useState('asc'); // <-- ¡CORRECCIÓN AQUÍ!
 
   const debouncedSetSearchTerm = useCallback(
     debounce((value) => setSearchTerm(value), 300),
@@ -74,7 +73,7 @@ const UserManagement = ({ setError, setSuccess, theme }) => {
       currentUsers = currentUsers.filter(user =>
         user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
         user.address.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        ROLE_MAP[user.role]?.toLowerCase().includes(searchTerm.toLowerCase()) // Allow searching by role name
+        ROLE_MAP[`${user.role}`]?.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
 
@@ -151,8 +150,8 @@ const UserManagement = ({ setError, setSuccess, theme }) => {
               const orderSnapshot = await getDocs(ordersQuery);
               let address = 'Sin pedidos';
               if (!orderSnapshot.empty) {
-                const orderData = orderSnapshot.docs[0].data();
-                address = getAddressDisplay(orderData.meals?.[0]?.address);
+                const orderData = orderSnapshot.docs?.[0]?.data();
+                address = getAddressDisplay(orderData?.meals?.[0]?.address);
               }
               return {
                 ...user,
@@ -254,7 +253,7 @@ const UserManagement = ({ setError, setSuccess, theme }) => {
       setSortOrder('asc');
     }
     setPagination(prev => ({ ...prev, currentPage: 1 }));
-  }, [sortColumn]);
+  }, [sortColumn, setSortOrder]); // Añadido setSortOrder a las dependencias de useCallback
 
   const getSortIcon = useCallback((columnName) => {
     if (sortColumn === columnName) {
@@ -272,8 +271,8 @@ const UserManagement = ({ setError, setSuccess, theme }) => {
     return sortedAndFilteredUsers.map(user => ({
       'Nº': user.number,
       'Email': user.email,
-      'Última Dirección': user.address,
-      'Rol': ROLE_MAP[user.role],
+      'Dirección': user.address,
+      'Rol': ROLE_MAP[`${user.role}`],
       'Pedidos': user.totalOrders || 0,
       'ID de Usuario': user.id,
       'Registrado Desde': user.createdAt?.seconds ? new Date(user.createdAt.seconds * 1000).toLocaleDateString('es-CO') : 'N/A',
@@ -282,17 +281,25 @@ const UserManagement = ({ setError, setSuccess, theme }) => {
 
   const exportToExcel = useCallback(() => {
     const data = getExportData();
+    if (data.length === 0) {
+      setError('No hay datos para exportar a Excel.');
+      return;
+    }
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Usuarios");
     XLSX.writeFile(wb, "usuarios.xlsx");
     setSuccess('Usuarios exportados a Excel con éxito.');
-  }, [getExportData, setSuccess]);
+  }, [getExportData, setSuccess, setError]);
 
   const exportToPDF = useCallback(() => {
-    const doc = new jsPDF();
     const data = getExportData();
-    const head = [Object.keys(data[0])]; // Get headers from the first object
+    if (data.length === 0) {
+      setError('No hay datos para exportar a PDF.');
+      return;
+    }
+    const doc = new jsPDF();
+    const head = [Object.keys(data?.[0] || {})];
     const body = data.map(row => Object.values(row));
 
     doc.autoTable({
@@ -305,29 +312,33 @@ const UserManagement = ({ setError, setSuccess, theme }) => {
         cellPadding: 2,
       },
       headStyles: {
-        fillColor: [20, 83, 136], // A shade of blue
+        fillColor: [20, 83, 136],
         textColor: [255, 255, 255],
         fontStyle: 'bold',
       },
       alternateRowStyles: {
-        fillColor: [240, 240, 240] // Light gray for alternate rows
+        fillColor: [240, 240, 240]
       },
       margin: { top: 10, left: 10, right: 10, bottom: 10 },
     });
 
     doc.save("usuarios.pdf");
     setSuccess('Usuarios exportados a PDF con éxito.');
-  }, [getExportData, setSuccess]);
+  }, [getExportData, setSuccess, setError]);
 
   const previewTable = useCallback(() => {
-    // This will open a new window/tab with a print-friendly version of the current table data.
+    const exportData = getExportData();
+    if (exportData.length === 0) {
+      setError('No hay datos para previsualizar.');
+      return;
+    }
+
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
       setError('Pop-ups bloqueados. Por favor, permita pop-ups para previsualizar.');
       return;
     }
 
-    const exportData = getExportData();
     let tableHtml = `
       <html>
       <head>
@@ -349,7 +360,7 @@ const UserManagement = ({ setError, setSuccess, theme }) => {
         <table>
           <thead>
             <tr>
-              ${Object.keys(exportData[0] || {}).map(key => `<th>${key}</th>`).join('')}
+              ${Object.keys(exportData?.[0] || {}).map(key => `<th>${key}</th>`).join('')}
             </tr>
           </thead>
           <tbody>
@@ -367,7 +378,6 @@ const UserManagement = ({ setError, setSuccess, theme }) => {
     printWindow.document.write(tableHtml);
     printWindow.document.close();
     printWindow.focus();
-    // printWindow.print(); // Uncomment this line if you want it to automatically open print dialog
   }, [getExportData, setError]);
 
 
@@ -380,92 +390,97 @@ const UserManagement = ({ setError, setSuccess, theme }) => {
         </div>
       )}
 
-      {/* Search Bar and Export Options */}
-      <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-3 sm:gap-0">
-        <input
-          type="text"
-          placeholder="Buscar por email, dirección o rol..."
-          onChange={(e) => debouncedSetSearchTerm(e.target.value)}
-          className={classNames(
-            "p-2 rounded-md border w-full sm:w-1/2 md:w-1/3",
-            theme === 'dark' ? 'bg-gray-700 border-gray-600 text-gray-100' : 'bg-white border-gray-300 text-gray-900',
-            "focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-          )}
-          aria-label="Buscar usuarios"
-        />
+      {/* Contenedor principal que contendrá los grupos de elementos */}
+      <div className="flex flex-wrap items-center gap-3 mb-4">
 
-        {/* Export Menu */}
-        <Menu as="div" className="relative inline-block text-left z-20">
-          <div>
-            <Menu.Button
-              className={classNames(
-                "inline-flex justify-center w-full rounded-md px-2 py-2 text-sm font-medium",
-                theme === 'dark' ? 'bg-gray-700 text-gray-300 hover:bg-gray-600 focus:ring-offset-gray-800' : 'bg-gray-100 text-gray-700 hover:bg-gray-200 focus:ring-offset-white',
-                "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-              )}
-              aria-label="Opciones de exportación"
+        {/* Nuevo contenedor para el input del buscador y el botón de menú */}
+        <div className="flex items-center w-full min-w-0 flex-grow">
+          <input
+            type="text"
+            placeholder="Buscar por email, dirección o rol..."
+            onChange={(e) => debouncedSetSearchTerm(e.target.value)}
+            className={classNames(
+              "p-2 rounded-md border flex-grow w-full max-w-[30rem]",
+              theme === 'dark' ? 'bg-gray-700 border-gray-600 text-gray-100' : 'bg-white border-gray-300 text-gray-900',
+              "focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+            )}
+            aria-label="Buscar usuarios"
+          />
+
+          <Menu as="div" className="relative inline-block text-left z-20 flex-shrink-0 -ml-px">
+            <div>
+              <Menu.Button
+                className={classNames(
+                  "inline-flex justify-center text-sm font-medium rounded-md",
+                  theme === 'dark' ? 'text-gray-300 hover:text-gray-100' : 'text-gray-700 hover:text-gray-900',
+                  "p-1 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2",
+                  "pr-2"
+                )}
+                aria-label="Opciones de exportación"
+              >
+                <EllipsisVerticalIcon className="h-6 w-6" aria-hidden="true" />
+              </Menu.Button>
+            </div>
+
+            <Transition
+              as={React.Fragment}
+              enter="transition ease-out duration-100"
+              enterFrom="transform opacity-0 scale-95"
+              enterTo="transform opacity-100 scale-100"
+              leave="transition ease-in duration-75"
+              leaveFrom="transform opacity-100 scale-100"
+              leaveTo="opacity-0 scale-95"
             >
-              <EllipsisVerticalIcon className="h-5 w-5" aria-hidden="true" />
-            </Menu.Button>
-          </div>
+              <Menu.Items className={classNames(
+                "absolute right-0 mt-2 w-48 origin-top-right divide-y divide-gray-100 rounded-md shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none",
+                theme === 'dark' ? 'bg-gray-700 divide-gray-600' : 'bg-white divide-gray-100'
+              )}>
+                <div className="py-1">
+                  <Menu.Item>
+                    {({ active }) => (
+                      <button
+                        onClick={exportToExcel}
+                        className={classNames(
+                          active ? (theme === 'dark' ? 'bg-gray-600 text-gray-100' : 'bg-gray-100 text-gray-900') : (theme === 'dark' ? 'text-gray-300' : 'text-gray-700'),
+                          'block px-4 py-2 text-sm w-full text-left'
+                        )}
+                      >
+                        Exportar a Excel
+                      </button>
+                    )}
+                  </Menu.Item>
+                  <Menu.Item>
+                    {({ active }) => (
+                      <button
+                        onClick={exportToPDF}
+                        className={classNames(
+                          active ? (theme === 'dark' ? 'bg-gray-600 text-gray-100' : 'bg-gray-100 text-gray-900') : (theme === 'dark' ? 'text-gray-300' : 'text-gray-700'),
+                          'block px-4 py-2 text-sm w-full text-left'
+                        )}
+                      >
+                        Exportar a PDF
+                      </button>
+                    )}
+                  </Menu.Item>
+                  <Menu.Item>
+                    {({ active }) => (
+                      <button
+                        onClick={previewTable}
+                        className={classNames(
+                          active ? (theme === 'dark' ? 'bg-gray-600 text-gray-100' : 'bg-gray-100 text-gray-900') : (theme === 'dark' ? 'text-gray-300' : 'text-gray-700'),
+                          'block px-4 py-2 text-sm w-full text-left'
+                        )}
+                      >
+                        Previsualizar
+                      </button>
+                    )}
+                  </Menu.Item>
+                </div>
+              </Menu.Items>
+            </Transition>
+          </Menu>
+        </div>
 
-          <Transition
-            as={React.Fragment}
-            enter="transition ease-out duration-100"
-            enterFrom="transform opacity-0 scale-95"
-            enterTo="transform opacity-100 scale-100"
-            leave="transition ease-in duration-75"
-            leaveFrom="transform opacity-100 scale-100"
-            leaveTo="transform opacity-0 scale-95"
-          >
-            <Menu.Items className={classNames(
-              "absolute right-0 mt-2 w-48 origin-top-right divide-y divide-gray-100 rounded-md shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none",
-              theme === 'dark' ? 'bg-gray-700 divide-gray-600' : 'bg-white divide-gray-100'
-            )}>
-              <div className="py-1">
-                <Menu.Item>
-                  {({ active }) => (
-                    <button
-                      onClick={exportToExcel}
-                      className={classNames(
-                        active ? (theme === 'dark' ? 'bg-gray-600 text-gray-100' : 'bg-gray-100 text-gray-900') : (theme === 'dark' ? 'text-gray-300' : 'text-gray-700'),
-                        'block px-4 py-2 text-sm w-full text-left'
-                      )}
-                    >
-                      Exportar a Excel
-                    </button>
-                  )}
-                </Menu.Item>
-                <Menu.Item>
-                  {({ active }) => (
-                    <button
-                      onClick={exportToPDF}
-                      className={classNames(
-                        active ? (theme === 'dark' ? 'bg-gray-600 text-gray-100' : 'bg-gray-100 text-gray-900') : (theme === 'dark' ? 'text-gray-300' : 'text-gray-700'),
-                        'block px-4 py-2 text-sm w-full text-left'
-                      )}
-                    >
-                      Exportar a PDF
-                    </button>
-                  )}
-                </Menu.Item>
-                <Menu.Item>
-                  {({ active }) => (
-                    <button
-                      onClick={previewTable}
-                      className={classNames(
-                        active ? (theme === 'dark' ? 'bg-gray-600 text-gray-100' : 'bg-gray-100 text-gray-900') : (theme === 'dark' ? 'text-gray-300' : 'text-gray-700'),
-                        'block px-4 py-2 text-sm w-full text-left'
-                      )}
-                    >
-                      Previsualizar
-                    </button>
-                  )}
-                </Menu.Item>
-              </div>
-            </Menu.Items>
-          </Transition>
-        </Menu>
       </div>
 
       <div className={classNames(
@@ -486,7 +501,7 @@ const UserManagement = ({ setError, setSuccess, theme }) => {
                   Email {getSortIcon('email')}
                 </th>
                 <th className="p-2 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('address')}>
-                  Última Dirección {getSortIcon('address')}
+                  Dirección {getSortIcon('address')}
                 </th>
                 <th className="p-2 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('role')}>
                   Rol {getSortIcon('role')}
@@ -536,7 +551,7 @@ const UserManagement = ({ setError, setSuccess, theme }) => {
                         user.role === 4 ? 'bg-orange-200 text-orange-800 dark:bg-orange-800 dark:text-orange-200' :
                         'bg-blue-200 text-blue-800 dark:bg-blue-800 dark:text-blue-200'
                       )}>
-                        {ROLE_MAP[user.role] || 'Desconocido'}
+                        {ROLE_MAP[`${user.role}`] || 'Desconocido'}
                       </span>
                     </td>
                     <td className="p-2 text-gray-900 dark:text-gray-300">{user.totalOrders || 0}</td>
@@ -561,7 +576,7 @@ const UserManagement = ({ setError, setSuccess, theme }) => {
                         onClick={() => setShowUserDetailsModal(user)}
                         className="text-gray-500 hover:text-gray-400 p-1 rounded-md transition-colors duration-150"
                         title="Ver detalles del usuario"
-                        aria-label={`Ver detalles del usuario ${user.email}`}
+                        aria-label="Ver detalles del usuario"
                       >
                         <InformationCircleIcon className="w-4 h-4 sm:w-5 sm:h-5" />
                       </button>
@@ -698,7 +713,6 @@ const UserManagement = ({ setError, setSuccess, theme }) => {
                           "focus:outline-none focus:ring-1 focus:ring-blue-500"
                         )}
                       >
-                        {/* New Role Options */}
                         <option value={1}>Cliente</option>
                         <option value={2}>Administrador</option>
                         <option value={3}>Mesero</option>
@@ -794,9 +808,9 @@ const UserManagement = ({ setError, setSuccess, theme }) => {
                   <div className="space-y-3 text-sm">
                     <p><span className="font-semibold">Email:</span> {showUserDetailsModal.email}</p>
                     <p><span className="font-semibold">ID de Usuario:</span> {showUserDetailsModal.id}</p>
-                    <p><span className="font-semibold">Rol:</span> {ROLE_MAP[showUserDetailsModal.role] || 'Desconocido'}</p>
+                    <p><span className="font-semibold">Rol:</span> {ROLE_MAP[`${showUserDetailsModal.role}`] || 'Desconocido'}</p>
                     <p><span className="font-semibold">Total de Pedidos:</span> {showUserDetailsModal.totalOrders || 0}</p>
-                    <p><span className="font-semibold">Última Dirección:</span> {showUserDetailsModal.address}</p>
+                    <p><span className="font-semibold">Dirección:</span> {showUserDetailsModal.address}</p>
                     {showUserDetailsModal.createdAt?.seconds && (
                       <p><span className="font-semibold">Registrado Desde:</span> {new Date(showUserDetailsModal.createdAt.seconds * 1000).toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
                     )}
