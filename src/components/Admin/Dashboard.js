@@ -1,169 +1,478 @@
-import { useState, useEffect, useRef } from 'react';
-import { db } from '../../config/firebase';
-import { collection, onSnapshot } from 'firebase/firestore';
-import Chart from 'chart.js/auto';
+// src/components/Admin/Dashboard.jsx
+import React, { useState, useEffect, Fragment } from 'react';
+import { db, auth } from '../../config/firebase';
+import { onAuthStateChanged, signInAnonymously, signInWithCustomToken } from 'firebase/auth';
+import { writeBatch, getDocs, collection } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
+import { classNames } from '../../utils/classNames';
+import { Dialog, Transition } from '@headlessui/react';
+import { Trash2, Info, X, ShoppingCart, DollarSign, Users, Activity } from 'lucide-react';
+
+import { useDashboardData } from '../../hooks/useDashboardData';
+import DashboardCharts from './DashboardCharts';
+
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
 const Dashboard = ({ setError, setSuccess, theme }) => {
-  const [orders, setOrders] = useState([]);
-  const [users, setUsers] = useState([]);
-  const [totals, setTotals] = useState({ cash: 0, daviplata: 0, nequi: 0 });
-  const [statusCounts, setStatusCounts] = useState({ Pending: 0, Delivered: 0, Cancelled: 0 });
-  const [userActivity, setUserActivity] = useState([]);
-  const [chartData, setChartData] = useState({ labels: [], datasets: [] });
-  const chartRef = useRef(null);
+  const [userId, setUserId] = useState(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [showConfirmClearActivity, setShowConfirmClearActivity] = useState(false);
+  const [confirmClearText, setConfirmClearText] = useState('');
+  const [showConfirmDeleteDailySales, setShowConfirmDeleteDailySales] = useState(false);
+  const [confirmDeleteDailySalesText, setConfirmDeleteDailySalesText] = useState('');
+  const [showActivityDetailModal, setShowActivityDetailModal] = useState(false);
+  const [selectedActivityDetail, setSelectedActivityDetail] = useState(null);
+  const [selectedMonth, setSelectedMonth] = useState(null);
+  const [salesFilterRange, setSalesFilterRange] = useState('30_days');
+  const [salesCustomStartDate, setSalesCustomStartDate] = useState(null);
+  const [salesCustomEndDate, setSalesCustomEndDate] = useState(null);
+  const [ordersFilterRange, setOrdersFilterRange] = useState('30_days');
+  const [ordersCustomStartDate, setOrdersCustomStartDate] = useState(null);
+  const [ordersCustomEndDate, setOrdersCustomEndDate] = useState(null);
+
   const navigate = useNavigate();
 
-  useEffect(() => {
-    const unsubscribeOrders = onSnapshot(collection(db, 'orders'), (snapshot) => {
-      const ordersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setOrders(ordersData);
-
-      const newTotals = { cash: 0, daviplata: 0, nequi: 0 };
-      const newStatusCounts = { Pending: 0, Delivered: 0, Cancelled: 0 };
-      const dailyOrders = {};
-
-      ordersData.forEach(order => {
-        const date = new Date(order.createdAt?.toDate()).toLocaleDateString();
-        dailyOrders[date] = (dailyOrders[date] || 0) + 1;
-
-        if (order.payment === 'Efectivo') newTotals.cash += order.total || 0;
-        else if (order.payment === 'DaviPlata') newTotals.daviplata += order.total || 0;
-        else if (order.payment === 'Nequi') newTotals.nequi += order.total || 0;
-
-        if (order.status === 'Pending') newStatusCounts.Pending += 1;
-        else if (order.status === 'Delivered') newStatusCounts.Delivered += 1;
-        else if (order.status === 'Cancelled') newStatusCounts.Cancelled += 1;
-      });
-
-      setTotals(newTotals);
-      setStatusCounts(newStatusCounts);
-      setChartData({
-        labels: Object.keys(dailyOrders),
-        datasets: [{
-          label: 'Pedidos Diarios',
-          data: Object.values(dailyOrders),
-          backgroundColor: 'rgba(75, 192, 192, 0.2)',
-          borderColor: 'rgba(75, 192, 192, 1)',
-          borderWidth: 1,
-        }],
-      });
-    }, (error) => setError(`Error al cargar pedidos: ${error.message}`));
-
-    const unsubscribeUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
-      const usersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setUsers(usersData);
-    }, (error) => setError(`Error al cargar usuarios: ${error.message}`));
-
-    const unsubscribeActivity = onSnapshot(collection(db, 'userActivity'), (snapshot) => {
-      const activity = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => b.timestamp - a.timestamp).slice(0, 5);
-      setUserActivity(activity);
-    }, (error) => setError(`Error al cargar actividad: ${error.message}`));
-
-    return () => { unsubscribeOrders(); unsubscribeUsers(); unsubscribeActivity(); };
-  }, [setError]);
-
-  const recentOrders = orders.slice(0, 5);
+  const {
+    loadingData,
+    orders,
+    users,
+    totals,
+    statusCounts,
+    userActivity,
+    dailySalesChartData,
+    dailyOrdersChartData,
+    statusPieChartData,
+    handleSaveDailyIngresos,
+    handleDeleteDailyIngresos,
+    handleSaveDailyOrders,
+    handleDeleteDailyOrders,
+  } = useDashboardData(
+    db,
+    userId,
+    isAuthReady,
+    setError,
+    setSuccess,
+    salesFilterRange,
+    salesCustomStartDate,
+    salesCustomEndDate,
+    ordersFilterRange,
+    ordersCustomStartDate,
+    ordersCustomEndDate,
+    selectedMonth
+  );
 
   useEffect(() => {
-    const ctx = document.getElementById('ordersChart')?.getContext('2d');
-    if (ctx) {
-      if (chartRef.current) {
-        chartRef.current.destroy();
-      }
+    if (isAuthReady) {
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+  }, [isAuthReady]);
 
-      chartRef.current = new Chart(ctx, {
-        type: 'bar',
-        data: chartData,
-        options: {
-          scales: { y: { beginAtZero: true } },
-          plugins: { legend: { labels: { color: theme === 'dark' ? '#fff' : '#000' } } },
-          responsive: true,
-          maintainAspectRatio: false,
-        },
-      });
+  useEffect(() => {
+    if (!auth) {
+      console.warn("Firebase Auth no está disponible. Asegúrate de que Firebase esté inicializado correctamente.");
+      return;
     }
 
-    return () => {
-      if (chartRef.current) {
-        chartRef.current.destroy();
-        chartRef.current = null;
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        setUserId(user.uid);
+        setIsAuthReady(true);
+      } else {
+        try {
+          if (initialAuthToken) {
+            await signInWithCustomToken(auth, initialAuthToken);
+          } else {
+            await signInAnonymously(auth);
+          }
+        } catch (error) {
+          console.error("Error al iniciar sesión:", error);
+          setError(`Error de autenticación: ${error.message}`);
+        } finally {
+          setIsAuthReady(true);
+        }
       }
-    };
-  }, [chartData, theme]);
+    });
+
+    return () => unsubscribeAuth();
+  }, [auth, initialAuthToken, setError]);
+
+  const handleClearOldActivity = async () => {
+    if (confirmClearText.toLowerCase() !== 'confirmar') {
+      setError('Por favor, escribe "confirmar" para proceder.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const batch = writeBatch(db);
+      const activitySnapshot = await getDocs(collection(db, 'userActivity'));
+
+      let deletedCount = 0;
+      activitySnapshot.forEach(doc => {
+        batch.delete(doc.ref);
+        deletedCount++;
+      });
+
+      if (deletedCount === 0) {
+        setSuccess("No había actividades para eliminar.");
+      } else {
+        await batch.commit();
+        setSuccess(`Todas las actividades han sido eliminadas correctamente. Total: ${deletedCount}.`);
+      }
+      setShowConfirmClearActivity(false);
+      setConfirmClearText('');
+    } catch (error) {
+      setError(`Error al eliminar actividades: ${error.message}. Por favor, verifica las reglas de seguridad de Firebase.`);
+      console.error("Error en batch commit:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleConfirmDeleteDailySales = async () => {
+    if (confirmDeleteDailySalesText.toLowerCase() !== 'eliminar') {
+      setError('Por favor, escribe "eliminar" para proceder.');
+      return;
+    }
+    setLoading(true);
+    try {
+      await handleDeleteDailyIngresos();
+      setShowConfirmDeleteDailySales(false);
+      setConfirmDeleteDailySalesText('');
+    } catch (error) {
+      setError(`Error al eliminar ventas del día: ${error.message}`);
+      console.error("Error al eliminar ventas diarias:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleViewActivityDetails = (activity) => {
+    setSelectedActivityDetail(activity);
+    setShowActivityDetailModal(true);
+  };
+
+  const chartTextColor = theme === 'dark' ? '#cbd5e1' : '#475569';
 
   return (
-    <div className="max-w-7xl mx-auto px-2 sm:px-4">
-      <h2 className="text-xl sm:text-2xl font-bold mb-6 text-gray-100">Dashboard</h2>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-        <div className={`bg-${theme === 'dark' ? 'gray-800' : 'white'} p-4 sm:p-6 rounded-xl shadow-lg`}>
-          <h3 className="text-base sm:text-lg font-semibold mb-4">Resumen de Pedidos</h3>
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between"><span className="text-gray-400">Total:</span><span>{orders.length}</span></div>
-            <div className="flex justify-between"><span className="text-gray-400">Pendientes:</span><span className="text-yellow-400">{statusCounts.Pending}</span></div>
-            <div className="flex justify-between"><span className="text-gray-400">Entregados:</span><span className="text-green-400">{statusCounts.Delivered}</span></div>
-            <div className="flex justify-between"><span className="text-gray-400">Cancelados:</span><span className="text-red-400">{statusCounts.Cancelled}</span></div>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 font-inter">
+      <h2 className="text-3xl font-extrabold mb-8 text-gray-100 dark:text-white">Dashboard</h2>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div className={classNames(`bg-${theme === 'dark' ? 'gray-800' : 'white'} p-6 rounded-2xl shadow-xl transform transition-all duration-300 hover:scale-105 hover:shadow-2xl border border-${theme === 'dark' ? 'gray-700' : 'gray-200'}`)}>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-xl font-semibold text-gray-200 dark:text-gray-100">Pedidos</h3>
+            <ShoppingCart className="text-blue-400 w-8 h-8" />
+          </div>
+          <div className="space-y-3 text-base text-gray-300 dark:text-gray-400">
+            <div className="flex justify-between"><span>Total:</span><span className="font-bold text-gray-100">{orders.length}</span></div>
+            <div className="flex justify-between"><span>Pendientes:</span><span className="text-yellow-400 font-bold">{statusCounts.Pending}</span></div>
+            <div className="flex justify-between"><span>Entregados:</span><span className="text-green-400 font-bold">{statusCounts.Delivered}</span></div>
+            <div className="flex justify-between"><span>Cancelados:</span><span className="text-red-400 font-bold">{statusCounts.Cancelled}</span></div>
           </div>
         </div>
-        <div className={`bg-${theme === 'dark' ? 'gray-800' : 'white'} p-4 sm:p-6 rounded-xl shadow-lg`}>
-          <h3 className="text-base sm:text-lg font-semibold mb-4">Ingresos</h3>
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between"><span className="text-gray-400">Efectivo:</span><span>${totals.cash.toLocaleString()}</span></div>
-            <div className="flex justify-between"><span className="text-gray-400">DaviPlata:</span><span>${totals.daviplata.toLocaleString()}</span></div>
-            <div className="flex justify-between"><span className="text-gray-400">Nequi:</span><span>${totals.nequi.toLocaleString()}</span></div>
+        <div className={classNames(`bg-${theme === 'dark' ? 'gray-800' : 'white'} p-6 rounded-2xl shadow-xl transform transition-all duration-300 hover:scale-105 hover:shadow-2xl border border-${theme === 'dark' ? 'gray-700' : 'gray-200'}`)}>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-xl font-semibold text-gray-200 dark:text-gray-100">Totales Generales</h3>
+            <DollarSign className="text-green-400 w-8 h-8" />
+          </div>
+          <div className="space-y-3 text-base text-gray-300 dark:text-gray-400">
+            <div className="flex justify-between"><span>Efectivo:</span><span className="font-bold text-gray-100">${totals.cash.toLocaleString()}</span></div>
+            <div className="flex justify-between"><span>DaviPlata:</span><span className="font-bold text-gray-100">${totals.daviplata.toLocaleString()}</span></div>
+            <div className="flex justify-between"><span>Nequi:</span><span className="font-bold text-gray-100">${totals.nequi.toLocaleString()}</span></div>
+            <div className="flex justify-between"><span className="font-bold text-gray-100">Total:</span><span className="font-bold text-green-400">${(totals.cash + totals.daviplata + totals.nequi).toLocaleString()}</span></div>
           </div>
         </div>
-        <div className={`bg-${theme === 'dark' ? 'gray-800' : 'white'} p-4 sm:p-6 rounded-xl shadow-lg`}>
-          <h3 className="text-base sm:text-lg font-semibold mb-4">Usuarios</h3>
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between"><span className="text-gray-400">Total:</span><span>{users.length}</span></div>
-            <div className="flex justify-between"><span className="text-gray-400">Administradores:</span><span>{users.filter(u => u.role === 2).length}</span></div>
-            <div className="flex justify-between"><span className="text-gray-400">Clientes:</span><span>{users.filter(u => u.role === 1).length}</span></div>
+        <div className={classNames(`bg-${theme === 'dark' ? 'gray-800' : 'white'} p-6 rounded-2xl shadow-xl transform transition-all duration-300 hover:scale-105 hover:shadow-2xl border border-${theme === 'dark' ? 'gray-700' : 'gray-200'}`)}>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-xl font-semibold text-gray-200 dark:text-gray-100">Usuarios</h3>
+            <Users className="text-purple-400 w-8 h-8" />
+          </div>
+          <div className="space-y-3 text-base text-gray-300 dark:text-gray-400">
+            <div className="flex justify-between"><span>Total:</span><span className="font-bold text-gray-100">{users.length}</span></div>
+            <div className="flex justify-between"><span>Administradores:</span><span className="font-bold text-gray-100">{users.filter(u => u.role === 2).length}</span></div>
+            <div className="flex justify-between"><span>Clientes:</span><span className="font-bold text-gray-100">{users.filter(u => u.role === 1).length}</span></div>
+            <div className="flex justify-between"><span>ID de Usuario:</span><span className="font-mono text-xs text-gray-500 break-all">{userId}</span></div>
           </div>
         </div>
-        <div className={`bg-${theme === 'dark' ? 'gray-800' : 'white'} p-4 sm:p-6 rounded-xl shadow-lg`}>
-          <h3 className="text-base sm:text-lg font-semibold mb-4">Actividad Reciente</h3>
-          <div className="space-y-2 text-sm max-h-32 overflow-y-auto">
-            {userActivity.map((act, idx) => (
-              <div key={idx} className="flex justify-between"><span className="text-gray-400">{act.action}</span><span>{new Date(act.timestamp?.toDate()).toLocaleString()}</span></div>
-            ))}
+        <div className={classNames(`bg-${theme === 'dark' ? 'gray-800' : 'white'} p-6 rounded-2xl shadow-xl transform transition-all duration-300 hover:scale-105 hover:shadow-2xl border border-${theme === 'dark' ? 'gray-700' : 'gray-200'}`)}>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-xl font-semibold text-gray-200 dark:text-gray-100">Actividad Reciente</h3>
+            <Activity className="text-orange-400 w-8 h-8" />
           </div>
-        </div>
-      </div>
-
-      <div className={`mt-6 ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'} p-4 sm:p-6 rounded-xl shadow-lg`}>
-        <h3 className="text-base sm:text-lg font-semibold mb-4">Pedidos Recientes</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs sm:text-sm">
-            <thead><tr className={`bg-${theme === 'dark' ? 'gray-700' : 'gray-300'} text-${theme === 'dark' ? 'gray-300' : 'gray-700'} font-semibold`}><th className="p-2 border-b">Nº</th><th className="p-2 border-b">Bandeja</th><th className="p-2 border-b hidden sm:table-cell">Total</th><th className="p-2 border-b hidden sm:table-cell">Estado</th><th className="p-2 border-b">Acciones</th></tr></thead>
-            <tbody>
-              {recentOrders.length === 0 ? (
-                <tr><td colSpan="5" className="p-4 text-gray-400 text-center">No hay pedidos recientes.</td></tr>
-              ) : (
-                recentOrders.map((order, index) => {
-                  const bandeja = order.meals?.map(meal => `${meal?.soup || ''} ${meal?.principle || ''} ${meal?.protein || ''}`).join(' | ') || '';
-                  return (
-                    <tr key={order.id} className={`border-b ${index % 2 === 0 ? 'bg-gray-750' : ''}`}>
-                      <td className="p-2 text-gray-300">{recentOrders.length - index}</td>
-                      <td className="p-2 text-gray-300 max-w-[120px] sm:max-w-xs overflow-hidden text-ellipsis whitespace-nowrap">{bandeja}</td>
-                      <td className="p-2 text-gray-300 hidden sm:table-cell">${order.total?.toLocaleString() || '0'}</td>
-                      <td className="p-2 hidden sm:table-cell"><span className={`px-2 py-1 rounded-full text-xs ${order.status === 'Pending' ? 'bg-yellow-600 text-yellow-100' : order.status === 'Delivered' ? 'bg-green-600 text-green-100' : 'bg-gray-600 text-gray-100'}`}>{order.status || 'Pending'}</span></td>
-                      <td className="p-2"><button onClick={() => navigate('/admin/orders')} className="text-blue-400 hover:text-blue-300 text-xs sm:text-sm" title="Ver más">Ver más</button></td>
-                    </tr>
-                  );
-                })
+          <div className="space-y-3 text-sm max-h-40 overflow-y-auto custom-scrollbar">
+            {userActivity.length === 0 ? (
+              <p className="text-gray-400 text-center">No hay actividad reciente.</p>
+            ) : (
+              userActivity.map((act, idx) => (
+                <div key={idx} className="flex justify-between items-start pb-2 border-b border-gray-700 last:border-b-0">
+                  <span className="text-gray-400 flex-1 pr-2">{act.action}</span>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-gray-500 text-xs text-right">{act.timestamp ? new Date(act.timestamp).toLocaleString() : 'N/A'}</span>
+                    {act.details && (
+                      <button
+                        onClick={() => handleViewActivityDetails(act)}
+                        className="text-blue-400 hover:text-blue-300 p-1 rounded-full"
+                        title="Ver detalles de la actividad"
+                      >
+                        <Info className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+          <div className="mt-4 text-center">
+            <button
+              onClick={() => setShowConfirmClearActivity(true)}
+              className={classNames(
+                "px-4 py-2 rounded-md text-sm font-medium flex items-center justify-center mx-auto",
+                theme === 'dark' ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-red-500 hover:bg-red-600 text-white'
               )}
-            </tbody>
-          </table>
+            >
+              <Trash2 className="w-4 h-4 mr-2" /> Limpiar TODAS las Actividades
+            </button>
+          </div>
         </div>
       </div>
-
-      <div className={`mt-6 ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'} p-4 sm:p-6 rounded-xl shadow-lg`}>
-        <h3 className="text-base sm:text-lg font-semibold mb-4">Gráfica de Pedidos</h3>
-        <div className="w-full h-64">
-          <canvas id="ordersChart" className="w-full h-full"></canvas>
-        </div>
-      </div>
+      <DashboardCharts
+        dailySalesChartData={dailySalesChartData}
+        dailyOrdersChartData={dailyOrdersChartData}
+        statusPieChartData={statusPieChartData}
+        theme={theme}
+        chartTextColor={chartTextColor}
+        salesFilterRange={salesFilterRange}
+        setSalesFilterRange={setSalesFilterRange}
+        salesCustomStartDate={salesCustomStartDate}
+        setSalesCustomStartDate={setSalesCustomStartDate}
+        salesCustomEndDate={salesCustomEndDate}
+        setSalesCustomEndDate={setSalesCustomEndDate}
+        ordersFilterRange={ordersFilterRange}
+        setOrdersFilterRange={setOrdersFilterRange}
+        ordersCustomStartDate={ordersCustomStartDate}
+        setOrdersCustomStartDate={setOrdersCustomStartDate}
+        ordersCustomEndDate={ordersCustomEndDate}
+        setOrdersCustomEndDate={setOrdersCustomEndDate}
+        handleSaveDailyIngresos={handleSaveDailyIngresos}
+        handleDeleteDailyIngresos={() => setShowConfirmDeleteDailySales(true)}
+        handleSaveDailyOrders={handleSaveDailyOrders}
+        handleDeleteDailyOrders={handleDeleteDailyOrders}
+        loading={loadingData}
+        selectedMonth={selectedMonth}
+        setSelectedMonth={setSelectedMonth}
+      />
+      <Transition show={showConfirmClearActivity} as={Fragment}>
+        <Dialog as="div" className="relative z-50" onClose={() => setShowConfirmClearActivity(false)}>
+          <Transition.Child
+            as={Fragment}
+            enter="ease-out duration-300"
+            enterFrom="opacity-0"
+            enterTo="opacity-100"
+            leave="ease-in duration-200"
+            leaveFrom="opacity-100"
+            leaveTo="opacity-0"
+          >
+            <div className="fixed inset-0 bg-black bg-opacity-50" />
+          </Transition.Child>
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <Transition.Child
+              as={Fragment}
+              enter="ease-out duration-300"
+              enterFrom="opacity-0 scale-95"
+              enterTo="opacity-100 scale-100"
+              leave="ease-in duration-200"
+              leaveFrom="opacity-100 scale-100"
+              leaveTo="opacity-0 scale-95"
+            >
+              <Dialog.Panel className={classNames(
+                "w-full max-w-sm p-6 rounded-lg shadow-md text-center",
+                theme === 'dark' ? 'bg-gray-800 text-gray-200' : 'bg-gray-50 text-gray-900'
+              )}>
+                <Dialog.Title className="text-lg font-medium mb-4">Confirmar Limpieza de Actividad</Dialog.Title>
+                <p className="mb-4">
+                  Estás a punto de eliminar <span className="font-bold text-red-500">TODAS</span> las actividades registradas.
+                  Esta acción es irreversible. Para confirmar, escribe "confirmar" a continuación:
+                </p>
+                <input
+                  type="text"
+                  value={confirmClearText}
+                  onChange={e => setConfirmClearText(e.target.value)}
+                  className={classNames(
+                    "w-full p-2 rounded-md border text-center text-sm",
+                    theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                    "focus:outline-none focus:ring-1 focus:ring-red-500"
+                  )}
+                  placeholder="escribe 'confirmar'"
+                />
+                <div className="mt-6 flex justify-center gap-2">
+                  <button
+                    onClick={() => { setShowConfirmClearActivity(false); setConfirmClearText(''); }}
+                    className={classNames(
+                      "px-4 py-2 rounded-md text-sm font-medium",
+                      theme === 'dark' ? 'bg-gray-600 hover:bg-gray-700 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-900'
+                    )}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleClearOldActivity}
+                    disabled={loading}
+                    className={classNames(
+                      "px-4 py-2 rounded-md text-sm font-medium",
+                      loading ? 'bg-gray-400 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700 text-white'
+                    )}
+                  >
+                    {loading ? 'Eliminando...' : 'Limpiar Actividad'}
+                  </button>
+                </div>
+              </Dialog.Panel>
+            </Transition.Child>
+          </div>
+        </Dialog>
+      </Transition>
+      <Transition show={showConfirmDeleteDailySales} as={Fragment}>
+        <Dialog as="div" className="relative z-50" onClose={() => setShowConfirmDeleteDailySales(false)}>
+          <Transition.Child
+            as={Fragment}
+            enter="ease-out duration-300"
+            enterFrom="opacity-0"
+            enterTo="opacity-100"
+            leave="ease-in duration-200"
+            leaveFrom="opacity-100"
+            leaveTo="opacity-0"
+          >
+            <div className="fixed inset-0 bg-black bg-opacity-50" />
+          </Transition.Child>
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <Transition.Child
+              as={Fragment}
+              enter="ease-out duration-300"
+              enterFrom="opacity-0 scale-95"
+              enterTo="opacity-100 scale-100"
+              leave="ease-in duration-200"
+              leaveFrom="opacity-100 scale-100"
+              leaveTo="opacity-0 scale-95"
+            >
+              <Dialog.Panel className={classNames(
+                "w-full max-w-sm p-6 rounded-lg shadow-md text-center",
+                theme === 'dark' ? 'bg-gray-800 text-gray-200' : 'bg-gray-50 text-gray-900'
+              )}>
+                <Dialog.Title className="text-lg font-medium mb-4">Confirmar Eliminación de Ventas del Día</Dialog.Title>
+                <p className="mb-4">
+                  Estás a punto de eliminar las ventas registradas para <span className="font-bold text-red-500">el día de hoy</span>.
+                  Esta acción es irreversible. Para confirmar, escribe "eliminar" a continuación:
+                </p>
+                <input
+                  type="text"
+                  value={confirmDeleteDailySalesText}
+                  onChange={e => setConfirmDeleteDailySalesText(e.target.value)}
+                  className={classNames(
+                    "w-full p-2 rounded-md border text-center text-sm",
+                    theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                    "focus:outline-none focus:ring-1 focus:ring-red-500"
+                  )}
+                  placeholder="escribe 'eliminar'"
+                />
+                <div className="mt-6 flex justify-center gap-2">
+                  <button
+                    onClick={() => { setShowConfirmDeleteDailySales(false); setConfirmDeleteDailySalesText(''); }}
+                    className={classNames(
+                      "px-4 py-2 rounded-md text-sm font-medium",
+                      theme === 'dark' ? 'bg-gray-600 hover:bg-gray-700 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-900'
+                    )}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleConfirmDeleteDailySales}
+                    disabled={loading}
+                    className={classNames(
+                      "px-4 py-2 rounded-md text-sm font-medium",
+                      loading ? 'bg-gray-400 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700 text-white'
+                    )}
+                  >
+                    {loading ? 'Eliminando...' : 'Eliminar Ventas'}
+                  </button>
+                </div>
+              </Dialog.Panel>
+            </Transition.Child>
+          </div>
+        </Dialog>
+      </Transition>
+      <Transition show={showActivityDetailModal} as={Fragment}>
+        <Dialog as="div" className="relative z-50" onClose={() => setShowActivityDetailModal(false)}>
+          <Transition.Child
+            as={Fragment}
+            enter="ease-out duration-300"
+            enterFrom="opacity-0"
+            enterTo="opacity-100"
+            leave="ease-in duration-200"
+            leaveFrom="opacity-100"
+            leaveTo="opacity-0"
+          >
+            <div className="fixed inset-0 bg-black bg-opacity-50" />
+          </Transition.Child>
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <Transition.Child
+              as={Fragment}
+              enter="ease-out duration-300"
+              enterFrom="opacity-0 scale-95"
+              enterTo="opacity-100 scale-100"
+              leave="ease-in duration-200"
+              leaveFrom="opacity-100 scale-100"
+              leaveTo="opacity-0 scale-95"
+            >
+              <Dialog.Panel className={classNames(
+                "w-full max-w-md p-6 rounded-lg shadow-md",
+                theme === 'dark' ? 'bg-gray-800 text-gray-200' : 'bg-gray-50 text-gray-900'
+              )}>
+                <div className="flex justify-between items-center mb-4">
+                  <Dialog.Title className="text-lg font-medium">Detalles de la Actividad</Dialog.Title>
+                  <button
+                    onClick={() => setShowActivityDetailModal(false)}
+                    className="text-gray-400 hover:text-gray-500"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                {selectedActivityDetail && (
+                  <div className="space-y-4 text-sm">
+                    <div>
+                      <span className="font-medium">Acción:</span> {selectedActivityDetail.action}
+                    </div>
+                    <div>
+                      <span className="font-medium">Fecha:</span>{' '}
+                      {selectedActivityDetail.timestamp
+                        ? new Date(selectedActivityDetail.timestamp).toLocaleString()
+                        : 'N/A'}
+                    </div>
+                    <div>
+                      <span className="font-medium">Detalles:</span>{' '}
+                      {typeof selectedActivityDetail.details === 'object'
+                        ? JSON.stringify(selectedActivityDetail.details, null, 2)
+                        : selectedActivityDetail.details || 'Sin detalles'}
+                    </div>
+                  </div>
+                )}
+                <div className="mt-6 flex justify-end">
+                  <button
+                    onClick={() => setShowActivityDetailModal(false)}
+                    className={classNames(
+                      "px-4 py-2 rounded-md text-sm font-medium",
+                      theme === 'dark' ? 'bg-gray-600 hover:bg-gray-700 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-900'
+                    )}
+                  >
+                    Cerrar
+                  </button>
+                </div>
+              </Dialog.Panel>
+            </Transition.Child>
+          </div>
+        </Dialog>
+      </Transition>
     </div>
   );
 };

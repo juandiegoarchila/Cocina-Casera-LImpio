@@ -21,7 +21,7 @@ const InteraccionesPedidos = ({
   editingOrder,
   setEditingOrder,
   editForm,
-  handleMealFormFieldChange,
+  handleMealFormFieldChange, // Este es el handler de edición
   handleSaveEdit,
   showConfirmDeleteAll,
   setShowConfirmDeleteAll,
@@ -30,6 +30,12 @@ const InteraccionesPedidos = ({
   handleDeleteAllOrders,
   setError,
   setSuccess,
+  // NUEVAS PROPS PARA GENERAR ORDEN
+  showAddOrderModal,
+  setShowAddOrderModal,
+  newOrderForm,
+  handleNewOrderMealFormFieldChange, // Este es el handler para nueva orden
+  handleAddOrderSubmit,
 }) => {
   const [editingProtein, setEditingProtein] = useState(null);
 
@@ -47,13 +53,13 @@ const InteraccionesPedidos = ({
   };
 
   const handleUpdateProtein = async () => {
-    if (!editingProtein.name || !editingProtein.quantity) {
-      setError('El nombre y la cantidad son obligatorios.');
+    if (!editingProtein.name || !editingProtein.quantity || isNaN(editingProtein.quantity) || Number(editingProtein.quantity) <= 0) {
+      setError('Por favor, ingrese un nombre de proteína válido y una cantidad mayor a 0.');
       return;
     }
     try {
       await updateDoc(doc(db, 'dailyProteins', editingProtein.id), {
-        name: editingProtein.name,
+        name: editingProtein.name.trim(),
         quantity: Number(editingProtein.quantity),
       });
       setSuccess('Proteína actualizada correctamente.');
@@ -63,7 +69,7 @@ const InteraccionesPedidos = ({
     }
   };
 
-  const handleCancelEdit = () => {
+  const handleCancelEditProtein = () => { // Renombrado para claridad
     setEditingProtein(null);
   };
 
@@ -106,7 +112,7 @@ const InteraccionesPedidos = ({
                     className="text-gray-500 hover:text-gray-400"
                     aria-label="Cerrar modal"
                   >
-                    <XMarkIcon classbeca="w-5 h-5" />
+                    <XMarkIcon className="w-5 h-5" />
                   </button>
                 </div>
                 <div className="space-y-4">
@@ -143,7 +149,7 @@ const InteraccionesPedidos = ({
                       </div>
                       <div className="flex justify-end gap-2">
                         <button
-                          onClick={handleCancelEdit}
+                          onClick={handleCancelEditProtein} // Renombrado
                           className={classNames(
                             "px-4 py-2 rounded-md text-sm font-medium",
                             theme === 'dark' ? 'bg-gray-600 hover:bg-gray-700 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-900'
@@ -585,85 +591,73 @@ const InteraccionesPedidos = ({
                           />
                         </div>
                       )}
-                      {meal.address?.addressType === 'complex' && (
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Detalles de la Unidad</label>
-                          <input
-                            type="text"
-                            value={meal.address?.unitDetails || ''}
-                            onChange={e => handleMealFormFieldChange(mealIndex, 'address.unitDetails', e.target.value)}
-                            className={classNames(
-                              "w-full p-2 rounded-md border text-sm",
-                              theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
-                              "focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            )}
-                          />
-                        </div>
-                      )}
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Método de Pago</label>
-                        <select
-                          value={meal.payment?.name || meal.payment || 'Efectivo'}
-                          onChange={e => handleMealFormFieldChange(mealIndex, 'payment', e.target.value)}
-                          className={classNames(
-                            "w-full p-2 rounded-md border text-sm",
-                            theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
-                            "focus:outline-none focus:ring-1 focus:ring-blue-500"
-                          )}
-                        >
-                          <option value="Efectivo">Efectivo</option>
-                          <option value="Daviplata">Daviplata</option>
-                          <option value="Nequi">Nequi</option>
-                        </select>
-                      </div>
                     </div>
                   </div>
                 ))}
-                <div className="mt-4">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Total</label>
-                  <input
-                    type="number"
-                    value={editForm.total || ''}
-                    onChange={e => setEditForm({ ...editForm, total: Number(e.target.value) })}
-                    className={classNames(
-                      "w-full p-2 rounded-md border text-sm",
-                      theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
-                      "focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    )}
-                  />
+                {/* Campos de la orden principal */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Total</label>
+                    <input
+                      type="number"
+                      value={editForm.total}
+                      onChange={e => setEditForm(prev => ({ ...prev, total: Number(e.target.value) }))}
+                      className={classNames(
+                        "w-full p-2 rounded-md border text-sm",
+                        theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                        "focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      )}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Estado</label>
+                    <select
+                      value={editForm.status}
+                      onChange={e => setEditForm(prev => ({ ...prev, status: e.target.value }))}
+                      className={classNames(
+                        "w-full p-2 rounded-md border text-sm",
+                        theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                        "focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      )}
+                    >
+                      <option value="Pendiente">Pendiente</option>
+                      <option value="En Preparación">En Preparación</option>
+                      <option value="En Camino">En Camino</option>
+                      <option value="Entregado">Entregado</option>
+                      <option value="Cancelado">Cancelado</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Método de Pago</label>
+                    <select
+                      value={editForm.payment}
+                      onChange={e => setEditForm(prev => ({ ...prev, payment: e.target.value }))}
+                      className={classNames(
+                        "w-full p-2 rounded-md border text-sm",
+                        theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                        "focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      )}
+                    >
+                      <option value="Efectivo">Efectivo</option>
+                      <option value="Daviplata">Daviplata</option>
+                      <option value="Nequi">Nequi</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Domiciliario</label>
+                    <input
+                      type="text"
+                      value={editForm.deliveryPerson}
+                      onChange={e => setEditForm(prev => ({ ...prev, deliveryPerson: e.target.value }))}
+                      className={classNames(
+                        "w-full p-2 rounded-md border text-sm",
+                        theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                        "focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      )}
+                    />
+                  </div>
                 </div>
-                <div className="mt-4">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Estado</label>
-                  <select
-                    value={editForm.status || 'Pendiente'}
-                    onChange={e => setEditForm({ ...editForm, status: e.target.value })}
-                    className={classNames(
-                      "w-full p-2 rounded-md border text-sm",
-                      theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
-                      "focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    )}
-                  >
-                    <option value="Pendiente">Pendiente</option>
-                    <option value="En Preparación">En Preparación</option>
-                    <option value="En Camino">En Camino</option>
-                    <option value="Entregado">Entregado</option>
-                    <option value="Cancelado">Cancelado</option>
-                  </select>
-                </div>
-                <div className="mt-4">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Domiciliario</label>
-                  <input
-                    type="text"
-                    value={editForm.deliveryPerson || ''}
-                    onChange={e => setEditForm({ ...editForm, deliveryPerson: e.target.value })}
-                    className={classNames(
-                      "w-full p-2 rounded-md border text-sm",
-                      theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
-                      "focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    )}
-                  />
-                </div>
-                <div className="flex justify-end gap-2 mt-6">
+                <div className="mt-6 flex justify-end gap-2">
                   <button
                     onClick={() => setEditingOrder(null)}
                     className={classNames(
@@ -681,7 +675,7 @@ const InteraccionesPedidos = ({
                       isLoading ? 'bg-gray-400 cursor-not-allowed' : theme === 'dark' ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-blue-500 hover:bg-blue-600 text-white'
                     )}
                   >
-                    {isLoading ? 'Guardando...' : 'Guardar'}
+                    {isLoading ? 'Guardando...' : 'Guardar Cambios'}
                   </button>
                 </div>
               </Dialog.Panel>
@@ -715,25 +709,28 @@ const InteraccionesPedidos = ({
               leaveTo="opacity-0 scale-95"
             >
               <Dialog.Panel className={classNames(
-                "w-full max-w-md p-6 rounded-lg shadow-md",
+                "w-full max-w-sm p-6 rounded-lg shadow-md text-center",
                 theme === 'dark' ? 'bg-gray-800 text-gray-200' : 'bg-gray-50 text-gray-900'
               )}>
-                <Dialog.Title className="text-lg font-medium mb-4">Confirmar Eliminación de Todos los Pedidos</Dialog.Title>
-                <p className="text-sm mb-4">Esta acción no se puede deshacer. Escribe "confirmar" para proceder.</p>
+                <Dialog.Title className="text-lg font-medium mb-4">Confirmar Eliminación Masiva</Dialog.Title>
+                <p className="mb-4">
+                  Estás a punto de eliminar <span className="font-bold text-red-500">TODOS</span> los pedidos.
+                  Esta acción es irreversible. Para confirmar, escribe "confirmar" a continuación:
+                </p>
                 <input
                   type="text"
                   value={confirmText}
                   onChange={e => setConfirmText(e.target.value)}
                   className={classNames(
-                    "w-full p-2 rounded-md border text-sm",
+                    "w-full p-2 rounded-md border text-center text-sm",
                     theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
-                    "focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    "focus:outline-none focus:ring-1 focus:ring-red-500"
                   )}
-                  placeholder="Escribe 'confirmar'"
+                  placeholder="escribe 'confirmar'"
                 />
-                <div className="flex justify-end gap-2 mt-4">
+                <div className="mt-6 flex justify-center gap-2">
                   <button
-                    onClick={() => setShowConfirmDeleteAll(false)}
+                    onClick={() => { setShowConfirmDeleteAll(false); setConfirmText(''); }}
                     className={classNames(
                       "px-4 py-2 rounded-md text-sm font-medium",
                       theme === 'dark' ? 'bg-gray-600 hover:bg-gray-700 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-900'
@@ -746,10 +743,363 @@ const InteraccionesPedidos = ({
                     disabled={isLoading || confirmText.toLowerCase() !== 'confirmar'}
                     className={classNames(
                       "px-4 py-2 rounded-md text-sm font-medium",
-                      isLoading || confirmText.toLowerCase() !== 'confirmar' ? 'bg-gray-400 cursor-not-allowed' : theme === 'dark' ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-red-500 hover:bg-red-600 text-white'
+                      isLoading || confirmText.toLowerCase() !== 'confirmar' ? 'bg-gray-400 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700 text-white'
                     )}
                   >
                     {isLoading ? 'Eliminando...' : 'Eliminar Todos'}
+                  </button>
+                </div>
+              </Dialog.Panel>
+            </Transition.Child>
+          </div>
+        </Dialog>
+      </Transition>
+
+      {/* NUEVO: Diálogo para Generar Nueva Orden */}
+      <Transition show={showAddOrderModal} as={React.Fragment}>
+        <Dialog as="div" className="relative z-50" onClose={() => setShowAddOrderModal(false)}>
+          <Transition.Child
+            as={React.Fragment}
+            enter="ease-out duration-300"
+            enterFrom="opacity-0"
+            enterTo="opacity-100"
+            leave="ease-in duration-200"
+            leaveFrom="opacity-100"
+            leaveTo="opacity-0"
+          >
+            <div className="fixed inset-0 bg-black bg-opacity-50" />
+          </Transition.Child>
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <Transition.Child
+              as={React.Fragment}
+              enter="ease-out duration-300"
+              enterFrom="opacity-0 scale-95"
+              enterTo="opacity-100 scale-100"
+              leave="ease-in duration-200"
+              leaveFrom="opacity-100 scale-100"
+              leaveTo="opacity-0 scale-95"
+            >
+              <Dialog.Panel className={classNames(
+                "w-full max-w-2xl p-6 rounded-lg shadow-xl max-h-[80vh] overflow-y-auto",
+                theme === 'dark' ? 'bg-gray-800 text-gray-200' : 'bg-gray-50 text-gray-900'
+              )}>
+                <Dialog.Title className="text-lg font-medium mb-4 flex justify-between items-center">
+                  Generar Nueva Orden
+                  <button
+                    onClick={() => setShowAddOrderModal(false)}
+                    className="text-gray-500 hover:text-gray-400"
+                    aria-label="Cerrar formulario de nueva orden"
+                  >
+                    <XMarkIcon className="w-5 h-5" />
+                  </button>
+                </Dialog.Title>
+                {/* Formulario de una sola bandeja para simplificar */}
+                {newOrderForm.meals.map((meal, mealIndex) => (
+                  <div key={mealIndex} className="mb-6 p-4 border rounded-md border-gray-200 dark:border-gray-600">
+                    <h3 className="font-medium mb-2">Detalles de la Bandeja {mealIndex + 1}</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Sopa</label>
+                        <input
+                          type="text"
+                          value={meal.soup || ''}
+                          onChange={e => handleNewOrderMealFormFieldChange(mealIndex, 'soup', e.target.value)}
+                          className={classNames(
+                            "w-full p-2 rounded-md border text-sm",
+                            theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                            "focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          )}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Reemplazo Sopa</label>
+                        <input
+                          type="text"
+                          value={meal.soupReplacement || ''}
+                          onChange={e => handleNewOrderMealFormFieldChange(mealIndex, 'soupReplacement', e.target.value)}
+                          className={classNames(
+                            "w-full p-2 rounded-md border text-sm",
+                            theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                            "focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          )}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Principio</label>
+                        <input
+                          type="text"
+                          value={Array.isArray(meal.principle) ? meal.principle.map(p => p.name || p).join(', ') : meal.principle || ''}
+                          onChange={e => handleNewOrderMealFormFieldChange(mealIndex, 'principle', e.target.value)}
+                          className={classNames(
+                            "w-full p-2 rounded-md border text-sm",
+                            theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                            "focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          )}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Reemplazo Principio</label>
+                        <input
+                          type="text"
+                          value={meal.principleReplacement || ''}
+                          onChange={e => handleNewOrderMealFormFieldChange(mealIndex, 'principleReplacement', e.target.value)}
+                          className={classNames(
+                            "w-full p-2 rounded-md border text-sm",
+                            theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                            "focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          )}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Proteína</label>
+                        <input
+                          type="text"
+                          value={meal.protein || ''}
+                          onChange={e => handleNewOrderMealFormFieldChange(mealIndex, 'protein', e.target.value)}
+                          className={classNames(
+                            "w-full p-2 rounded-md border text-sm",
+                            theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                            "focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          )}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Bebida</label>
+                        <input
+                          type="text"
+                          value={meal.drink || ''}
+                          onChange={e => handleNewOrderMealFormFieldChange(mealIndex, 'drink', e.target.value)}
+                          className={classNames(
+                            "w-full p-2 rounded-md border text-sm",
+                            theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                            "focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          )}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Cubiertos</label>
+                        <input
+                          type="text"
+                          value={meal.cutlery || ''}
+                          onChange={e => handleNewOrderMealFormFieldChange(mealIndex, 'cutlery', e.target.value)}
+                          className={classNames(
+                            "w-full p-2 rounded-md border text-sm",
+                            theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                            "focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          )}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Acompañamientos (separados por coma)</label>
+                        <input
+                          type="text"
+                          value={meal.sides?.map(s => s.name || s).join(', ') || ''}
+                          onChange={e => handleNewOrderMealFormFieldChange(mealIndex, 'sides', e.target.value)}
+                          className={classNames(
+                            "w-full p-2 rounded-md border text-sm",
+                            theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                            "focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          )}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Adiciones (Nombre,Tipo,Cantidad;...)</label>
+                        <input
+                          type="text"
+                          value={meal.additions?.map(a => `${a.name}${a.protein || a.replacement ? `,${a.protein || a.replacement}` : ''}${a.quantity ? `,${a.quantity}` : ''}`).join('; ') || ''}
+                          onChange={e => handleNewOrderMealFormFieldChange(mealIndex, 'additions', e.target.value)}
+                          className={classNames(
+                            "w-full p-2 rounded-md border text-sm",
+                            theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                            "focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          )}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Notas</label>
+                        <input
+                          type="text"
+                          value={meal.notes || ''}
+                          onChange={e => handleNewOrderMealFormFieldChange(mealIndex, 'notes', e.target.value)}
+                          className={classNames(
+                            "w-full p-2 rounded-md border text-sm",
+                            theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                            "focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          )}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Hora de Entrega</label>
+                        <input
+                          type="text"
+                          value={meal.time || ''}
+                          onChange={e => handleNewOrderMealFormFieldChange(mealIndex, 'time', e.target.value)}
+                          className={classNames(
+                            "w-full p-2 rounded-md border text-sm",
+                            theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                            "focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          )}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Dirección</label>
+                        <input
+                          type="text"
+                          value={meal.address?.address || ''}
+                          onChange={e => handleNewOrderMealFormFieldChange(mealIndex, 'address.address', e.target.value)}
+                          className={classNames(
+                            "w-full p-2 rounded-md border text-sm",
+                            theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                            "focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          )}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Teléfono</label>
+                        <input
+                          type="text"
+                          value={meal.address?.phoneNumber || ''}
+                          onChange={e => handleNewOrderMealFormFieldChange(mealIndex, 'address.phoneNumber', e.target.value)}
+                          className={classNames(
+                            "w-full p-2 rounded-md border text-sm",
+                            theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                            "focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          )}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tipo de Dirección</label>
+                        <select
+                          value={meal.address?.addressType || ''}
+                          onChange={e => handleNewOrderMealFormFieldChange(mealIndex, 'address.addressType', e.target.value)}
+                          className={classNames(
+                            "w-full p-2 rounded-md border text-sm",
+                            theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                            "focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          )}
+                        >
+                          <option value="">Seleccione</option>
+                          <option value="house">Casa/Apto</option>
+                          <option value="school">Colegio/Oficina</option>
+                          <option value="complex">Conjunto</option>
+                          <option value="shop">Tienda/Local</option>
+                        </select>
+                      </div>
+                      {meal.address?.addressType === 'shop' && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Nombre del Local</label>
+                          <input
+                            type="text"
+                            value={meal.address?.localName || ''}
+                            onChange={e => handleNewOrderMealFormFieldChange(mealIndex, 'address.localName', e.target.value)}
+                            className={classNames(
+                              "w-full p-2 rounded-md border text-sm",
+                              theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                              "focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            )}
+                          />
+                        </div>
+                      )}
+                      {meal.address?.addressType === 'school' && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Nombre del Recipiente</label>
+                          <input
+                            type="text"
+                            value={meal.address?.recipientName || ''}
+                            onChange={e => handleNewOrderMealFormFieldChange(mealIndex, 'address.recipientName', e.target.value)}
+                            className={classNames(
+                              "w-full p-2 rounded-md border text-sm",
+                              theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                              "focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            )}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {/* Campos de la orden principal */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Total</label>
+                    <input
+                      type="number"
+                      value={newOrderForm.total}
+                      onChange={e => setNewOrderForm(prev => ({ ...prev, total: Number(e.target.value) }))}
+                      className={classNames(
+                        "w-full p-2 rounded-md border text-sm",
+                        theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                        "focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      )}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Estado</label>
+                    <select
+                      value={newOrderForm.status}
+                      onChange={e => setNewOrderForm(prev => ({ ...prev, status: e.target.value }))}
+                      className={classNames(
+                        "w-full p-2 rounded-md border text-sm",
+                        theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                        "focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      )}
+                    >
+                      <option value="Pendiente">Pendiente</option>
+                      <option value="En Preparación">En Preparación</option>
+                      <option value="En Camino">En Camino</option>
+                      <option value="Entregado">Entregado</option>
+                      <option value="Cancelado">Cancelado</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Método de Pago</label>
+                    <select
+                      value={newOrderForm.payment}
+                      onChange={e => setNewOrderForm(prev => ({ ...prev, payment: e.target.value }))}
+                      className={classNames(
+                        "w-full p-2 rounded-md border text-sm",
+                        theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                        "focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      )}
+                    >
+                      <option value="Efectivo">Efectivo</option>
+                      <option value="Daviplata">Daviplata</option>
+                      <option value="Nequi">Nequi</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Domiciliario</label>
+                    <input
+                      type="text"
+                      value={newOrderForm.deliveryPerson}
+                      onChange={e => setNewOrderForm(prev => ({ ...prev, deliveryPerson: e.target.value }))}
+                      className={classNames(
+                        "w-full p-2 rounded-md border text-sm",
+                        theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                        "focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      )}
+                    />
+                  </div>
+                </div>
+                <div className="mt-6 flex justify-end gap-2">
+                  <button
+                    onClick={() => setShowAddOrderModal(false)}
+                    className={classNames(
+                      "px-4 py-2 rounded-md text-sm font-medium",
+                      theme === 'dark' ? 'bg-gray-600 hover:bg-gray-700 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-900'
+                    )}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleAddOrderSubmit}
+                    disabled={isLoading}
+                    className={classNames(
+                      "px-4 py-2 rounded-md text-sm font-medium",
+                      isLoading ? 'bg-gray-400 cursor-not-allowed' : theme === 'dark' ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-blue-500 hover:bg-blue-600 text-white'
+                    )}
+                  >
+                    {isLoading ? 'Guardando...' : 'Generar Orden'}
                   </button>
                 </div>
               </Dialog.Panel>
