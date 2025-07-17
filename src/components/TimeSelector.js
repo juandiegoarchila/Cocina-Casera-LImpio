@@ -1,7 +1,8 @@
+// src/components/TimeSelector.js
 import React, { useState } from 'react';
 
 const TimeSelector = ({ times, selectedTime, setSelectedTime, onConfirm }) => {
-  const [error, setError] = useState(''); // Estado para mostrar errores
+  const [error, setError] = useState('');
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter') {
@@ -9,19 +10,15 @@ const TimeSelector = ({ times, selectedTime, setSelectedTime, onConfirm }) => {
     }
   };
 
-  // Validación de formato de hora (e.g., "1:00PM", "12:30 AM", "11:30am")
   const isValidTimeFormat = (value) => {
     if (!value) return false;
-    // Acepta horas con o sin espacio antes de AM/PM, y AM/PM en mayúsculas o minúsculas
     const timeRegex = /^([1-9]|1[0-2]):[0-5][0-9](?:\s)?(AM|PM|am|pm)$/i;
     return timeRegex.test(value.trim());
   };
 
-  // Convertir hora en formato 12h a minutos desde medianoche para comparación
   const timeToMinutes = (timeStr) => {
     if (!timeStr) return 0;
     const cleanedTime = timeStr.trim();
-    // Separar tiempo y período (AM/PM) con o sin espacio
     const timeMatch = cleanedTime.match(/^(\d{1,2}:\d{2})(?:\s)?([AaPp][Mm])$/i);
     if (!timeMatch) {
       throw new Error(`Formato de hora inválido: ${timeStr}`);
@@ -36,20 +33,23 @@ const TimeSelector = ({ times, selectedTime, setSelectedTime, onConfirm }) => {
 
     let totalMinutes = hours * 60 + minutes;
     if (period.toUpperCase() === 'PM' && hours !== 12) totalMinutes += 12 * 60;
-    if (period.toUpperCase() === 'AM' && hours === 12) totalMinutes = minutes; // 12 AM es medianoche
+    if (period.toUpperCase() === 'AM' && hours === 12) totalMinutes = minutes;
     return totalMinutes;
   };
 
-  // Validar si la hora está dentro del rango de servicio (11:30 AM - 3:50 PM)
   const isWithinServiceHours = (timeStr) => {
     try {
       const inputMinutes = timeToMinutes(timeStr);
-      const startMinutes = 11 * 60 + 30; // 11:30 AM = 690 minutos
-      const endMinutes = 15 * 60 + 50;  // 3:50 PM = 950 minutos
-      console.log(`Validando ${timeStr}: ${inputMinutes} minutos, rango: ${startMinutes}-${endMinutes}`);
+      const startMinutes = 11 * 60 + 30;
+      const endMinutes = 15 * 60 + 50;
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`Validando ${timeStr}: ${inputMinutes} minutos, rango: ${startMinutes}-${endMinutes}`);
+      }
       return inputMinutes >= startMinutes && inputMinutes <= endMinutes;
     } catch (error) {
-      console.error(`Error en isWithinServiceHours para ${timeStr}: ${error.message}`);
+      if (process.env.NODE_ENV === 'development') {
+        console.error(`Error en isWithinServiceHours para ${timeStr}: ${error.message}`);
+      }
       return false;
     }
   };
@@ -57,36 +57,48 @@ const TimeSelector = ({ times, selectedTime, setSelectedTime, onConfirm }) => {
   const handleCustomTimeChange = (e) => {
     const value = e.target.value;
     setSelectedTime({ id: 0, name: value });
-    setError(''); // Limpiamos el error al escribir
+    setError('');
   };
 
   const handleConfirm = () => {
     if (!selectedTime || !selectedTime.name) {
       setError('Por favor, ingresa una hora válida (Ej: 1:00 PM)');
-      console.log('Error: selectedTime es nulo o no tiene name');
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Error: selectedTime es nulo o no tiene name');
+      }
       return;
     }
 
-    console.log(`Confirmando hora: ${selectedTime.name}, id: ${selectedTime.id}`);
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`Confirmando hora: ${selectedTime.name}, id: ${selectedTime.id}`);
+    }
 
     if (selectedTime.id === 0) {
       if (!isValidTimeFormat(selectedTime.name)) {
         setError('Por favor, ingresa una hora válida (Ej: 1:00 PM)');
-        console.log(`Error: Formato inválido para ${selectedTime.name}`);
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`Error: Formato inválido para ${selectedTime.name}`);
+        }
         return;
       }
       if (!isWithinServiceHours(selectedTime.name)) {
         setError('👉 No tenemos almuerzo a esa hora solo de 11:30am a 3:50pm');
-        console.log(`Error: ${selectedTime.name} fuera del rango 11:30 AM - 3:50 PM`);
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`Error: ${selectedTime.name} fuera del rango 11:30 AM - 3:50 PM`);
+        }
         return;
       }
     } else if (!isWithinServiceHours(selectedTime.name)) {
       setError('👉 No tenemos almuerzo a esa hora');
-      console.log(`Error: Hora predefinida ${selectedTime.name} fuera del rango 11:30 AM - 3:50 PM`);
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`Error: Hora predefinida ${selectedTime.name} fuera del rango 11:30 AM - 3:50 PM`);
+      }
       return;
     }
 
-    console.log(`Hora válida confirmada: ${selectedTime.name}`);
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`Hora válida confirmada: ${selectedTime.name}`);
+    }
     onConfirm();
   };
 
@@ -102,7 +114,9 @@ const TimeSelector = ({ times, selectedTime, setSelectedTime, onConfirm }) => {
             onClick={() => {
               setSelectedTime(time);
               setError('');
-              console.log(`Hora seleccionada: ${time.name}, id: ${time.id}`);
+              if (process.env.NODE_ENV === 'development') {
+                console.log(`Hora seleccionada: ${time.name}, id: ${time.id}`);
+              }
             }}
             className={`relative p-1 xs:p-2 rounded-lg text-[10px] xs:text-xs sm:text-sm font-medium transition-all duration-200 flex items-center justify-center text-center min-h-[30px] xs:min-h-[40px] shadow-sm ${
               selectedTime?.id === time.id

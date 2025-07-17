@@ -1,3 +1,4 @@
+//src/components/Admin/InteraccionesPedidos.js
 import React, { useState } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { XMarkIcon, TrashIcon, PencilIcon } from '@heroicons/react/24/outline';

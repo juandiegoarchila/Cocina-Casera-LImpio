@@ -1,3 +1,4 @@
+//src/components/Admin/MenuManagement.js
 import { useState, useEffect, useRef } from 'react';
 import { db } from '../../config/firebase';
 import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, query, orderBy } from 'firebase/firestore';

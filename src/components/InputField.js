@@ -1,3 +1,4 @@
+// src/components/InputField.js
 import React from 'react';
 
 const InputField = ({ id, label, value, onChange, placeholder, icon, type = 'text', autoComplete, ariaRequired = false, error = '' }) => (

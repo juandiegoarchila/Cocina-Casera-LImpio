@@ -1,3 +1,4 @@
+//src/components/AddressInput.js
 import React, { useState, useEffect } from 'react';
 import useLocalStorage from '../hooks/useLocalStorage';
 
@@ -62,27 +63,24 @@ const regex = /^(cl|cra|calle|carrera|tv|trasversal|dig|diagonal)\.?\s*(\d{1,3})
       return 'Dirección fuera de cobertura (muy lejana, supera los 4km)';
     }
 
-    return ''; // Dirección válida
+    return ''; 
   };
 
-  // Check for nonsense input (invalid prefix)
   const isNonsenseInput = (input) => {
-    if (!input.trim()) return false; // Empty input is not nonsense
+    if (!input.trim()) return false; 
     const prefixRegex = /^(cl|cra|calle|carrera|tv|trasversal|dig|diagonal)/i;
     return !prefixRegex.test(input.trim());
   };
 
-  // Clear error while typing and set validating state
   useEffect(() => {
-    setAddressError(''); // Clear error on every input change
+    setAddressError(''); 
     if (address && !isNonsenseInput(address)) {
-      setIsAddressValidating(true); // Start validating if input is not nonsense
+      setIsAddressValidating(true); 
     } else {
-      setIsAddressValidating(false); // No validation for empty or nonsense input
+      setIsAddressValidating(false); 
     }
   }, [address]);
 
-  // Debounce address validation
   useEffect(() => {
     if (!address || isNonsenseInput(address)) {
       setIsAddressValidating(false);
@@ -94,10 +92,10 @@ const regex = /^(cl|cra|calle|carrera|tv|trasversal|dig|diagonal)\.?\s*(\d{1,3})
 
     const timer = setTimeout(() => {
       setAddressError(validarDireccion(address));
-      setIsAddressValidating(false); // Validation complete
-    }, 2000); // 2 seconds debounce
+      setIsAddressValidating(false); 
+    }, 2000); 
 
-    return () => clearTimeout(timer); // Cleanup on unmount or input change
+    return () => clearTimeout(timer); 
   }, [address]);
 
   const isFormValid =

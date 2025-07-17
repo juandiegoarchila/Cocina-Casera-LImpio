@@ -1,3 +1,4 @@
+// src/components/Admin/TablaPedidos.js
 import React, { useRef, useEffect } from 'react'; // Import useRef and useEffect
 import { classNames } from '../../utils/classNames.js';
 import { cleanText, getAddressDisplay } from './utils';

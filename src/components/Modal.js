@@ -1,5 +1,6 @@
+//src/components/Modal.js
 import React from 'react';
-import { motion } from 'framer-motion'; // Para animaciones suaves
+import { motion } from 'framer-motion'; 
 
 const Modal = ({ isOpen, onClose, children }) => {
   if (!isOpen) return null;
@@ -17,7 +18,7 @@ const Modal = ({ isOpen, onClose, children }) => {
         animate={{ scale: 1, y: 0 }}
         exit={{ scale: 0.8, y: 50 }}
         className="bg-white rounded-lg shadow-xl p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto relative"
-        onClick={(e) => e.stopPropagation()} // Evita que el clic en el modal lo cierre
+        onClick={(e) => e.stopPropagation()} 
       >
         <button
           onClick={onClose}

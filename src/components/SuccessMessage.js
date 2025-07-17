@@ -1,3 +1,4 @@
+//src/components/SuccessMessage.js
 import React from 'react';
 
 const SuccessMessage = ({ message, onClose }) => (

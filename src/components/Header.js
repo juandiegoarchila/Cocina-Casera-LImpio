@@ -1,3 +1,4 @@
+//src/components/Header.js
 import React from 'react';
 import { HomeIcon } from '@heroicons/react/24/solid';
 

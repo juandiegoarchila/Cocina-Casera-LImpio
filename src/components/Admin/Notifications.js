@@ -1,3 +1,4 @@
+//src/components/Admin/Notifications.js
 import { useState, useEffect } from 'react';
 import { db } from '../../config/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';

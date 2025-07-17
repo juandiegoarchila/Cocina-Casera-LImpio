@@ -13,16 +13,16 @@ const getDateRange = (rangeType, start, end) => {
 
   switch (rangeType) {
     case '7_days':
-      startDate.setDate(today.getDate() - 6); // Start 6 days ago to include today (7 days total)
+      startDate.setDate(today.getDate() - 6);
       break;
     case '30_days':
-      startDate = new Date(today.getFullYear(), today.getMonth(), 1); // First day of the month
-      endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0); // Last day of the month
+      startDate = new Date(today.getFullYear(), today.getMonth(), 1); 
+      endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0); 
       endDate.setHours(23, 59, 59, 999);
       break;
     case 'year':
-      startDate = new Date(today.getFullYear(), 0, 1); // First day of the year
-      endDate = new Date(today.getFullYear(), 11, 31); // Last day of the year
+      startDate = new Date(today.getFullYear(), 0, 1); 
+      endDate = new Date(today.getFullYear(), 11, 31); 
       endDate.setHours(23, 59, 59, 999);
       break;
     case 'custom':
@@ -32,7 +32,7 @@ const getDateRange = (rangeType, start, end) => {
       if (endDate) endDate.setHours(23, 59, 59, 999);
       break;
     default:
-      startDate.setDate(today.getDate() - 6); // Default to 7 days
+      startDate.setDate(today.getDate() - 6); 
       break;
   }
   return { startDate, endDate };

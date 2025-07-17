@@ -2,7 +2,6 @@
 //src/components/OptionSelector.js
 import React, { useState, useEffect, useCallback } from 'react';
 
-// Usa el ancho de la ventana para determinar si el dispositivo es móvil (menos de 768px)
 export const isMobile = () => window.innerWidth < 768;
 
 const OptionSelector = ({
@@ -30,7 +29,6 @@ const OptionSelector = ({
   const [currentConfiguring, setCurrentConfiguring] = useState(null);
   const [showWarning, setShowWarning] = useState(false);
 
-  // Inicializa pendingSelection con las selecciones actuales
   useEffect(() => {
     setPendingSelection(multiple ? (Array.isArray(selected) ? selected : []) : selected);
     if (process.env.NODE_ENV === 'development') {
@@ -38,7 +36,6 @@ const OptionSelector = ({
     }
   }, [selected, multiple]);
 
-  // Actualiza showReplacement según la selección
 useEffect(() => {
   let shouldShow = propShowReplacements && Array.isArray(replacements) && replacements.length > 0;
   
@@ -82,12 +79,11 @@ useEffect(() => {
   }
 }, [propShowReplacements, pendingSelection, title, replacements, currentConfiguring, multiple]);
 
-  // Valida selecciones, pero no elimina las que están siendo configuradas
 useEffect(() => {
   if (title === 'Adiciones (por almuerzo)') {
     const validSelections = pendingSelection.filter((opt) => {
       if (opt.id === currentConfiguring) {
-        return true; // Omite validación para el elemento en configuración
+        return true; 
       }
       if (opt.requiresReplacement) {
         if (opt.name === 'Proteína adicional') {

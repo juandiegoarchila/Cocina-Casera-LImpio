@@ -1,3 +1,4 @@
+//src/components/ErrorMessage.js
 import React from 'react';
 
 const ErrorMessage = ({ message, onClose }) => (

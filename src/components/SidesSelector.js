@@ -1,46 +1,40 @@
+//src/components/SidesSelector.js
 import React, { useState } from 'react';
 
 const SidesSelector = ({ sides, selectedSides, setSelectedSides, notes, setNotes }) => {
   const [customSide, setCustomSide] = useState('');
 
-  // Helper function to handle adding or increasing a side
   const handleSideAdd = (side) => {
     const existingSide = selectedSides.find(s => s.id === side.id);
     if (existingSide) {
-      // Increase quantity if the side is already selected
       const updatedSides = selectedSides.map(s =>
         s.id === side.id ? { ...s, quantity: (s.quantity || 1) + 1 } : s
       );
       setSelectedSides(updatedSides);
     } else {
-      // Add new side with quantity 1
       setSelectedSides([...selectedSides, { ...side, quantity: 1 }]);
     }
   };
 
-  // Helper function to handle decreasing or removing a side
   const handleSideRemove = (sideId) => {
     const updatedSides = selectedSides
       .map(side =>
         side.id === sideId ? { ...side, quantity: (side.quantity || 1) - 1 } : side
       )
-      .filter(side => side.quantity > 0); // Remove if quantity becomes 0
+      .filter(side => side.quantity > 0); 
     setSelectedSides(updatedSides);
   };
 
-  // Helper function to add a custom side
   const addCustomSide = () => {
     if (customSide.trim()) {
       const newSide = { id: `custom-${customSide}`, name: customSide, quantity: 1 };
       const existingCustomSide = selectedSides.find(s => s.id === newSide.id);
       if (existingCustomSide) {
-        // Increase quantity if the custom side already exists
         const updatedSides = selectedSides.map(s =>
           s.id === newSide.id ? { ...s, quantity: (s.quantity || 1) + 1 } : s
         );
         setSelectedSides(updatedSides);
       } else {
-        // Add new custom side
         setSelectedSides([...selectedSides, newSide]);
       }
       setCustomSide('');

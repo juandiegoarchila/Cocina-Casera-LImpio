@@ -1,3 +1,4 @@
+// src/components/Admin/Settings.js
 import { useState, useEffect } from 'react';
 import { db } from '../../config/firebase';
 import { doc, setDoc, onSnapshot } from 'firebase/firestore';

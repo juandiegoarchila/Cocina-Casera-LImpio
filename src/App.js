@@ -1,4 +1,4 @@
-//src/App.
+//src/App.js
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { db, auth } from './config/firebase';
 import { collection, onSnapshot, doc, addDoc, setDoc, getDoc } from 'firebase/firestore';

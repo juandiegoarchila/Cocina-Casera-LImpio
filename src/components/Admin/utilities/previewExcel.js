@@ -1,3 +1,4 @@
+//src/components/Admin/utilities/previewExcel.js
 export const generateExcelPreviewHtml = (orders, totals, deliveryPersons, totalProteinUnits = 0, proteins = []) => {
   let mealCounter = 0;
   const pedidosBody = orders.map((order) => {

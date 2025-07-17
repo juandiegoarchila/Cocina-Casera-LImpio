@@ -23,24 +23,22 @@ const MealList = ({
   isOrderingDisabled,
 }) => {
   const [showTutorial, setShowTutorial] = useState(meals.length === 0);
-  const maxMeals = 15; // Define maximum number of meals
-  const [showMaxMealsError, setShowMaxMealsError] = useState(false); // State to control error message visibility
+  const maxMeals = 15; 
+  const [showMaxMealsError, setShowMaxMealsError] = useState(false); 
 
-  // Debug: Log additions prop to verify updates
   useEffect(() => {
     if (process.env.NODE_ENV === 'development') {
       console.log('[MealList] Additions prop updated:', additions);
     }
   }, [additions]);
 
-  // Update visibility of max meals error message with auto-hide
   useEffect(() => {
     if (meals.length >= maxMeals) {
       setShowMaxMealsError(true);
-      const timer = setTimeout(() => setShowMaxMealsError(false), 3000); // Hide after 3 seconds
-      return () => clearTimeout(timer); // Cleanup timer on unmount or change
+      const timer = setTimeout(() => setShowMaxMealsError(false), 3000); 
+      return () => clearTimeout(timer); 
     } else {
-      setShowMaxMealsError(false); // Ensure it hides when below max
+      setShowMaxMealsError(false); 
     }
   }, [meals.length, maxMeals]);
 
@@ -115,7 +113,7 @@ const MealList = ({
               address={meal.address || ''}
               isOrderingDisabled={isOrderingDisabled}
               maxMeals={maxMeals}
-              totalMeals={meals.length} // Pass totalMeals to MealItem
+              totalMeals={meals.length}
             />
           ))
         )}

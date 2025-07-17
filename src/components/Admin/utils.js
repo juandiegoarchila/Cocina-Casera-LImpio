@@ -1,3 +1,4 @@
+// src/components/Admin/utils.js
 export const cleanText = (text) => {
   if (text == null) return '';
   if (typeof text === 'string') return text.replace(' NUEVO', '').trim();

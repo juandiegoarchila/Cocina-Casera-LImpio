@@ -1,4 +1,4 @@
-//SRC/components/Badge.js
+//src/components/Badge.js
 import React from 'react';
 
 const Badge = ({ children, color = 'primary', className = '' }) => (

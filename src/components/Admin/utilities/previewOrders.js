@@ -1,3 +1,4 @@
+//src/components/Admin/utilities/previewOrders.js
 export const generatePreviewHtml = (orders, totals, deliveryPersons) => {
   let mealCounter = 0;
   const pedidosBody = orders.flatMap((order) => {

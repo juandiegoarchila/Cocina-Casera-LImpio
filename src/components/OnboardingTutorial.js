@@ -1,14 +1,7 @@
+// src/components/OnboardingTutorial.js
 import React, { useState, useEffect } from 'react';
 import Joyride, { Step } from 'react-joyride';
 
-/**
- * Define los pasos del tutorial de forma dinámica.
- * Los pasos de 'duplicar' y 'eliminar' se incluyen solo si la aplicación
- * se inicia con más de un almuerzo (simulando un escenario donde ya hay múltiples ítems).
- *
- * @param {number} mealsCount - El número actual de almuerzos en el pedido.
- * @returns {Array<Step>} Un array de objetos Step para Joyride.
- */
 const getSteps = (mealsCount) => {
   let baseSteps = [
     {
@@ -36,8 +29,7 @@ const getSteps = (mealsCount) => {
     {
       target: '.order-summary',
       content: '**Resumen** de tu pedido aquí. 📝',
-      // ********* CAMBIO CLAVE AQUÍ *********
-      // Cambiado de 'top' a 'bottom' para evitar que empuje el contenido hacia abajo.
+  
       placement: 'bottom',
     },
     {
@@ -57,10 +49,9 @@ const getSteps = (mealsCount) => {
     },
   ];
 
-  // Si hay más de un almuerzo (al iniciar el tutorial), añadimos los pasos de duplicar y eliminar.
-  // Esto simula que el usuario ya está manejando múltiples ítems.
+  
   if (mealsCount > 1) {
-    baseSteps.splice(4, 0, // Inserta en el índice 4 (después de 'volver atrás')
+    baseSteps.splice(4, 0, 
       {
         target: '.duplicate-button',
         content: '¡Toca para **duplicar este almuerzo**! 🍝',
@@ -78,12 +69,9 @@ const getSteps = (mealsCount) => {
 };
 
 const OnboardingTutorial = ({ run = true, onComplete, mealsCount }) => {
-  // Estado para controlar la visibilidad del modal de bienvenida.
   const [showWelcomeModal, setShowWelcomeModal] = useState(true);
-  // Estado para controlar si Joyride debe ejecutarse (solo después de aceptar el modal de bienvenida).
   const [startJoyride, setStartJoyride] = useState(false);
 
-  // Efecto para sincronizar el estado interno con la prop 'run' del componente padre.
   useEffect(() => {
     if (!run) {
       setShowWelcomeModal(false);
@@ -91,41 +79,29 @@ const OnboardingTutorial = ({ run = true, onComplete, mealsCount }) => {
     }
   }, [run]);
 
-  /**
-   * Maneja los eventos de Joyride.
-   * Detiene el tutorial si se completa, se omite o se cierra.
-   * @param {object} data - Datos del evento de Joyride.
-   */
   const handleJoyrideCallback = (data) => {
     const { status, action } = data;
 
     if (
-      status === 'finished' || // Tutorial completado
-      status === 'skipped' || // Clic en "Omitir"
-      action === 'close'    // Clic en la "X"
+      status === 'finished' || 
+      status === 'skipped' || 
+      action === 'close'    
     ) {
-      setStartJoyride(false); // Detiene la ejecución de Joyride
-      onComplete();           // Notifica al componente padre que el tutorial ha terminado
+      setStartJoyride(false); 
+      onComplete();           
     }
   };
 
-  /**
-   * Inicia el tutorial después de que el usuario acepta el modal de bienvenida.
-   */
   const handleStartTour = () => {
-    setShowWelcomeModal(false); // Oculta el modal de bienvenida
-    setStartJoyride(true);      // Permite que Joyride se ejecute
+    setShowWelcomeModal(false); 
+    setStartJoyride(true);      
+    };
+const handleSkipWelcome = () => {
+    setShowWelcomeModal(false); 
+    onComplete();               
   };
 
-  /**
-   * Omite el tutorial directamente desde el modal de bienvenida.
-   */
-  const handleSkipWelcome = () => {
-    setShowWelcomeModal(false); // Oculta el modal de bienvenida
-    onComplete();               // Notifica al padre como si el tutorial se hubiera omitido
-  };
-
-  // Renderiza el modal de bienvenida si showWelcomeModal es true y si el padre quiere que el tutorial corra
+  
   if (showWelcomeModal && run) {
     return (
       <div style={{
@@ -138,7 +114,7 @@ const OnboardingTutorial = ({ run = true, onComplete, mealsCount }) => {
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
-        zIndex: 10002, // Asegura que el modal esté sobre el overlay de Joyride
+        zIndex: 10002, 
       }}>
         <div style={{
           backgroundColor: 'white',
@@ -157,7 +133,7 @@ const OnboardingTutorial = ({ run = true, onComplete, mealsCount }) => {
             <button
               onClick={handleStartTour}
               style={{
-                backgroundColor: '#10B981', // Verde esmeralda
+                backgroundColor: '#10B981', 
                 color: 'white',
                 border: 'none',
                 padding: '10px 20px',
@@ -174,7 +150,7 @@ const OnboardingTutorial = ({ run = true, onComplete, mealsCount }) => {
             <button
               onClick={handleSkipWelcome}
               style={{
-                backgroundColor: '#6B7280', // Gris
+                backgroundColor: '#6B7280', 
                 color: 'white',
                 border: 'none',
                 padding: '10px 20px',
@@ -194,21 +170,21 @@ const OnboardingTutorial = ({ run = true, onComplete, mealsCount }) => {
     );
   }
 
-  // Renderiza Joyride solo si 'startJoyride' es true (después de aceptar el modal)
-  // y si la prop 'run' del padre también es true.
+
   return (
     <Joyride
       steps={getSteps(mealsCount)}
-      run={startJoyride && run} // Controla cuándo se ejecuta Joyride
+      run={startJoyride && run}
       continuous={true}
       showSkipButton={true}
       callback={handleJoyrideCallback}
-      disableOverlayClose={true} // Evita que el clic en el overlay cierre el tutorial
-      spotlightClicks={true}     // Habilita clics en los elementos destacados
+      disableOverlayClose={true} 
+      spotlightClicks={true}     
+      
       styles={{
         options: {
           zIndex: 10001,
-          primaryColor: '#10B981', // Verde esmeralda
+          primaryColor: '#10B981', 
           overlayColor: 'rgba(0, 0, 0, 0.6)',
           spotlightPadding: 5,
         },
@@ -217,7 +193,7 @@ const OnboardingTutorial = ({ run = true, onComplete, mealsCount }) => {
           maxWidth: '300px',
         },
       }}
-      disableScrolling={false} // Permite el scroll durante el tutorial
+      disableScrolling={false} 
       locale={{
         back: 'Atrás',
         next: 'Siguiente',

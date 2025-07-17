@@ -1,3 +1,4 @@
+// src/components/Auth/AuthProvider.js
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { auth } from '../../config/firebase';
 import { onAuthStateChanged, signInWithEmailAndPassword } from 'firebase/auth';

@@ -32,8 +32,8 @@ const MealItem = ({
   setShowTutorial,
   maxMeals,
   totalMeals,
-  successMessage, // Añadido como prop
-  setSuccessMessage, // Añadido como prop
+  successMessage, 
+  setSuccessMessage, 
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const [isAdditionsExpanded, setIsAdditionsExpanded] = useState(false);
@@ -41,7 +41,7 @@ const MealItem = ({
   const [collapseTimeout, setCollapseTimeout] = useState(null);
   const [touchStartX, setTouchStartX] = useState(0);
   const [isSwiping, setIsSwiping] = useState(false);
-  const [showMaxMealsError, setShowMaxMealsError] = useState(false); // State for error message
+  const [showMaxMealsError, setShowMaxMealsError] = useState(false); 
   const slideRef = useRef(null);
   const containerRef = useRef(null);
 
@@ -124,7 +124,6 @@ const MealItem = ({
         currentSlideIsComplete = updatedMeal.soup?.name === 'Remplazo por Sopa' && !!value;
         break;
       case 'principle':
-        // Already handled above
         break;
       case 'protein':
         currentSlideIsComplete = isCompleteRice || !!updatedMeal?.protein;
