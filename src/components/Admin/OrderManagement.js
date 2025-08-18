@@ -1,15 +1,27 @@
-//src/components/Admin/OrderManagement.js
+// src/components/Admin/OrderManagement.jsx
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { db } from '../../config/firebase';
-import { collection, onSnapshot, updateDoc, doc, deleteDoc, getDocs, query, where, writeBatch, addDoc, serverTimestamp } from 'firebase/firestore'; // Importar serverTimestamp
-import { exportToExcel } from './utilities/exportToExcel';
-import { exportToPDF } from './utilities/exportToPDF';
-import { exportToCSV } from './utilities/exportToCSV';
+import { db } from '../../config/firebase.js';
+import {
+  collection,
+  onSnapshot,
+  updateDoc,
+  doc,
+  deleteDoc,
+  getDocs,
+  query,
+  where,
+  writeBatch,
+  addDoc,
+  serverTimestamp
+} from 'firebase/firestore';
+import { exportToExcel } from './utilities/exportToExcel.js';
+import { exportToPDF } from './utilities/exportToPDF.js';
+import { exportToCSV } from './utilities/exportToCSV.js';
 import { generatePreviewHtml } from './utilities/previewOrders.js';
 import { generateExcelPreviewHtml } from './utilities/previewExcel.js';
-import { cleanText } from './utils';
-import TablaPedidos from './TablaPedidos';
-import InteraccionesPedidos from './InteraccionesPedidos';
+import { cleanText } from './utils.js';
+import TablaPedidos from './TablaPedidos.js';
+import InteraccionesPedidos from './InteraccionesPedidos.js';
 
 const OrderManagement = ({ setError, setSuccess, theme }) => {
   const [orders, setOrders] = useState([]);
@@ -31,50 +43,53 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
   const [newProtein, setNewProtein] = useState({ name: '', quantity: '' });
   const [showProteinModal, setShowProteinModal] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-
-  // NUEVOS ESTADOS PARA GENERAR ORDEN
   const [showAddOrderModal, setShowAddOrderModal] = useState(false);
+  const [orderTypeFilter, setOrderTypeFilter] = useState('all');
   const [newOrderForm, setNewOrderForm] = useState({
-    meals: [{
-      soup: '',
-      soupReplacement: '',
-      principle: [{ name: '' }],
-      principleReplacement: '',
-      protein: '',
-      drink: '',
-      cutlery: '',
-      sides: [],
-      additions: [],
-      notes: '',
-      address: {
-        address: '',
-        phoneNumber: '',
-        addressType: '',
-        localName: '',
-        recipientName: '',
-      },
-      time: '',
-      payment: 'Efectivo', // Default payment method
-    }],
+    meals: [
+      {
+        soup: '',
+        soupReplacement: '',
+        principle: [{ name: '' }],
+        principleReplacement: '',
+        protein: '',
+        drink: '',
+        cutlery: '',
+        sides: [],
+        additions: [],
+        notes: '',
+        address: {
+          address: '',
+          phoneNumber: '',
+          addressType: '',
+          localName: '',
+          recipientName: ''
+        },
+        time: '',
+        payment: 'Efectivo'
+      }
+    ],
     total: 0,
     status: 'Pendiente',
     payment: 'Efectivo',
     deliveryPerson: 'Sin asignar',
+    type: 'lunch'
   });
 
-  const totalProteinUnits = useMemo(() => proteins.reduce((sum, p) => sum + Number(p.quantity || 0), 0), [proteins]);
+  const totalProteinUnits = useMemo(
+    () => proteins.reduce((sum, p) => sum + Number(p.quantity || 0), 0),
+    [proteins]
+  );
 
-  // Función para registrar actividades - AHORA ACEPTA UN OBJETO DE DETALLES
   const logActivity = useCallback(async (action, details = {}) => {
     try {
       await addDoc(collection(db, 'userActivity'), {
-        action: action,
-        timestamp: serverTimestamp(), // Usa serverTimestamp para una marca de tiempo consistente
-        details: details, // Guarda los detalles adicionales
+        action,
+        timestamp: serverTimestamp(),
+        details
       });
     } catch (error) {
-      console.error("Error al registrar actividad:", error);
-      // No se propaga el error para no interrumpir la acción principal
+      console.error('Error al registrar actividad:', error);
     }
   }, []);
 
@@ -82,38 +97,230 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
     try {
       exportFunction(orders, totals, deliveryPersons, totalProteinUnits, proteins);
       setSuccess(`Exportado correctamente como ${format}.`);
-      logActivity(`Exportó pedidos como ${format}`, { format: format }); // Registrar actividad con detalles
+      logActivity(`Exportó pedidos como ${format}`, { format });
     } catch (error) {
       console.error(`Error al exportar ${format}:`, error);
       setError(`Error al exportar ${format}: ${error.message}`);
     }
   };
 
+  const fetchOrders = useCallback(() => {
+    setIsLoading(true);
+
+    let latestLunch = [];
+    let latestBreakfast = [];
+
+    const recompute = () => {
+      const merged = [...latestLunch, ...latestBreakfast];
+
+      setOrders(merged);
+
+      const newTotals = { cash: 0, daviplata: 0, nequi: 0, general: 0 };
+      const newDeliveryPersons = {};
+
+      merged.forEach((order) => {
+        if (order.status !== 'Cancelado') {
+          const paymentSummary = order.paymentSummary || { Efectivo: 0, Daviplata: 0, Nequi: 0 };
+          newTotals.cash += paymentSummary['Efectivo'] || 0;
+          newTotals.daviplata += paymentSummary['Daviplata'] || 0;
+          newTotals.nequi += paymentSummary['Nequi'] || 0;
+          newTotals.general += order.total || 0;
+
+          const deliveryPerson = order.deliveryPerson || 'Sin asignar';
+          if (deliveryPerson !== 'Sin asignar') {
+            if (!newDeliveryPersons[deliveryPerson]) {
+              newDeliveryPersons[deliveryPerson] = {
+                almuerzo: { efectivo: 0, daviplata: 0, nequi: 0, total: 0 },
+                desayuno: { efectivo: 0, daviplata: 0, nequi: 0, total: 0 }
+              };
+            }
+            const bucket = order.type === 'breakfast' ? 'desayuno' : 'almuerzo';
+            const paymentType = cleanText(order.payment || 'Efectivo').toLowerCase();
+            const amount = order.total || 0;
+
+            if (paymentType === 'efectivo') newDeliveryPersons[deliveryPerson][bucket].efectivo += amount;
+            else if (paymentType === 'daviplata') newDeliveryPersons[deliveryPerson][bucket].daviplata += amount;
+            else if (paymentType === 'nequi') newDeliveryPersons[deliveryPerson][bucket].nequi += amount;
+
+            newDeliveryPersons[deliveryPerson][bucket].total += amount;
+          }
+        }
+      });
+
+      setTotals(newTotals);
+      setDeliveryPersons(newDeliveryPersons);
+      setIsLoading(false);
+    };
+
+    const unsubLunch = onSnapshot(
+      collection(db, 'orders'),
+      (snapshot) => {
+        latestLunch = snapshot.docs.map((doc) => {
+          const data = doc.data();
+          const meals =
+            Array.isArray(data.meals) && data.meals.length > 0
+              ? data.meals
+              : [{ address: {}, payment: { name: 'Efectivo' }, time: {} }];
+
+        return {
+            id: doc.id,
+            type: 'lunch',
+            ...data,
+            meals: meals.map((meal) => ({
+              ...meal,
+              address: meal.address || {},
+              payment:
+                meal.payment && typeof meal.payment === 'object' && meal.payment.name
+                  ? meal.payment
+                  : { name: meal.payment || 'Efectivo' },
+              time: meal.time || {}
+            })),
+            payment: data.payment || (meals[0]?.payment?.name || 'Efectivo'),
+            paymentSummary: data.paymentSummary || { Efectivo: 0, Daviplata: 0, Nequi: 0 },
+            total: data.total || 0,
+            deliveryPerson: data.deliveryPerson || 'Sin asignar',
+            status: data.status || 'Pendiente'
+          };
+        });
+        recompute();
+      },
+      (error) => {
+        setError(`Error al cargar almuerzos: ${error.message}`);
+        setIsLoading(false);
+      }
+    );
+
+    const unsubBreakfast = onSnapshot(
+      collection(db, 'deliveryBreakfastOrders'),
+      (snapshot) => {
+        latestBreakfast = snapshot.docs.map((doc) => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            type: 'breakfast',
+            ...data,
+            payment: data.payment || (data.breakfasts?.[0]?.payment?.name || 'Efectivo'),
+            paymentSummary: data.paymentSummary || { Efectivo: 0, Daviplata: 0, Nequi: 0 },
+            total: data.total || 0,
+            deliveryPerson: data.deliveryPerson || 'Sin asignar',
+            status: data.status || 'Pendiente'
+          };
+        });
+        recompute();
+      },
+      (error) => {
+        setError(`Error al cargar desayunos: ${error.message}`);
+        setIsLoading(false);
+      }
+    );
+
+    return () => {
+      unsubLunch();
+      unsubBreakfast();
+    };
+  }, [setError]);
+
+  const fetchProteins = useCallback(() => {
+    const today = new Date().toISOString().split('T')[0];
+    const proteinsColRef = query(collection(db, 'dailyProteins'), where('date', '==', today));
+    const unsubscribe = onSnapshot(
+      proteinsColRef,
+      (snapshot) => {
+        const proteinsData = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+        setProteins(proteinsData);
+      },
+      (error) => {
+        setError(`Error al cargar proteínas: ${error.message}`);
+      }
+    );
+    return () => unsubscribe();
+  }, [setError]);
+
+  useEffect(() => {
+    const unsubscribeOrders = fetchOrders();
+    const unsubscribeProteins = fetchProteins();
+    return () => {
+      unsubscribeOrders();
+      unsubscribeProteins();
+    };
+  }, [fetchOrders, fetchProteins]);
+
   const filteredOrders = useMemo(() => {
-    if (!searchTerm) return orders;
-    const lowerSearchTerm = searchTerm.toLowerCase();
-    return orders.filter(order => {
-      const address = order.meals?.[0]?.address?.address?.toLowerCase() || '';
-      const phone = order.meals?.[0]?.address?.phoneNumber?.toLowerCase() || '';
-      const time = order.meals?.[0]?.time?.name?.toLowerCase() || order.meals?.[0]?.time?.toLowerCase() || '';
-      const payment = cleanText(order.payment || order.meals?.[0]?.payment?.name || order.meals?.[0]?.payment || '').toLowerCase();
-      const deliveryPerson = order.deliveryPerson?.toLowerCase() || '';
-      const status = order.status?.toLowerCase() || '';
-      return address.includes(lowerSearchTerm) || phone.includes(lowerSearchTerm) || time.includes(lowerSearchTerm) || payment.includes(lowerSearchTerm) || deliveryPerson.includes(lowerSearchTerm) || status.includes(lowerSearchTerm);
+    return orders.filter((order) => {
+      const lowerSearchTerm = (searchTerm || '').toLowerCase();
+
+      const addrObj = order.meals?.[0]?.address || order.breakfasts?.[0]?.address || {};
+      const address = (addrObj.address || '').toLowerCase();
+      const phone = (addrObj.phoneNumber || '').toLowerCase();
+
+      const timeObj = order.meals?.[0]?.time || order.breakfasts?.[0]?.time;
+      const time = (typeof timeObj === 'string' ? timeObj : timeObj?.name || '').toLowerCase();
+
+      const payment = cleanText(
+        order.payment || order.meals?.[0]?.payment?.name || order.breakfasts?.[0]?.payment?.name || ''
+      ).toLowerCase();
+
+      const deliveryPerson = (order.deliveryPerson || '').toLowerCase();
+      const status = (order.status || '').toLowerCase();
+
+      return (
+        (orderTypeFilter === 'all' || order.type === orderTypeFilter) &&
+        (address.includes(lowerSearchTerm) ||
+          phone.includes(lowerSearchTerm) ||
+          time.includes(lowerSearchTerm) ||
+          payment.includes(lowerSearchTerm) ||
+          deliveryPerson.includes(lowerSearchTerm) ||
+          status.includes(lowerSearchTerm))
+      );
     });
-  }, [orders, searchTerm]);
+  }, [orders, searchTerm, orderTypeFilter]);
+
+  // Totales visibles
+  const displayedTotals = useMemo(() => {
+    const t = { cash: 0, daviplata: 0, nequi: 0, general: 0 };
+    filteredOrders.forEach((order) => {
+      if (order.status === 'Cancelado') return;
+      const ps = order.paymentSummary || { Efectivo: 0, Daviplata: 0, Nequi: 0 };
+      t.cash += ps['Efectivo'] || 0;
+      t.daviplata += ps['Daviplata'] || 0;
+      t.nequi += ps['Nequi'] || 0;
+      t.general += order.total || 0;
+    });
+    return t;
+  }, [filteredOrders]);
 
   const sortedOrders = useMemo(() => {
     return [...filteredOrders].sort((a, b) => {
-      // Pasamos filteredOrders explícitamente a getValue para evitar problemas de cierre/referencia
       const getValue = (obj, path, currentFilteredOrdersArray) => {
-        // Asegurarse de que obj no sea undefined antes de llamar a indexOf
         if (path === 'orderNumber') return obj ? currentFilteredOrdersArray.indexOf(obj) : -1;
-        const value = path.split('.').reduce((acc, part) => acc && acc[part], obj);
-        return cleanText(value) || '';
+
+        if (path.startsWith('createdAt')) {
+          const ts = obj.createdAt;
+          if (ts && typeof ts.toMillis === 'function') return ts.toMillis();
+          if (ts instanceof Date) return ts.getTime();
+          return ts && ts.seconds ? ts.seconds * 1000 : 0;
+        }
+
+        const readPath = (o, p) =>
+          p.split('.').reduce((acc, part) => (acc && acc[part] !== undefined ? acc[part] : undefined), o);
+
+        let value = readPath(obj, path);
+
+        if ((value === undefined || value === null || value === '') && path.startsWith('meals.0.')) {
+          const altPath = path.replace(/^meals\.0\./, 'breakfasts.0.');
+          value = readPath(obj, altPath);
+        }
+
+        if (path.endsWith('.time.name') && typeof value !== 'string') {
+          value = value?.name || '';
+        }
+
+        return typeof value === 'number' ? value : cleanText(value) || '';
       };
-      const valueA = getValue(a, sortBy, filteredOrders); // Pasamos filteredOrders aquí
-      const valueB = getValue(b, sortBy, filteredOrders); // Y aquí
+
+      const valueA = getValue(a, sortBy, filteredOrders);
+      const valueB = getValue(b, sortBy, filteredOrders);
+
       if (typeof valueA === 'string' && typeof valueB === 'string') {
         return sortOrder === 'asc' ? valueA.localeCompare(valueB) : valueB.localeCompare(valueA);
       }
@@ -141,90 +348,23 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
   const getSortIcon = (key) => {
     if (sortBy !== key) return null;
     return sortOrder === 'asc' ? (
-      <svg className="w-4 h-4 inline ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <svg className="w-4 h-4 inline ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 15l7-7 7 7" />
       </svg>
     ) : (
-      <svg className="w-4 h-4 inline ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <svg className="w-4 h-4 inline ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
       </svg>
     );
   };
-  const fetchOrders = useCallback(() => {
-    setIsLoading(true);
-    const ordersColRef = collection(db, 'orders');
-    const unsubscribe = onSnapshot(ordersColRef, (snapshot) => {
-      const ordersData = snapshot.docs.map(doc => {
-        const data = doc.data();
-        // Normalize the order data
-        const meals = Array.isArray(data.meals) && data.meals.length > 0 ? data.meals : [{ address: {}, payment: {}, time: {} }];
-        return {
-          id: doc.id,
-          ...data,
-          meals: meals.map(meal => ({
-            ...meal,
-            address: meal.address || {},
-            payment: meal.payment || { name: 'Efectivo' },
-            time: meal.time || {},
-          })),
-          payment: data.payment || meals[0]?.payment?.name || 'Efectivo',
-          total: data.total || 0,
-          deliveryPerson: data.deliveryPerson || 'Sin asignar',
-          status: data.status || 'Pendiente',
-        };
-      });
-      setOrders(ordersData);
-      const newTotals = { cash: 0, daviplata: 0, nequi: 0 };
-      const newDeliveryPersons = {};
-      ordersData.forEach(order => {
-        const paymentSummary = order.paymentSummary || {};
-        newTotals.cash += paymentSummary['Efectivo'] || 0;
-        newTotals.daviplata += paymentSummary['Daviplata'] || 0;
-        newTotals.nequi += paymentSummary['Nequi'] || 0;
-        if (order.deliveryPerson) {
-          const personName = cleanText(order.deliveryPerson);
-          if (!newDeliveryPersons[personName]) newDeliveryPersons[personName] = { cash: 0, daviplata: 0, nequi: 0, total: 0 };
-          const paymentType = cleanText(order.payment || order.meals?.[0]?.payment?.name || order.meals?.[0]?.payment || 'Efectivo');
-          const amount = order.total || 0;
-          if (paymentType.toLowerCase() === 'efectivo') newDeliveryPersons[personName].cash += amount;
-          else if (paymentType.toLowerCase() === 'daviplata') newDeliveryPersons[personName].daviplata += amount;
-          else if (paymentType.toLowerCase() === 'nequi') newDeliveryPersons[personName].nequi += amount;
-          newDeliveryPersons[personName].total += amount;
-        }
-      });
-      setTotals(newTotals);
-      setDeliveryPersons(newDeliveryPersons);
-      setIsLoading(false);
-    }, (error) => {
-      setError(`Error al cargar pedidos: ${error.message}`);
-      setIsLoading(false);
-    });
-    return () => unsubscribe();
-  }, [setError]);
-
-  const fetchProteins = useCallback(() => {
-    const today = new Date().toISOString().split('T')[0];
-    const proteinsColRef = query(collection(db, 'dailyProteins'), where('date', '==', today));
-    const unsubscribe = onSnapshot(proteinsColRef, (snapshot) => {
-      const proteinsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setProteins(proteinsData);
-    }, (error) => {
-      setError(`Error al cargar proteínas: ${error.message}`);
-    });
-    return () => unsubscribe();
-  }, [setError]);
-
-  useEffect(() => {
-    const unsubscribeOrders = fetchOrders();
-    const unsubscribeProteins = fetchProteins();
-    return () => {
-      unsubscribeOrders();
-      unsubscribeProteins();
-    };
-  }, [fetchOrders, fetchProteins]);
 
   const handleAddProtein = async () => {
-    if (!newProtein.name || !newProtein.quantity || isNaN(newProtein.quantity) || Number(newProtein.quantity) <= 0) {
+    if (
+      !newProtein.name ||
+      !newProtein.quantity ||
+      isNaN(newProtein.quantity) ||
+      Number(newProtein.quantity) <= 0
+    ) {
       setError('Por favor, ingrese un nombre de proteína válido y una cantidad mayor a 0.');
       return;
     }
@@ -234,13 +374,15 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
         name: newProtein.name.trim(),
         quantity: Number(newProtein.quantity),
         date: new Date().toISOString().split('T')[0],
-        createdAt: new Date(),
+        createdAt: new Date()
       });
       setNewProtein({ name: '', quantity: '' });
       setShowProteinModal(false);
       setSuccess('Proteína agregada correctamente.');
-      // PASAR DETALLES A logActivity
-      logActivity(`Agregó proteína: ${newProtein.name} (${newProtein.quantity} unidades)`, { proteinName: newProtein.name, quantity: Number(newProtein.quantity) });
+      logActivity(`Agregó proteína: ${newProtein.name} (${newProtein.quantity} unidades)`, {
+        proteinName: newProtein.name,
+        quantity: Number(newProtein.quantity)
+      });
     } catch (error) {
       setError(`Error al agregar proteína: ${error.message}`);
     } finally {
@@ -250,48 +392,173 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
 
   const handleEditOrder = useCallback((order) => {
     setEditingOrder(order);
+
+    const defaultAddress = {
+      address: '',
+      phoneNumber: '',
+      addressType: '',
+      localName: '',
+      recipientName: '',
+      unitDetails: ''
+    };
+
+    if (order.type === 'breakfast') {
+      const breakfasts =
+        Array.isArray(order.breakfasts) && order.breakfasts.length > 0
+          ? order.breakfasts.map((b) => ({
+              ...b,
+              address: b.address || { ...defaultAddress },
+              additions: Array.isArray(b.additions) ? b.additions : [],
+              cutlery: typeof b.cutlery === 'boolean' ? b.cutlery : !!b.cutlery,
+              time: b.time || '',
+              notes: b.notes || '',
+              type: b.type || null,
+              eggs: b.eggs || null,
+              broth: b.broth || null,
+              riceBread: b.riceBread || null,
+              drink: b.drink || null,
+              protein: b.protein || null
+            }))
+          : [
+              {
+                type: null,
+                eggs: null,
+                broth: null,
+                riceBread: null,
+                drink: null,
+                protein: null,
+                additions: [],
+                notes: '',
+                cutlery: false,
+                time: '',
+                address: { ...defaultAddress }
+              }
+            ];
+
+      setEditForm({
+        id: order.id,
+        breakfasts,
+        total: order.total || 0,
+        status: order.status || 'Pendiente',
+        payment: order.payment ? cleanText(order.payment) : 'Efectivo',
+        deliveryPerson: order.deliveryPerson || 'Sin asignar',
+        type: 'breakfast'
+      });
+      return;
+    }
+
+    const meals =
+      Array.isArray(order.meals) && order.meals.length > 0
+        ? order.meals.map((meal) => ({
+            ...meal,
+            address: meal.address || { ...defaultAddress },
+            payment: meal.payment ? cleanText(meal.payment?.name || meal.payment) : 'Efectivo',
+            additions: Array.isArray(meal.additions) ? meal.additions : [],
+            principle: Array.isArray(meal.principle)
+              ? meal.principle
+              : meal.principle
+              ? [{ name: meal.principle.name || meal.principle }]
+              : [],
+            cutlery: typeof meal.cutlery === 'boolean' ? meal.cutlery : !!meal.cutlery,
+            sides: Array.isArray(meal.sides) ? meal.sides : [],
+            soup: meal.soup || '',
+            soupReplacement: meal.soupReplacement || '',
+            protein: meal.protein || '',
+            drink: meal.drink || '',
+            time: meal.time || '',
+            notes: meal.notes || ''
+          }))
+        : [
+            {
+              soup: '',
+              soupReplacement: '',
+              principle: [{ name: '' }],
+              principleReplacement: '',
+              protein: '',
+              drink: '',
+              cutlery: false,
+              sides: [],
+              additions: [],
+              notes: '',
+              address: { ...defaultAddress },
+              time: '',
+              payment: 'Efectivo'
+            }
+          ];
+
     setEditForm({
-      meals: order.meals?.map(meal => ({
-        ...meal,
-        address: meal.address || {},
-        payment: meal.payment ? cleanText(meal.payment?.name || meal.payment) : 'Efectivo',
-        additions: meal.additions || [],
-        principle: Array.isArray(meal.principle) ? meal.principle : meal.principle ? [{ name: meal.principle.name || meal.principle }] : [],
-        cutlery: meal.cutlery || null,
-        sides: meal.sides || [],
-      })) || [],
+      id: order.id,
+      meals,
       total: order.total || 0,
       status: order.status || 'Pendiente',
       payment: order.payment ? cleanText(order.payment) : 'Efectivo',
-      deliveryPerson: order.deliveryPerson || '',
+      deliveryPerson: order.deliveryPerson || 'Sin asignar',
+      type: 'lunch'
     });
   }, []);
 
-  // Handler para campos del formulario de EDICIÓN de pedido
+  const handleEditFormFieldChange = (field, value) => {
+    setEditForm((prev) => ({ ...prev, [field]: value }));
+  };
+
   const handleEditOrderMealFormFieldChange = (mealIndex, field, value) => {
-    setEditForm(prev => {
-      const newMeals = [...prev.meals];
-      if (!newMeals[mealIndex]) { // Asegurar que el objeto meal exista
-        newMeals[mealIndex] = { address: {}, payment: {}, time: {} };
-      }
+    setEditForm((prev) => {
+      const newMeals = [...(prev.meals || [])];
+      if (!newMeals[mealIndex]) newMeals[mealIndex] = { address: {}, payment: {}, time: {} };
+
       if (field.includes('.')) {
         const [parent, child] = field.split('.');
-        newMeals[mealIndex] = { ...newMeals[mealIndex], [parent]: { ...newMeals[mealIndex][parent], [child]: value } };
-      } else if (field === 'sides') {
-        newMeals[mealIndex] = { ...newMeals[mealIndex], sides: value.split(',').map(s => ({ name: s.trim() })) };
-      } else if (field === 'additions') {
         newMeals[mealIndex] = {
           ...newMeals[mealIndex],
-          additions: value.split(';').map(a => {
-            const [name, proteinOrReplacement = '', quantity = '1'] = a.split(',');
-            return { name: name.trim(), [proteinOrReplacement.includes('por') ? 'replacement' : 'protein']: proteinOrReplacement.trim(), quantity: Number(quantity) || 1 };
-          }).filter(a => a.name),
+          [parent]: { ...(newMeals[mealIndex][parent] || {}), [child]: value }
         };
+      } else if (field === 'sides') {
+        if (Array.isArray(value)) {
+          newMeals[mealIndex] = { ...newMeals[mealIndex], sides: value };
+        } else {
+          newMeals[mealIndex] = {
+            ...newMeals[mealIndex],
+            sides: String(value)
+              .split(',')
+              .map((s) => ({ name: s.trim() }))
+              .filter((s) => s.name)
+          };
+        }
+      } else if (field === 'additions') {
+        if (Array.isArray(value)) {
+          newMeals[mealIndex] = { ...newMeals[mealIndex], additions: value };
+        } else {
+          newMeals[mealIndex] = {
+            ...newMeals[mealIndex],
+            additions: String(value)
+              .split(';')
+              .map((a) => {
+                const [name, proteinOrReplacement = '', quantity = '1'] = a.split(',');
+                return {
+                  name: name.trim(),
+                  [proteinOrReplacement.includes('por') ? 'replacement' : 'protein']: proteinOrReplacement.trim(),
+                  quantity: Number(quantity) || 1
+                };
+              })
+              .filter((a) => a.name)
+          };
+        }
       } else if (field === 'principle') {
-        newMeals[mealIndex] = { ...newMeals[mealIndex], principle: value.split(',').map(p => ({ name: p.trim() })).filter(p => p.name) };
+        if (Array.isArray(value)) {
+          newMeals[mealIndex] = { ...newMeals[mealIndex], principle: value };
+        } else {
+          newMeals[mealIndex] = {
+            ...newMeals[mealIndex],
+            principle: String(value)
+              .split(',')
+              .map((p) => ({ name: p.trim() }))
+              .filter((p) => p.name)
+          };
+        }
       } else {
         newMeals[mealIndex] = { ...newMeals[mealIndex], [field]: value };
       }
+
       return { ...prev, meals: newMeals };
     });
   };
@@ -300,39 +567,126 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
     if (!editingOrder) return;
     setIsLoading(true);
     try {
-      // Obtener el estado anterior del pedido para el log
-      const oldOrder = orders.find(o => o.id === editingOrder.id);
-      const previousState = oldOrder ? {
-        meals: oldOrder.meals,
-        total: oldOrder.total,
-        status: oldOrder.status,
-        payment: oldOrder.payment,
-        deliveryPerson: oldOrder.deliveryPerson,
-      } : {};
+      const oldOrder = orders.find((o) => o.id === editingOrder.id);
+      const previousState = oldOrder
+        ? {
+            meals: oldOrder.meals,
+            breakfasts: oldOrder.breakfasts,
+            total: oldOrder.total,
+            status: oldOrder.status,
+            payment: oldOrder.payment,
+            deliveryPerson: oldOrder.deliveryPerson,
+            type: oldOrder.type
+          }
+        : {};
 
-      const updatedMealsForDB = editForm.meals.map(meal => ({
-        ...meal,
-        soup: meal.soup && typeof meal.soup === 'string' ? { name: meal.soup } : meal.soup,
-        soupReplacement: meal.soupReplacement && typeof meal.soupReplacement === 'string' ? { name: meal.soupReplacement } : meal.soupReplacement,
-        principle: Array.isArray(meal.principle) ? meal.principle.map(p => typeof p === 'string' ? { name: p } : p) : meal.principle && typeof meal.principle === 'string' ? [{ name: meal.principle }] : meal.principle,
-        principleReplacement: meal.principleReplacement && typeof meal.principleReplacement === 'string' ? { name: meal.principleReplacement } : meal.principleReplacement,
-        protein: meal.protein && typeof meal.protein === 'string' ? { name: meal.protein } : meal.protein,
-        drink: meal.drink && typeof meal.drink === 'string' ? { name: meal.drink } : meal.drink,
-        cutlery: meal.cutlery && typeof meal.cutlery === 'string' ? { name: meal.cutlery } : meal.cutlery,
-        time: meal.time && typeof meal.time === 'string' ? { name: meal.time } : meal.time,
-        payment: meal.payment && typeof meal.payment === 'string' ? { name: meal.payment } : meal.payment,
-        sides: Array.isArray(meal.sides) ? meal.sides.map(s => typeof s === 'string' ? { name: s } : s) : [],
-        additions: Array.isArray(meal.additions) ? meal.additions.map(a => ({ name: a.name || '', protein: a.protein || '', replacement: a.replacement || '', quantity: a.quantity || 1 })) : [],
-      }));
-      await updateDoc(doc(db, 'orders', editingOrder.id), { ...editForm, meals: updatedMealsForDB, updatedAt: new Date() });
+      const paymentSummary = {
+        Efectivo: editForm.payment === 'Efectivo' ? Number(editForm.total) || 0 : 0,
+        Daviplata: editForm.payment === 'Daviplata' ? Number(editForm.total) || 0 : 0,
+        Nequi: editForm.payment === 'Nequi' ? Number(editForm.total) || 0 : 0
+      };
+
+      let updateDataBase = {
+        total: Number(editForm.total) || 0,
+        status: editForm.status || 'Pendiente',
+        payment: editForm.payment || 'Efectivo',
+        deliveryPerson: editForm.deliveryPerson || 'Sin asignar',
+        paymentSummary,
+        updatedAt: new Date(),
+        type: editForm.type || editingOrder.type || 'lunch'
+      };
+
+      if ((editingOrder.type || editForm.type) === 'breakfast') {
+        const updatedBreakfastsForDB = (editForm.breakfasts || []).map((b) => ({
+          type: b.type ? { name: (typeof b.type === 'string' ? b.type : b.type.name) || '' } : null,
+          eggs: b.eggs ? { name: (typeof b.eggs === 'string' ? b.eggs : b.eggs.name) || '' } : null,
+          broth: b.broth ? { name: (typeof b.broth === 'string' ? b.broth : b.broth.name) || '' } : null,
+          riceBread: b.riceBread ? { name: (typeof b.riceBread === 'string' ? b.riceBread : b.riceBread.name) || '' } : null,
+          drink: b.drink ? { name: (typeof b.drink === 'string' ? b.drink : b.drink.name) || '' } : null,
+          protein: b.protein ? { name: (typeof b.protein === 'string' ? b.protein : b.protein.name) || '' } : null,
+          additions: Array.isArray(b.additions)
+            ? b.additions
+                .map((a) => ({ name: a.name || '', quantity: Number(a.quantity) || 1 }))
+                .filter((a) => a.name)
+            : [],
+          notes: b.notes || '',
+          cutlery: !!b.cutlery,
+          time: b.time ? { name: (typeof b.time === 'string' ? b.time : b.time.name) || '' } : null,
+          address: {
+            address: b.address?.address || '',
+            phoneNumber: b.address?.phoneNumber || '',
+            addressType: b.address?.addressType || '',
+            localName: b.address?.localName || '',
+            recipientName: b.address?.recipientName || '',
+            unitDetails: b.address?.unitDetails || ''
+          }
+        }));
+
+        updateDataBase = { ...updateDataBase, breakfasts: updatedBreakfastsForDB };
+        await updateDoc(doc(db, 'deliveryBreakfastOrders', editingOrder.id), updateDataBase);
+
+        logActivity(`Editó (desayuno) el pedido ${editingOrder.id}`, {
+          orderId: editingOrder.id,
+          previousState,
+          newState: { ...editForm, breakfasts: updatedBreakfastsForDB }
+        });
+      } else {
+        const updatedMealsForDB = (editForm.meals || []).map((meal) => ({
+          soup: meal.soup ? { name: (typeof meal.soup === 'string' ? meal.soup : meal.soup.name) || '' } : null,
+          soupReplacement: meal.soupReplacement
+            ? { name: (typeof meal.soupReplacement === 'string' ? meal.soupReplacement : meal.soupReplacement.name) || '' }
+            : null,
+          principle: Array.isArray(meal.principle)
+            ? meal.principle
+                .map((p) => ({ name: (typeof p === 'string' ? p : p.name) || '' }))
+                .filter((p) => p.name)
+            : [],
+          principleReplacement: meal.principleReplacement
+            ? { name: (typeof meal.principleReplacement === 'string' ? meal.principleReplacement : meal.principleReplacement.name) || '' }
+            : null,
+          protein: meal.protein ? { name: (typeof meal.protein === 'string' ? meal.protein : meal.protein.name) || '' } : null,
+          drink: meal.drink ? { name: (typeof meal.drink === 'string' ? meal.drink : meal.drink.name) || '' } : null,
+          cutlery: !!meal.cutlery,
+          time: meal.time ? { name: (typeof meal.time === 'string' ? meal.time : meal.time.name) || '' } : null,
+          payment: meal.payment
+            ? { name: (typeof meal.payment === 'string' ? meal.payment : meal.payment.name) || 'Efectivo' }
+            : { name: 'Efectivo' },
+          sides: Array.isArray(meal.sides)
+            ? meal.sides
+                .map((s) => ({ name: (typeof s === 'string' ? s : s.name) || '' }))
+                .filter((s) => s.name)
+            : [],
+          additions: Array.isArray(meal.additions)
+            ? meal.additions.map((a) => ({
+                name: a.name || '',
+                protein: a.protein || '',
+                replacement: a.replacement || '',
+                quantity: Number(a.quantity) || 1
+              }))
+            : [],
+          notes: meal.notes || '',
+          address: {
+            address: meal.address?.address || '',
+            phoneNumber: meal.address?.phoneNumber || '',
+            addressType: meal.address?.addressType || '',
+            localName: meal.address?.localName || '',
+            recipientName: meal.address?.recipientName || '',
+            unitDetails: meal.address?.unitDetails || ''
+          }
+        }));
+
+        updateDataBase = { ...updateDataBase, meals: updatedMealsForDB };
+        await updateDoc(doc(db, 'orders', editingOrder.id), updateDataBase);
+
+        logActivity(`Editó (almuerzo) el pedido ${editingOrder.id}`, {
+          orderId: editingOrder.id,
+          previousState,
+          newState: { ...editForm, meals: updatedMealsForDB }
+        });
+      }
+
       setEditingOrder(null);
       setSuccess('Pedido actualizado correctamente.');
-      // PASAR DETALLES A logActivity
-      logActivity(`Editó el pedido con ID: ${editingOrder.id}`, {
-        orderId: editingOrder.id,
-        previousState: previousState,
-        newState: { ...editForm, meals: updatedMealsForDB },
-      });
     } catch (error) {
       setError(`Error al guardar: ${error.message}`);
     } finally {
@@ -340,19 +694,23 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
     }
   };
 
-  const handleDeleteOrder = async (orderId) => { // Acepta orderId como parámetro
+  const handleDeleteOrder = async (orderId) => {
     setIsLoading(true);
     try {
-      // Encontrar el objeto de la orden para registrar sus detalles
-      const orderToDelete = orders.find(o => o.id === orderId);
-
-      await deleteDoc(doc(db, 'orders', orderId));
+      const orderToDelete = orders.find((o) => o.id === orderId);
+      await deleteDoc(doc(db, orderToDelete.type === 'breakfast' ? 'deliveryBreakfastOrders' : 'orders', orderId));
       setSuccess('Pedido eliminado correctamente.');
-      // PASAR DETALLES A logActivity
       if (orderToDelete) {
         logActivity(`Eliminó el pedido con ID: ${orderId}`, {
-          orderId: orderId,
-          deletedOrderDetails: { meals: orderToDelete.meals, total: orderToDelete.total, status: orderToDelete.status, payment: orderToDelete.payment, deliveryPerson: orderToDelete.deliveryPerson },
+          orderId,
+          deletedOrderDetails: {
+            meals: orderToDelete.meals,
+            total: orderToDelete.total,
+            status: orderToDelete.status,
+            payment: orderToDelete.payment,
+            deliveryPerson: orderToDelete.deliveryPerson,
+            type: orderToDelete.type
+          }
         });
       } else {
         logActivity(`Eliminó el pedido con ID: ${orderId} (detalles no disponibles)`);
@@ -373,13 +731,14 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
     try {
       const batch = writeBatch(db);
       const ordersSnapshot = await getDocs(collection(db, 'orders'));
-      ordersSnapshot.forEach(doc => batch.delete(doc.ref));
+      const breakfastOrdersSnapshot = await getDocs(collection(db, 'deliveryBreakfastOrders'));
+      ordersSnapshot.forEach((docRef) => batch.delete(docRef.ref));
+      breakfastOrdersSnapshot.forEach((docRef) => batch.delete(docRef.ref));
       await batch.commit();
       setShowConfirmDeleteAll(false);
       setConfirmText('');
       setSuccess('Todos los pedidos han sido eliminados.');
-      // PASAR DETALLES A logActivity
-      logActivity('Eliminó todos los pedidos', { count: ordersSnapshot.size });
+      logActivity('Eliminó todos los pedidos', { count: ordersSnapshot.size + breakfastOrdersSnapshot.size });
     } catch (error) {
       setError(`Error al eliminar todos los pedidos: ${error.message}`);
     } finally {
@@ -389,16 +748,61 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
 
   const handleStatusChange = async (orderId, newStatus) => {
     try {
-      const oldOrder = orders.find(o => o.id === orderId); // Obtener el pedido actual
+      const oldOrder = orders.find((o) => o.id === orderId);
       const previousStatus = oldOrder ? oldOrder.status : 'Desconocido';
+      const collectionName = oldOrder.type === 'breakfast' ? 'deliveryBreakfastOrders' : 'orders';
 
-      await updateDoc(doc(db, 'orders', orderId), { status: newStatus, updatedAt: new Date() });
+      await updateDoc(doc(db, collectionName, orderId), { status: newStatus, updatedAt: new Date() });
+
+      if (newStatus === 'Cancelado' && oldOrder && previousStatus !== 'Cancelado') {
+        const paymentType = cleanText(oldOrder.payment || 'Efectivo');
+        const amount = oldOrder.total || 0;
+        const deliveryPerson = cleanText(oldOrder.deliveryPerson || '');
+
+        setTotals((prev) => {
+          const newTotals = { ...prev };
+          if (paymentType.toLowerCase() === 'efectivo') {
+            newTotals.cash = Math.max(0, newTotals.cash - amount);
+          } else if (paymentType.toLowerCase() === 'daviplata') {
+            newTotals.daviplata = Math.max(0, newTotals.daviplata - amount);
+          } else if (paymentType.toLowerCase() === 'nequi') {
+            newTotals.nequi = Math.max(0, newTotals.nequi - amount);
+          }
+          return newTotals;
+        });
+
+        if (deliveryPerson && deliveryPerson !== 'Sin asignar') {
+          setDeliveryPersons((prev) => {
+            const newDeliveryPersons = { ...prev };
+            if (newDeliveryPersons[deliveryPerson]) {
+              const bucket = oldOrder.type === 'breakfast' ? 'desayuno' : 'almuerzo';
+              const person = { ...newDeliveryPersons[deliveryPerson] };
+              const b = {
+                ...(person[bucket] || { efectivo: 0, daviplata: 0, nequi: 0, total: 0 })
+              };
+
+              const pt = paymentType.toLowerCase();
+              if (pt === 'efectivo') b.efectivo = Math.max(0, (b.efectivo || 0) - amount);
+              else if (pt === 'daviplata') b.daviplata = Math.max(0, (b.daviplata || 0) - amount);
+              else if (pt === 'nequi') b.nequi = Math.max(0, (b.nequi || 0) - amount);
+              b.total = Math.max(0, (b.total || 0) - amount);
+
+              person[bucket] = b;
+              newDeliveryPersons[deliveryPerson] = person;
+
+              const remaining = (person.almuerzo?.total || 0) + (person.desayuno?.total || 0);
+              if (remaining === 0) delete newDeliveryPersons[deliveryPerson];
+            }
+            return newDeliveryPersons;
+          });
+        }
+      }
+
       setSuccess('Estado actualizado correctamente.');
-      // PASAR DETALLES A logActivity
       logActivity(`Actualizó el estado del pedido ${orderId} a: ${newStatus}`, {
-        orderId: orderId,
-        previousStatus: previousStatus,
-        newStatus: newStatus,
+        orderId,
+        previousStatus,
+        newStatus
       });
     } catch (error) {
       setError(`Error al actualizar estado: ${error.message}`);
@@ -407,17 +811,20 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
 
   const handleDeliveryChange = async (orderId, deliveryPerson) => {
     try {
-      const oldOrder = orders.find(o => o.id === orderId); // Obtener el pedido actual
+      const oldOrder = orders.find((o) => o.id === orderId);
+      const collectionName = oldOrder.type === 'breakfast' ? 'deliveryBreakfastOrders' : 'orders';
       const previousDeliveryPerson = oldOrder ? oldOrder.deliveryPerson : 'Desconocido';
 
-      await updateDoc(doc(db, 'orders', orderId), { deliveryPerson: deliveryPerson || null, updatedAt: new Date() });
+      await updateDoc(doc(db, collectionName, orderId), {
+        deliveryPerson: deliveryPerson || null,
+        updatedAt: new Date()
+      });
       setEditingDeliveryId(null);
       setSuccess('Domiciliario actualizado correctamente.');
-      // PASAR DETALLES A logActivity
       logActivity(`Asignó/Actualizó domiciliario para el pedido ${orderId} a: ${deliveryPerson || 'Sin asignar'}`, {
-        orderId: orderId,
-        previousDeliveryPerson: previousDeliveryPerson,
-        newDeliveryPerson: deliveryPerson || 'Sin asignar',
+        orderId,
+        previousDeliveryPerson,
+        newDeliveryPerson: deliveryPerson || 'Sin asignar'
       });
     } catch (error) {
       setError(`Error al actualizar domiciliario: ${error.message}`);
@@ -426,43 +833,64 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
 
   const handleOpenPreview = () => {
     const previewWindow = window.open('', '_blank');
-    previewWindow.document.write(generatePreviewHtml(orders, totals, deliveryPersons));
+    previewWindow.document.write(generatePreviewHtml(filteredOrders, displayedTotals, deliveryPersons));
     previewWindow.document.close();
-    // PASAR DETALLES A logActivity
     logActivity('Abrió la vista previa de pedidos (PDF)', { type: 'PDF Preview' });
   };
 
   const handleOpenExcelPreview = () => {
     const previewWindow = window.open('', '_blank');
-    previewWindow.document.write(generateExcelPreviewHtml(orders, totals, deliveryPersons, totalProteinUnits, proteins));
+    previewWindow.document.write(
+      generateExcelPreviewHtml(filteredOrders, displayedTotals, deliveryPersons, totalProteinUnits, proteins)
+    );
     previewWindow.document.close();
-    // PASAR DETALLES A logActivity
     logActivity('Abrió la vista previa de pedidos (Excel)', { type: 'Excel Preview' });
   };
 
-  // NUEVAS FUNCIONES PARA GENERAR ORDEN
+  const handleNewOrderFieldChange = (field, value) => {
+    setNewOrderForm((prev) => ({ ...prev, [field]: value }));
+  };
+
   const handleNewOrderMealFormFieldChange = (mealIndex, field, value) => {
-    setNewOrderForm(prev => {
+    setNewOrderForm((prev) => {
       const newMeals = [...prev.meals];
-      if (!newMeals[mealIndex]) { // Ensure meal object exists
+      if (!newMeals[mealIndex]) {
         newMeals[mealIndex] = { address: {}, payment: {}, time: {} };
       }
-
       if (field.includes('.')) {
         const [parent, child] = field.split('.');
         newMeals[mealIndex] = { ...newMeals[mealIndex], [parent]: { ...newMeals[mealIndex][parent], [child]: value } };
       } else if (field === 'sides') {
-        newMeals[mealIndex] = { ...newMeals[mealIndex], sides: value.split(',').map(s => ({ name: s.trim() })).filter(s => s.name) };
+        newMeals[mealIndex] = {
+          ...newMeals[mealIndex],
+          sides: value
+            .split(',')
+            .map((s) => ({ name: s.trim() }))
+            .filter((s) => s.name)
+        };
       } else if (field === 'additions') {
         newMeals[mealIndex] = {
           ...newMeals[mealIndex],
-          additions: value.split(';').map(a => {
-            const [name, proteinOrReplacement = '', quantity = '1'] = a.split(',');
-            return { name: name.trim(), [proteinOrReplacement.includes('por') ? 'replacement' : 'protein']: proteinOrReplacement.trim(), quantity: Number(quantity) || 1 };
-          }).filter(a => a.name),
+          additions: value
+            .split(';')
+            .map((a) => {
+              const [name, proteinOrReplacement = '', quantity = '1'] = a.split(',');
+              return {
+                name: name.trim(),
+                [proteinOrReplacement.includes('por') ? 'replacement' : 'protein']: proteinOrReplacement.trim(),
+                quantity: Number(quantity) || 1
+              };
+            })
+            .filter((a) => a.name)
         };
       } else if (field === 'principle') {
-        newMeals[mealIndex] = { ...newMeals[mealIndex], principle: value.split(',').map(p => ({ name: p.trim() })).filter(p => p.name) };
+        newMeals[mealIndex] = {
+          ...newMeals[mealIndex],
+          principle: value
+            .split(',')
+            .map((p) => ({ name: p.trim() }))
+            .filter((p) => p.name)
+        };
       } else {
         newMeals[mealIndex] = { ...newMeals[mealIndex], [field]: value };
       }
@@ -473,71 +901,87 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
   const handleAddOrderSubmit = async () => {
     setIsLoading(true);
     try {
-      // Normalizar datos para Firestore
-      const normalizedMeals = newOrderForm.meals.map(meal => ({
+      const normalizedMeals = newOrderForm.meals.map((meal) => ({
         ...meal,
         soup: meal.soup ? { name: meal.soup } : null,
         soupReplacement: meal.soupReplacement ? { name: meal.soupReplacement } : null,
-        principle: Array.isArray(meal.principle) ? meal.principle.map(p => ({ name: p.name || p })) : (meal.principle ? [{ name: meal.principle }] : []),
+        principle: Array.isArray(meal.principle)
+          ? meal.principle.map((p) => ({ name: p.name || p }))
+          : meal.principle
+          ? [{ name: meal.principle }]
+          : [],
         principleReplacement: meal.principleReplacement ? { name: meal.principleReplacement } : null,
         protein: meal.protein ? { name: meal.protein } : null,
         drink: meal.drink ? { name: meal.drink } : null,
         cutlery: meal.cutlery ? { name: meal.cutlery } : null,
         time: meal.time ? { name: meal.time } : null,
-        payment: newOrderForm.payment ? { name: newOrderForm.payment } : { name: 'Efectivo' }, // Usar newOrderForm.payment
-        sides: Array.isArray(meal.sides) ? meal.sides.map(s => ({ name: s.name || s })) : [],
-        additions: Array.isArray(meal.additions) ? meal.additions.map(a => ({ name: a.name || '', protein: a.protein || '', replacement: a.replacement || '', quantity: a.quantity || 1 })) : [],
+        payment: newOrderForm.payment ? { name: newOrderForm.payment } : { name: 'Efectivo' },
+        sides: Array.isArray(meal.sides) ? meal.sides.map((s) => ({ name: s.name || s })) : [],
+        additions: Array.isArray(meal.additions)
+          ? meal.additions.map((a) => ({
+              name: a.name || '',
+              protein: a.protein || '',
+              replacement: a.replacement || '',
+              quantity: a.quantity || 1
+            }))
+          : []
       }));
 
-      // Calcular paymentSummary basado en el payment de la nueva orden
       const paymentSummary = {
-        'Efectivo': newOrderForm.payment === 'Efectivo' ? newOrderForm.total : 0,
-        'Daviplata': newOrderForm.payment === 'Daviplata' ? newOrderForm.total : 0,
-        'Nequi': newOrderForm.payment === 'Nequi' ? newOrderForm.total : 0,
+        Efectivo: newOrderForm.payment === 'Efectivo' ? Number(newOrderForm.total) || 0 : 0,
+        Daviplata: newOrderForm.payment === 'Daviplata' ? Number(newOrderForm.total) || 0 : 0,
+        Nequi: newOrderForm.payment === 'Nequi' ? Number(newOrderForm.total) || 0 : 0
       };
 
       const orderData = {
         ...newOrderForm,
         meals: normalizedMeals,
+        total: Number(newOrderForm.total) || 0,
+        status: newOrderForm.status || 'Pendiente',
+        payment: newOrderForm.payment || 'Efectivo',
+        deliveryPerson: newOrderForm.deliveryPerson || 'Sin asignar',
+        paymentSummary,
         createdAt: serverTimestamp(),
-        paymentSummary: paymentSummary, // Añadir paymentSummary
+        type: newOrderForm.type || 'lunch'
       };
 
-      const docRef = await addDoc(collection(db, 'orders'), orderData);
+      const collectionName = newOrderForm.type === 'breakfast' ? 'deliveryBreakfastOrders' : 'orders';
+      const docRef = await addDoc(collection(db, collectionName), orderData);
       setSuccess('Orden agregada correctamente.');
-      // PASAR DETALLES A logActivity
-      logActivity(`Agregó una nueva orden (Total: $${newOrderForm.total.toLocaleString()})`, {
+      logActivity(`Agregó una nueva orden (Total: $${newOrderForm.total.toLocaleString('es-CO')})`, {
         orderId: docRef.id,
-        newOrderDetails: { ...newOrderForm, meals: normalizedMeals },
+        newOrderDetails: { ...newOrderForm, meals: normalizedMeals }
       });
       setShowAddOrderModal(false);
-      // Resetear el formulario después de guardar
       setNewOrderForm({
-        meals: [{
-          soup: '',
-          soupReplacement: '',
-          principle: [{ name: '' }],
-          principleReplacement: '',
-          protein: '',
-          drink: '',
-          cutlery: '',
-          sides: [],
-          additions: [],
-          notes: '',
-          address: {
-            address: '',
-            phoneNumber: '',
-            addressType: '',
-            localName: '',
-            recipientName: '',
-          },
-          time: '',
-          payment: 'Efectivo',
-        }],
+        meals: [
+          {
+            soup: '',
+            soupReplacement: '',
+            principle: [{ name: '' }],
+            principleReplacement: '',
+            protein: '',
+            drink: '',
+            cutlery: '',
+            sides: [],
+            additions: [],
+            notes: '',
+            address: {
+              address: '',
+              phoneNumber: '',
+              addressType: '',
+              localName: '',
+              recipientName: ''
+            },
+            time: '',
+            payment: 'Efectivo'
+          }
+        ],
         total: 0,
         status: 'Pendiente',
         payment: 'Efectivo',
         deliveryPerson: 'Sin asignar',
+        type: 'lunch'
       });
     } catch (error) {
       setError(`Error al agregar orden: ${error.message}`);
@@ -546,11 +990,20 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
     }
   };
 
-  // Extraer nombres únicos de domiciliarios para el autocompletado
-  const uniqueDeliveryPersons = useMemo(() => {
-    return Object.keys(deliveryPersons);
+  // Compat para el datalist de domiciliarios en TablaPedidos
+  const deliveryPersonsCompat = useMemo(() => {
+    const r = {};
+    for (const [person, data] of Object.entries(deliveryPersons || {})) {
+      const cash = (data?.almuerzo?.efectivo || 0) + (data?.desayuno?.efectivo || 0);
+      const daviplata = (data?.almuerzo?.daviplata || 0) + (data?.desayuno?.daviplata || 0);
+      const nequi = (data?.almuerzo?.nequi || 0) + (data?.desayuno?.nequi || 0);
+      const total = (data?.almuerzo?.total || 0) + (data?.desayuno?.total || 0);
+      r[person] = { cash, daviplata, nequi, total };
+    }
+    return r;
   }, [deliveryPersons]);
 
+  const uniqueDeliveryPersons = useMemo(() => Object.keys(deliveryPersons || {}), [deliveryPersons]);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -570,6 +1023,7 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
         setEditingOrder={setEditingOrder}
         editForm={editForm}
         handleMealFormFieldChange={handleEditOrderMealFormFieldChange}
+        handleEditFormFieldChange={handleEditFormFieldChange}
         handleSaveEdit={handleSaveEdit}
         showConfirmDeleteAll={showConfirmDeleteAll}
         setShowConfirmDeleteAll={setShowConfirmDeleteAll}
@@ -578,20 +1032,21 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
         handleDeleteAllOrders={handleDeleteAllOrders}
         setError={setError}
         setSuccess={setSuccess}
-        // NUEVAS PROPS PARA GENERAR ORDEN
         showAddOrderModal={showAddOrderModal}
         setShowAddOrderModal={setShowAddOrderModal}
         newOrderForm={newOrderForm}
         handleNewOrderMealFormFieldChange={handleNewOrderMealFormFieldChange}
+        handleNewOrderFieldChange={handleNewOrderFieldChange}
         handleAddOrderSubmit={handleAddOrderSubmit}
         uniqueDeliveryPersons={uniqueDeliveryPersons}
       />
+
       <TablaPedidos
         theme={theme}
         orders={orders}
         searchTerm={searchTerm}
         setSearchTerm={setSearchTerm}
-        totals={totals}
+        totals={displayedTotals}
         isLoading={isLoading}
         paginatedOrders={paginatedOrders}
         currentPage={currentPage}
@@ -599,7 +1054,7 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
         setCurrentPage={setCurrentPage}
         itemsPerPage={itemsPerPage}
         setItemsPerPage={setItemsPerPage}
-        deliveryPersons={deliveryPersons}
+        deliveryPersons={deliveryPersonsCompat}
         handleEditOrder={handleEditOrder}
         handleDeleteOrder={handleDeleteOrder}
         handleStatusChange={handleStatusChange}
@@ -621,33 +1076,17 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
         handleExport={handleExport}
         handleDeleteAllOrders={handleDeleteAllOrders}
         setShowConfirmDeleteAll={setShowConfirmDeleteAll}
-        exportToExcel={exportToExcel} // Pass the actual export function
-        exportToPDF={exportToPDF}     // Pass the actual export function
-        exportToCSV={exportToCSV}     // Pass the actual export function
-        // NUEVA PROP PARA GENERAR ORDEN
+        exportToExcel={exportToExcel}
+        exportToPDF={exportToPDF}
+        exportToCSV={exportToCSV}
         setShowAddOrderModal={setShowAddOrderModal}
+        orderTypeFilter={orderTypeFilter}
+        setOrderTypeFilter={setOrderTypeFilter}
         uniqueDeliveryPersons={uniqueDeliveryPersons}
       />
 
-      {/* Sección para el resumen de domiciliarios */}
-      <div className={`mt-8 p-6 rounded-2xl shadow-xl border ${theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-        <h3 className={`text-xl font-semibold mb-4 ${theme === 'dark' ? 'text-gray-100' : 'text-gray-900'}`}>Resumen por Domiciliarios</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {Object.entries(deliveryPersons).length === 0 ? (
-            <p className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>No hay domiciliarios asignados aún.</p>
-          ) : (
-            Object.entries(deliveryPersons).map(([person, data]) => (
-              <div key={person} className={`p-4 rounded-lg shadow-md ${theme === 'dark' ? 'bg-gray-700 text-gray-200' : 'bg-gray-100 text-gray-800'}`}>
-                <h4 className="font-semibold text-lg mb-2">{person}</h4>
-                <p>Efectivo: <span className="font-bold">${data.cash.toLocaleString()}</span></p>
-                <p>Daviplata: <span className="font-bold">${data.daviplata.toLocaleString()}</span></p>
-                <p>Nequi: <span className="font-bold">${data.nequi.toLocaleString()}</span></p>
-                <p className="font-bold mt-2">Total: <span className="text-green-400">${data.total.toLocaleString()}</span></p>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
+      {/* 🔥 Se eliminó el bloque de "Resumen por Domiciliarios" aquí para evitar duplicados.
+          Ahora el resumen aparece SOLO dentro de TablaPedidos. */}
     </div>
   );
 };

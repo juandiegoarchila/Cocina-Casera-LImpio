@@ -28,6 +28,7 @@
     "exceljs": "^4.4.0",
     "file-saver": "^2.0.5",
     "firebase": "^11.9.1",
+    "firebase-admin": "^13.4.0",
     "framer-motion": "^12.23.5",
     "glob": "^11.0.2",
     "inflight": "^1.0.6",
@@ -78,7 +79,9 @@
   "devDependencies": {
     "@babel/preset-env": "^7.28.0",
     "@babel/preset-react": "^7.27.1",
+    "customize-cra": "^1.0.0",
     "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
     "source-map-explorer": "^2.5.3",
     "terser": "^5.40.0",
     "webpack-bundle-analyzer": "^4.10.2"

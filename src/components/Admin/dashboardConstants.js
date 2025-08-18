@@ -15,7 +15,8 @@ export const BAR_COLORS = {
   Efectivo: '#22c55e',
   Daviplata: '#ef4444',
   Nequi: '#3b82f6',
-  Pedidos: '#14b8a6'
+  Domicilios: '#8B5CF6',
+  Mesas: '#10B981'
 };
 
 export const PIE_COLORS = ['#fbbf24', '#4ade80', '#ef4444', '#60a5fa', '#a78bfa'];

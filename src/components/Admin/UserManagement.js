@@ -1,10 +1,10 @@
-// src/components/Admin/UserManagement.js
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Dialog, Transition, Menu } from '@headlessui/react';
-import { XMarkIcon, PencilIcon, TrashIcon, InformationCircleIcon, EllipsisVerticalIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, PencilIcon, TrashIcon, InformationCircleIcon, EllipsisVerticalIcon, PlusIcon } from '@heroicons/react/24/outline';
 import { ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/20/solid';
-import { db } from '../../config/firebase';
-import { collection, onSnapshot, updateDoc, doc, deleteDoc, query, where, orderBy, limit, getDocs, runTransaction } from 'firebase/firestore';
+import { db, auth } from '../../config/firebase';
+import { collection, onSnapshot, updateDoc, doc, deleteDoc, query, where, orderBy, limit, getDocs, runTransaction, addDoc } from 'firebase/firestore';
+import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { classNames } from '../../utils/classNames';
 
 import * as XLSX from 'xlsx';
@@ -58,9 +58,11 @@ const UserManagement = ({ setError, setSuccess, theme }) => {
   const [fetchError, setFetchError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [showUserDetailsModal, setShowUserDetailsModal] = useState(null);
+  const [showCreateUserModal, setShowCreateUserModal] = useState(false);
+  const [createUserForm, setCreateUserForm] = useState({ email: '', password: '', role: 1, totalOrders: 0 });
   const [pagination, setPagination] = useState({ currentPage: 1, itemsPerPage: 10 });
   const [sortColumn, setSortColumn] = useState(null);
-  const [sortOrder, setSortOrder] = useState('asc'); // <-- ¡CORRECCIÓN AQUÍ!
+  const [sortOrder, setSortOrder] = useState('asc');
 
   const debouncedSetSearchTerm = useCallback(
     debounce((value) => setSearchTerm(value), 300),
@@ -236,6 +238,56 @@ const UserManagement = ({ setError, setSuccess, theme }) => {
     }
   }, [setSuccess, setError]);
 
+  const handleCreateUser = useCallback(async () => {
+    if (!createUserForm.email.trim()) {
+      setError('El email es obligatorio.');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(createUserForm.email)) {
+      setError('Por favor, ingresa un email válido.');
+      return;
+    }
+    if (!createUserForm.password || createUserForm.password.length < 6) {
+      setError('La contraseña debe tener al menos 6 caracteres.');
+      return;
+    }
+    setIsLoading(true);
+    try {
+      // Verificar si el email ya existe en Firestore
+      const q = query(collection(db, 'users'), where('email', '==', createUserForm.email.trim()));
+      const querySnapshot = await getDocs(q);
+      if (!querySnapshot.empty) {
+        setError('El email ya está registrado.');
+        setIsLoading(false);
+        return;
+      }
+
+      // Crear usuario en Firebase Authentication
+      const userCredential = await createUserWithEmailAndPassword(auth, createUserForm.email.trim(), createUserForm.password);
+      const userId = userCredential.user.uid;
+
+      // Crear usuario en Firestore con el mismo ID
+      await runTransaction(db, async (transaction) => {
+        const userRef = doc(db, 'users', userId);
+        transaction.set(userRef, {
+          email: createUserForm.email.trim(),
+          role: Number(createUserForm.role),
+          totalOrders: Number(createUserForm.totalOrders) || 0,
+          createdAt: new Date(),
+        });
+      });
+
+      setCreateUserForm({ email: '', password: '', role: 1, totalOrders: 0 });
+      setShowCreateUserModal(false);
+      setSuccess('Usuario creado con éxito.');
+    } catch (error) {
+      console.error('Error al crear usuario:', error);
+      setError(`Error al crear usuario: ${error.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [createUserForm, setSuccess, setError]);
+
   const handlePageChange = useCallback((newPage) => {
     if (newPage >= 1 && newPage <= totalPages) {
       setPagination(prev => ({ ...prev, currentPage: newPage }));
@@ -254,7 +306,7 @@ const UserManagement = ({ setError, setSuccess, theme }) => {
       setSortOrder('asc');
     }
     setPagination(prev => ({ ...prev, currentPage: 1 }));
-  }, [sortColumn, setSortOrder]); // Añadido setSortOrder a las dependencias de useCallback
+  }, [sortColumn]);
 
   const getSortIcon = useCallback((columnName) => {
     if (sortColumn === columnName) {
@@ -381,7 +433,6 @@ const UserManagement = ({ setError, setSuccess, theme }) => {
     printWindow.focus();
   }, [getExportData, setError]);
 
-
   return (
     <div className="max-w-7xl mx-auto px-2 sm:px-4 py-6">
       <h2 className="text-xl sm:text-2xl font-bold mb-6 text-gray-900 dark:text-gray-100">Gestión de Usuarios</h2>
@@ -393,8 +444,7 @@ const UserManagement = ({ setError, setSuccess, theme }) => {
 
       {/* Contenedor principal que contendrá los grupos de elementos */}
       <div className="flex flex-wrap items-center gap-3 mb-4">
-
-        {/* Nuevo contenedor para el input del buscador y el botón de menú */}
+        {/* Contenedor para el input del buscador y el botón de menú */}
         <div className="flex items-center w-full min-w-0 flex-grow">
           <input
             type="text"
@@ -440,6 +490,20 @@ const UserManagement = ({ setError, setSuccess, theme }) => {
                   <Menu.Item>
                     {({ active }) => (
                       <button
+                        onClick={() => setShowCreateUserModal(true)}
+                        className={classNames(
+                          active ? (theme === 'dark' ? 'bg-gray-600 text-gray-100' : 'bg-gray-100 text-gray-900') : (theme === 'dark' ? 'text-gray-300' : 'text-gray-700'),
+                          'flex items-center px-4 py-2 text-sm w-full text-left'
+                        )}
+                      >
+                        <PlusIcon className="w-5 h-5 mr-2" />
+                        Agregar Usuario
+                      </button>
+                    )}
+                  </Menu.Item>
+                  <Menu.Item>
+                    {({ active }) => (
+                      <button
                         onClick={exportToExcel}
                         className={classNames(
                           active ? (theme === 'dark' ? 'bg-gray-600 text-gray-100' : 'bg-gray-100 text-gray-900') : (theme === 'dark' ? 'text-gray-300' : 'text-gray-700'),
@@ -481,7 +545,6 @@ const UserManagement = ({ setError, setSuccess, theme }) => {
             </Transition>
           </Menu>
         </div>
-
       </div>
 
       <div className={classNames(
@@ -643,6 +706,143 @@ const UserManagement = ({ setError, setSuccess, theme }) => {
           </div>
         )}
       </div>
+
+      {/* Create User Modal */}
+      <Transition show={showCreateUserModal} as={React.Fragment}>
+        <Dialog as="div" className="relative z-50" onClose={() => setShowCreateUserModal(false)}>
+          <Transition.Child
+            as={React.Fragment}
+            enter="ease-out duration-300"
+            enterFrom="opacity-0"
+            enterTo="opacity-100"
+            leave="ease-in duration-200"
+            leaveFrom="opacity-100"
+            leaveTo="opacity-0"
+          >
+            <div className="fixed inset-0 bg-black bg-opacity-50" />
+          </Transition.Child>
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <Transition.Child
+              as={React.Fragment}
+              enter="ease-out duration-300"
+              enterFrom="opacity-0 scale-95"
+              enterTo="opacity-100 scale-100"
+              leave="ease-in duration-200"
+              leaveFrom="opacity-100 scale-100"
+              leaveTo="opacity-0 scale-95"
+            >
+              <Dialog.Panel className={classNames(
+                "w-full max-w-md p-6 rounded-lg shadow-xl max-h-[80vh] overflow-y-auto",
+                theme === 'dark' ? 'bg-gray-800 text-gray-200' : 'bg-gray-50 text-gray-900'
+              )}>
+                <div className="flex justify-between items-center mb-4">
+                  <Dialog.Title className="text-lg font-medium">
+                    Crear Nuevo Usuario
+                  </Dialog.Title>
+                  <button
+                    onClick={() => setShowCreateUserModal(false)}
+                    className="text-gray-500 hover:text-gray-400 dark:hover:text-gray-300"
+                    aria-label="Cerrar modal"
+                  >
+                    <XMarkIcon className="h-6 w-6" />
+                  </button>
+                </div>
+                <form onSubmit={(e) => { e.preventDefault(); handleCreateUser(); }}>
+                  <div className="space-y-4">
+                    <div>
+                      <label htmlFor="create-email-input" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
+                      <input
+                        id="create-email-input"
+                        type="email"
+                        value={createUserForm.email}
+                        onChange={e => setCreateUserForm({ ...createUserForm, email: e.target.value })}
+                        className={classNames(
+                          "w-full p-2 rounded-md border text-sm",
+                          theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                          "focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        )}
+                        placeholder="Ej: usuario@ejemplo.com"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="create-password-input" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Contraseña</label>
+                      <input
+                        id="create-password-input"
+                        type="password"
+                        value={createUserForm.password}
+                        onChange={e => setCreateUserForm({ ...createUserForm, password: e.target.value })}
+                        className={classNames(
+                          "w-full p-2 rounded-md border text-sm",
+                          theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                          "focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        )}
+                        placeholder="Mínimo 6 caracteres"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="create-role-select" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Rol</label>
+                      <select
+                        id="create-role-select"
+                        value={createUserForm.role}
+                        onChange={e => setCreateUserForm({ ...createUserForm, role: Number(e.target.value) })}
+                        className={classNames(
+                          "w-full p-2 rounded-md border text-sm",
+                          theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                          "focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        )}
+                      >
+                        <option value={1}>Cliente</option>
+                        <option value={2}>Administrador</option>
+                        <option value={3}>Mesero</option>
+                        <option value={4}>Domiciliario</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label htmlFor="create-total-orders-input" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Pedidos</label>
+                      <input
+                        id="create-total-orders-input"
+                        type="number"
+                        value={createUserForm.totalOrders}
+                        onChange={e => setCreateUserForm({ ...createUserForm, totalOrders: Number(e.target.value) })}
+                        className={classNames(
+                          "w-full p-2 rounded-md border text-sm",
+                          theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                          "focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        )}
+                        min="0"
+                      />
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowCreateUserModal(false)}
+                        className={classNames(
+                          "px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200",
+                          theme === 'dark' ? 'bg-gray-600 hover:bg-gray-700 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-900'
+                        )}
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={isLoading}
+                        className={classNames(
+                          "px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200",
+                          isLoading ? 'bg-gray-400 cursor-not-allowed' : theme === 'dark' ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-blue-500 hover:bg-blue-600 text-white'
+                        )}
+                      >
+                        {isLoading ? 'Creando...' : 'Crear'}
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              </Dialog.Panel>
+            </Transition.Child>
+          </div>
+        </Dialog>
+      </Transition>
 
       {/* Edit User Modal */}
       <Transition show={editingUser !== null} as={React.Fragment}>

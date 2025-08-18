@@ -1,4 +1,3 @@
-
 //src/components/OptionSelector.js
 import React, { useState, useEffect, useCallback } from 'react';
 
@@ -36,73 +35,73 @@ const OptionSelector = ({
     }
   }, [selected, multiple]);
 
-useEffect(() => {
-  let shouldShow = propShowReplacements && Array.isArray(replacements) && replacements.length > 0;
-  
-  if (title === 'Adiciones (por almuerzo)') {
-    const needsReplacement = pendingSelection.some(
-      (opt) =>
-        opt.requiresReplacement &&
-        (opt.name === 'Proteína adicional' ? !opt.protein : !opt.replacement)
-    );
-    shouldShow = needsReplacement;
-    if (needsReplacement && !currentConfiguring) {
-      const unconfigured = pendingSelection.find(
+  useEffect(() => {
+    let shouldShow = propShowReplacements && Array.isArray(replacements) && replacements.length > 0;
+    
+    if (title === 'Adiciones (por almuerzo)' || title === 'Adiciones (por desayuno)') {
+      const needsReplacement = pendingSelection.some(
         (opt) =>
           opt.requiresReplacement &&
-          (opt.name === 'Proteína adicional' ? !opt.protein : !opt.replacement)
+          (opt.name.toLowerCase() === 'proteína adicional' ? !opt.protein : !opt.replacement)
       );
-      if (unconfigured) {
-        setCurrentConfiguring(unconfigured.id);
-      }
-    }
-  } else if (title === 'Sopa') {
-    shouldShow = pendingSelection?.name === 'Remplazo por Sopa';
-  } else if (title === 'Principio') {
-    shouldShow =
-      (multiple && Array.isArray(pendingSelection) && pendingSelection.some((opt) => opt.name === 'Remplazo por Principio')) ||
-      (!multiple && pendingSelection?.name === 'Remplazo por Principio');
-  }
-
-  setShowReplacement(shouldShow);
-  if (process.env.NODE_ENV === 'development') {
-    console.log(
-      '[OptionSelector] showReplacement actualizado:',
-      shouldShow,
-      'para pendingSelection:',
-      pendingSelection,
-      'reemplazos:',
-      replacements,
-      'título:',
-      title
-    );
-  }
-}, [propShowReplacements, pendingSelection, title, replacements, currentConfiguring, multiple]);
-
-useEffect(() => {
-  if (title === 'Adiciones (por almuerzo)') {
-    const validSelections = pendingSelection.filter((opt) => {
-      if (opt.id === currentConfiguring) {
-        return true; 
-      }
-      if (opt.requiresReplacement) {
-        if (opt.name === 'Proteína adicional') {
-          return !!opt.protein;
-        } else if (['Sopa adicional', 'Principio adicional', 'Bebida adicional'].includes(opt.name)) {
-          return !!opt.replacement;
+      shouldShow = needsReplacement;
+      if (needsReplacement && !currentConfiguring) {
+        const unconfigured = pendingSelection.find(
+          (opt) =>
+            opt.requiresReplacement &&
+            (opt.name.toLowerCase() === 'proteína adicional' ? !opt.protein : !opt.replacement)
+        );
+        if (unconfigured) {
+          setCurrentConfiguring(unconfigured.id);
         }
       }
-      return true;
-    });
-    if (validSelections.length !== pendingSelection.length) {
-      setPendingSelection(validSelections);
-      onImmediateSelect(validSelections);
-      if (process.env.NODE_ENV === 'development') {
-        console.log('[OptionSelector] Selecciones inválidas eliminadas:', validSelections);
+    } else if (title === 'Sopa') {
+      shouldShow = pendingSelection?.name === 'Remplazo por Sopa';
+    } else if (title === 'Principio') {
+      shouldShow =
+        (multiple && Array.isArray(pendingSelection) && pendingSelection.some((opt) => opt.name === 'Remplazo por Principio')) ||
+        (!multiple && pendingSelection?.name === 'Remplazo por Principio');
+    }
+
+    setShowReplacement(shouldShow);
+    if (process.env.NODE_ENV === 'development') {
+      console.log(
+        '[OptionSelector] showReplacement actualizado:',
+        shouldShow,
+        'para pendingSelection:',
+        pendingSelection,
+        'reemplazos:',
+        replacements,
+        'título:',
+        title
+      );
+    }
+  }, [propShowReplacements, pendingSelection, title, replacements, currentConfiguring, multiple]);
+
+  useEffect(() => {
+    if (title === 'Adiciones (por almuerzo)' || title === 'Adiciones (por desayuno)') {
+      const validSelections = pendingSelection.filter((opt) => {
+        if (opt.id === currentConfiguring) {
+          return true; 
+        }
+        if (opt.requiresReplacement) {
+          if (opt.name.toLowerCase() === 'proteína adicional') {
+            return !!opt.protein;
+          } else if (['sopa adicional', 'principio adicional', 'bebida adicional'].includes(opt.name.toLowerCase())) {
+            return !!opt.replacement;
+          }
+        }
+        return true;
+      });
+      if (validSelections.length !== pendingSelection.length) {
+        setPendingSelection(validSelections);
+        onImmediateSelect(validSelections);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[OptionSelector] Selecciones inválidas eliminadas:', validSelections);
+        }
       }
     }
-  }
-}, [pendingSelection, title, onImmediateSelect, currentConfiguring]);
+  }, [pendingSelection, title, onImmediateSelect, currentConfiguring]);
 
   // Muestra advertencia si una adición está incompleta al colapsar
   const handleCollapseCheck = () => {
@@ -146,9 +145,11 @@ useEffect(() => {
       'Sopa adicional',
       'Principio adicional',
       'Bebida adicional',
+      'proteína adicional',
+      'bebida adicional',
     ];
 
-    if (title === 'Adiciones (por almuerzo)') {
+    if (title === 'Adiciones (por almuerzo)' || title === 'Adiciones (por desayuno)') {
       if (isCurrentlySelected) {
         updatedSelection = updatedSelection.filter((opt) => opt.id !== option.id);
         onRemove(option.id);
@@ -266,61 +267,61 @@ useEffect(() => {
   };
 
   // Maneja el clic en un reemplazo
-const handleReplacementClick = (replacement) => {
-  if (disabled || replacement.isFinished) return;
+  const handleReplacementClick = (replacement) => {
+    if (disabled || replacement.isFinished) return;
 
-  if (title === 'Adiciones (por almuerzo)') {
-    if (currentConfiguring) {
-      const updatedSelection = pendingSelection.map((opt) => {
-        if (opt.id === currentConfiguring) {
-          return {
-            ...opt,
-            protein: opt.name === 'Proteína adicional' ? replacement.name : opt.protein,
-            replacement: ['Sopa adicional', 'Principio adicional', 'Bebida adicional'].includes(opt.name)
-              ? replacement.name
-              : opt.replacement,
-          };
+    if (title === 'Adiciones (por almuerzo)' || title === 'Adiciones (por desayuno)') {
+      if (currentConfiguring) {
+        const updatedSelection = pendingSelection.map((opt) => {
+          if (opt.id === currentConfiguring) {
+            return {
+              ...opt,
+              protein: opt.name.toLowerCase() === 'proteína adicional' ? replacement.name : opt.protein,
+              replacement: ['sopa adicional', 'principio adicional', 'bebida adicional'].includes(opt.name.toLowerCase())
+                ? replacement.name
+                : opt.replacement,
+            };
+          }
+          return opt;
+        });
+        setPendingSelection(updatedSelection);
+        onImmediateSelect(updatedSelection);
+        onImmediateReplacementSelect({ id: currentConfiguring, replacement });
+        onConfirm({ selection: updatedSelection, replacement });
+
+        // Verifica el siguiente elemento sin configurar
+        const nextUnconfigured = updatedSelection.find(
+          (opt) => opt.requiresReplacement && !opt.replacement && opt.name.toLowerCase() !== 'proteína adicional' && opt.id !== currentConfiguring
+        );
+        if (nextUnconfigured) {
+          setCurrentConfiguring(nextUnconfigured.id);
+          setShowReplacement(true);
+        } else {
+          setCurrentConfiguring(null);
+          setShowReplacement(false);
         }
-        return opt;
-      });
+      }
+    } else if (title === 'Sopa' || title === 'Principio') {
+      const updatedSelection = multiple
+        ? pendingSelection.map((opt) => ({
+            ...opt,
+            replacement:
+              opt.name === 'Remplazo por Sopa' || opt.name === 'Remplazo por Principio'
+                ? replacement.name
+                : opt.replacement,
+          }))
+        : { ...pendingSelection, replacement: replacement.name };
       setPendingSelection(updatedSelection);
       onImmediateSelect(updatedSelection);
-      onImmediateReplacementSelect({ id: currentConfiguring, replacement });
+      onImmediateReplacementSelect(replacement);
       onConfirm({ selection: updatedSelection, replacement });
-
-      // Verifica el siguiente elemento sin configurar
-      const nextUnconfigured = updatedSelection.find(
-        (opt) => opt.requiresReplacement && !opt.replacement && opt.name !== 'Proteína adicional' && opt.id !== currentConfiguring
-      );
-      if (nextUnconfigured) {
-        setCurrentConfiguring(nextUnconfigured.id);
-        setShowReplacement(true);
-      } else {
-        setCurrentConfiguring(null);
-        setShowReplacement(false);
-      }
+      setShowReplacement(false);
     }
-  } else if (title === 'Sopa' || title === 'Principio') {
-    const updatedSelection = multiple
-      ? pendingSelection.map((opt) => ({
-          ...opt,
-          replacement:
-            opt.name === 'Remplazo por Sopa' || opt.name === 'Remplazo por Principio'
-              ? replacement.name
-              : opt.replacement,
-        }))
-      : { ...pendingSelection, replacement: replacement.name };
-    setPendingSelection(updatedSelection);
-    onImmediateSelect(updatedSelection);
-    onImmediateReplacementSelect(replacement);
-    onConfirm({ selection: updatedSelection, replacement });
-    setShowReplacement(false);
-  }
-};
+  };
 
   // Cancela la selección de reemplazo
   const handleCancelReplacement = () => {
-    if (title === 'Adiciones (por almuerzo)' && currentConfiguring) {
+    if ((title === 'Adiciones (por almuerzo)' || title === 'Adiciones (por desayuno)') && currentConfiguring) {
       const updatedSelection = pendingSelection.filter((opt) => opt.id !== currentConfiguring);
       setPendingSelection(updatedSelection);
       onImmediateSelect(updatedSelection);
@@ -333,7 +334,7 @@ const handleReplacementClick = (replacement) => {
 
   // Deselecciona una adición u opción
   const handleDeselect = () => {
-    if (title === 'Adiciones (por almuerzo)' && currentConfiguring) {
+    if ((title === 'Adiciones (por almuerzo)' || title === 'Adiciones (por desayuno)') && currentConfiguring) {
       const updatedSelection = pendingSelection.filter((opt) => opt.id !== currentConfiguring);
       setPendingSelection(updatedSelection);
       onImmediateSelect(updatedSelection);
@@ -373,7 +374,7 @@ const handleReplacementClick = (replacement) => {
 
   // Obtiene la cantidad de una opción
   const getOptionQuantity = (option) => {
-    if (title === 'Adiciones (por almuerzo)') {
+    if (title === 'Adiciones (por almuerzo)' || title === 'Adiciones (por desayuno)') {
       const selectedOption = pendingSelection.find((opt) => opt.id === option.id);
       return selectedOption ? (selectedOption.quantity || 1) : 0;
     }
@@ -383,7 +384,7 @@ const handleReplacementClick = (replacement) => {
   // Verifica si un reemplazo está seleccionado
   const isReplacementSelected = useCallback(
     (replacement) => {
-      if (title === 'Adiciones (por almuerzo)') {
+      if (title === 'Adiciones (por almuerzo)' || title === 'Adiciones (por desayuno)') {
         const selectedOption = pendingSelection.find((opt) => opt.id === currentConfiguring);
         return (
           selectedOption &&
@@ -422,17 +423,17 @@ const handleReplacementClick = (replacement) => {
       isNew = true;
     }
 
-if (title === 'Adiciones (por almuerzo)') {
-  if (option.name === 'Proteína adicional' && selectedOption.protein) {
-    return `${baseName} (${selectedOption.protein})`;
-  }
-  if (
-    ['Sopa adicional', 'Principio adicional', 'Bebida adicional'].includes(option.name) &&
-    selectedOption.replacement
-  ) {
-    return `${baseName} (${selectedOption.replacement})`;
-  }
-}else if (
+    if (title === 'Adiciones (por almuerzo)' || title === 'Adiciones (por desayuno)') {
+      if ((option.name.toLowerCase() === 'proteína adicional') && selectedOption.protein) {
+        return `${baseName} (${selectedOption.protein})`;
+      }
+      if (
+        ['sopa adicional', 'principio adicional', 'bebida adicional'].includes(option.name.toLowerCase()) &&
+        selectedOption.replacement
+      ) {
+        return `${baseName} (${selectedOption.replacement})`;
+      }
+    } else if (
       (title === 'Sopa' && option.name === 'Remplazo por Sopa' && selectedOption.replacement) ||
       (title === 'Principio' && option.name === 'Remplazo por Principio' && selectedOption.replacement)
     ) {
@@ -453,7 +454,7 @@ if (title === 'Adiciones (por almuerzo)') {
             ? 'bg-green-200 text-green-800 border border-green-300'
             : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
         } ${
-          (title === 'Adiciones (por almuerzo)' && currentConfiguring === option.id && showReplacement) ||
+          ((title === 'Adiciones (por almuerzo)' || title === 'Adiciones (por desayuno)') && currentConfiguring === option.id && showReplacement) ||
           ((title === 'Sopa' || title === 'Principio') && option.name.includes('Remplazo') && showReplacement)
             ? 'rounded-b-none'
             : 'rounded-b-lg'
@@ -465,7 +466,7 @@ if (title === 'Adiciones (por almuerzo)') {
           <div className="flex-grow">
             {getDisplayText(option)}
           </div>
-          {isSelected && title !== 'Adiciones (por almuerzo)' && (
+          {isSelected && (title !== 'Adiciones (por almuerzo)' && title !== 'Adiciones (por desayuno)') && (
             <svg className="h-4 w-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
               <path
                 fillRule="evenodd"
@@ -478,7 +479,7 @@ if (title === 'Adiciones (por almuerzo)') {
         {option.description && (
           <span className="text-xs text-gray-500 block mt-1">{option.description}</span>
         )}
-        {title === 'Adiciones (por almuerzo)' && isSelected && (
+        {(title === 'Adiciones (por almuerzo)' || title === 'Adiciones (por desayuno)') && isSelected && (
           <div className="flex items-center space-x-1 mt-1">
             <div
               onClick={(e) => {
@@ -504,7 +505,7 @@ if (title === 'Adiciones (por almuerzo)') {
           </div>
         )}
       </button>
-      {((title === 'Adiciones (por almuerzo)' && currentConfiguring === option.id && showReplacement) ||
+      {(((title === 'Adiciones (por almuerzo)' || title === 'Adiciones (por desayuno)') && currentConfiguring === option.id && showReplacement) ||
         ((title === 'Sopa' || title === 'Principio') && option.name.includes('Remplazo') && showReplacement)) &&
         replacements.length > 0 && (
           <div className="bg-green-50 p-2 rounded-b-lg border border-t-0 border-green-300 shadow-sm">
@@ -513,7 +514,7 @@ if (title === 'Adiciones (por almuerzo)') {
                 Selecciona tu opción para {option.name}:
               </h4>
               <div>
-                {title === 'Adiciones (por almuerzo)' && (
+                {(title === 'Adiciones (por almuerzo)' || title === 'Adiciones (por desayuno)') && (
                   <button
                     onClick={handleCancelReplacement}
                     className="text-red-600 hover:text-red-700 text-xs mr-2"
@@ -623,7 +624,7 @@ if (title === 'Adiciones (por almuerzo)') {
             )}
           </div>
         </div>
-        {title === 'Adiciones (por almuerzo)' && isSelected && (
+        {(title === 'Adiciones (por almuerzo)' || title === 'Adiciones (por desayuno)') && isSelected && (
           <div className="flex items-center space-x-1">
             <div
               onClick={(e) => {
@@ -648,7 +649,7 @@ if (title === 'Adiciones (por almuerzo)') {
             </div>
           </div>
         )}
-        {isSelected && title !== 'Adiciones (por almuerzo)' && (
+        {isSelected && (title !== 'Adiciones (por almuerzo)' && title !== 'Adiciones (por desayuno)') && (
           <svg className="h-4 w-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
             <path
               fillRule="evenodd"
@@ -673,7 +674,7 @@ if (title === 'Adiciones (por almuerzo)') {
 
   return (
     <div className={`mb-2 ${className}`}>
-      {title && title !== 'Adiciones (por almuerzo)' && (
+      {title && title !== 'Adiciones (por almuerzo)' && title !== 'Adiciones (por desayuno)' && (
         <h3 className="text-sm font-semibold mb-2 flex items-center text-gray-700">
           <span className="mr-1">{emoji}</span>
           {title}
@@ -691,14 +692,14 @@ if (title === 'Adiciones (por almuerzo)') {
           <div className="flex justify-between items-center mb-1">
             <h4 className="text-[10px] font-medium text-gray-600">
               Selecciona tu opción para{' '}
-              {title === 'Adiciones (por almuerzo)'
+              {(title === 'Adiciones (por almuerzo)' || title === 'Adiciones (por desayuno)') 
                 ? options.find((opt) => opt.id === currentConfiguring)?.name || title
                 : title === 'Sopa'
                 ? 'Remplazo por Sopa'
                 : 'Remplazo por Principio'}:
             </h4>
             <div>
-              {title === 'Adiciones (por almuerzo)' && (
+              {(title === 'Adiciones (por almuerzo)' || title === 'Adiciones (por desayuno)') && (
                 <button
                   onClick={handleCancelReplacement}
                   className="text-red-600 hover:text-red-700 text-xs mr-2"
@@ -777,9 +778,9 @@ if (title === 'Adiciones (por almuerzo)') {
             : 'Puedes seleccionar hasta dos principios. (Mixto)'}
         </div>
       )}
-      {multiple && title === 'Adiciones (por almuerzo)' && (
+      {multiple && (title === 'Adiciones (por almuerzo)' || title === 'Adiciones (por desayuno)') && (
         <div className="mt-1 text-xs text-gray-500">
-          Selecciona los extras para este almuerzo. (Opcional)
+          Selecciona los extras para este almuerzo/desayuno. (Opcional)
         </div>
       )}
       {multiple && title === 'Acompañamiento' && (

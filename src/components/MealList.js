@@ -1,5 +1,5 @@
-//src/components/MealList.js
-import { useState, useEffect } from 'react';
+// src/components/MealList.js
+import React, { useState, useEffect } from 'react';
 import MealItem from './MealItem';
 import ErrorMessage from './ErrorMessage';
 
@@ -12,8 +12,10 @@ const MealList = ({
   drinks,
   sides,
   additions,
-  times,
   paymentMethods,
+  times,
+  isTableOrder,
+  userRole, // Añadido para recibir el prop userRole
   onMealChange,
   onRemoveMeal,
   onAddMeal,
@@ -23,8 +25,8 @@ const MealList = ({
   isOrderingDisabled,
 }) => {
   const [showTutorial, setShowTutorial] = useState(meals.length === 0);
-  const maxMeals = 15; 
-  const [showMaxMealsError, setShowMaxMealsError] = useState(false); 
+  const maxMeals = 15;
+  const [showMaxMealsError, setShowMaxMealsError] = useState(false);
 
   useEffect(() => {
     if (process.env.NODE_ENV === 'development') {
@@ -35,23 +37,22 @@ const MealList = ({
   useEffect(() => {
     if (meals.length >= maxMeals) {
       setShowMaxMealsError(true);
-      const timer = setTimeout(() => setShowMaxMealsError(false), 3000); 
-      return () => clearTimeout(timer); 
+      const timer = setTimeout(() => setShowMaxMealsError(false), 3000);
+      return () => clearTimeout(timer);
     } else {
-      setShowMaxMealsError(false); 
+      setShowMaxMealsError(false);
     }
   }, [meals.length, maxMeals]);
 
-  const completedMeals = meals.filter(m =>
-    m.protein &&
-    m.soup &&
-    m.principle &&
-    m.drink &&
-    m.time &&
-    m.address &&
-    m.payment &&
-    m.cutlery
-  ).length;
+  const completedMeals = meals.filter(m => {
+    const isCompleteRice = Array.isArray(m?.principle) && m.principle.some(p => ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'].includes(p.name));
+    return (m.soup || m.soupReplacement) &&
+           m.principle &&
+           (isCompleteRice || m.protein) &&
+           m.drink &&
+           (isTableOrder ? (m.tableNumber && m.paymentMethod) : (m.time && m.address && m.payment && m.cutlery !== null)) &&
+           (isCompleteRice || (m.sides && m.sides.length > 0));
+  }).length;
 
   return (
     <div className="space-y-4">
@@ -90,31 +91,33 @@ const MealList = ({
           <p className="text-center text-gray-600">No hay almuerzos. ¡Añade uno para comenzar!</p>
         ) : (
           meals.map((meal, index) => (
-            <MealItem
-              key={index}
-              id={index}
-              meal={meal}
-              onMealChange={onMealChange}
-              onRemoveMeal={() => onRemoveMeal(index)}
-              onDuplicateMeal={() => onDuplicateMeal(meal)}
-              soups={soups}
-              soupReplacements={soupReplacements}
-              principles={principles}
-              proteins={proteins}
-              drinks={drinks}
-              sides={sides}
-              additions={additions}
-              times={times}
-              paymentMethods={paymentMethods}
-              showTutorial={showTutorial && index === 0}
-              setShowTutorial={setShowTutorial}
-              isIncomplete={index === incompleteMealIndex}
-              incompleteSlideIndex={incompleteSlideIndex}
-              address={meal.address || ''}
-              isOrderingDisabled={isOrderingDisabled}
-              maxMeals={maxMeals}
-              totalMeals={meals.length}
-            />
+<MealItem
+    key={meal.id}
+    id={meal.id}
+    meal={meal}
+    onMealChange={onMealChange}
+    onRemoveMeal={() => onRemoveMeal(index)}
+    onDuplicateMeal={() => onDuplicateMeal(meal)}
+    soups={soups}
+    soupReplacements={soupReplacements}
+    principles={principles}
+    proteins={proteins}
+    drinks={drinks}
+    sides={sides}
+    additions={additions}
+    times={times}
+    paymentMethods={paymentMethods}
+    isTableOrder={isTableOrder}
+    userRole={userRole}
+    showTutorial={showTutorial && index === 0}
+    setShowTutorial={setShowTutorial}
+    isIncomplete={index === incompleteMealIndex}
+    incompleteSlideIndex={incompleteSlideIndex}
+    address={meal.address || ''}
+    isOrderingDisabled={isOrderingDisabled}
+    maxMeals={maxMeals}
+    totalMeals={meals.length}
+  />
           ))
         )}
       </div>

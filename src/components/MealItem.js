@@ -32,8 +32,10 @@ const MealItem = ({
   setShowTutorial,
   maxMeals,
   totalMeals,
-  successMessage, 
-  setSuccessMessage, 
+  successMessage,
+  setSuccessMessage,
+  isTableOrder = false,
+  userRole, // Nuevo prop para identificar el rol
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const [isAdditionsExpanded, setIsAdditionsExpanded] = useState(false);
@@ -41,9 +43,17 @@ const MealItem = ({
   const [collapseTimeout, setCollapseTimeout] = useState(null);
   const [touchStartX, setTouchStartX] = useState(0);
   const [isSwiping, setIsSwiping] = useState(false);
-  const [showMaxMealsError, setShowMaxMealsError] = useState(false); 
+  const [showMaxMealsError, setShowMaxMealsError] = useState(false);
   const slideRef = useRef(null);
   const containerRef = useRef(null);
+
+  const isWaitress = userRole === 3;
+
+  useEffect(() => {
+    if (isWaitress && meal.orderType === undefined) {
+      onMealChange(id, 'orderType', null);
+    }
+  }, [isWaitress, meal.orderType, id, onMealChange]);
 
   const [pendingTime, setPendingTime] = useState(meal?.time || null);
   const [pendingAddress, setPendingAddress] = useState(meal?.address || {});
@@ -53,7 +63,7 @@ const MealItem = ({
     setPendingAddress(meal?.address || {});
   }, [meal]);
 
-  const isSoupComplete = meal?.soup && (meal.soup?.name !== 'Remplazo por Sopa' || meal?.soupReplacement);
+  const isSoupComplete = meal?.soup || meal?.soupReplacement;
   const isPrincipleComplete = meal?.principle && (
     (Array.isArray(meal.principle) && meal.principle.length === 1 && meal.principle[0]?.name === 'Remplazo por Principio' && !!meal?.principleReplacement) ||
     (Array.isArray(meal.principle) && meal.principle.length >= 1 && meal.principle.length <= 2 && !meal.principle.some(opt => opt.name === 'Remplazo por Principio'))
@@ -61,36 +71,31 @@ const MealItem = ({
 
   const isCompleteRice = Array.isArray(meal?.principle) && meal.principle.some(p => ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'].includes(p.name));
   const selectedRiceName = isCompleteRice ? meal.principle.find(p => ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'].includes(p.name))?.name : '';
-  const isReplacementWithPrinciple = Array.isArray(meal?.principle) && meal.principle.some(p => p.name === 'Remplazo por Principio') && meal?.principle[0]?.replacement;
+  const isReplacementWithPrinciple = Array.isArray(meal?.principle) && meal.principle.some(p => p.name === 'Remplazo por Principio') && meal?.principleReplacement;
 
   const isSidesComplete = isCompleteRice || (Array.isArray(meal?.sides) && meal.sides.length > 0);
 
   const displayMainItem = isCompleteRice ? selectedRiceName : meal?.protein?.name || 'Selecciona';
 
-  const totalSteps = 9;
+  const totalSteps = isTableOrder ? (isWaitress ? 7 : 6) : 9; // +1 para orderType en mesera
   const completedSteps = [
     isSoupComplete,
     isPrincipleComplete,
     isCompleteRice || !!meal?.protein,
     !!meal?.drink,
-    meal?.cutlery !== null,
-    !!meal?.time,
-    !!meal?.address?.address,
-    !!meal?.payment,
+    isTableOrder ? !!meal?.tableNumber : meal?.cutlery !== null,
+    isTableOrder ? !!meal?.paymentMethod : !!meal?.time,
+    ...(isTableOrder ? (isWaitress ? [!!meal?.orderType] : []) : [!!meal?.address?.address, !!meal?.payment]),
     isSidesComplete,
   ].filter(Boolean).length;
 
   const completionPercentage = Math.min(Math.round((completedSteps / totalSteps) * 100), 100);
 
-  const isComplete = isSoupComplete &&
-    isPrincipleComplete &&
-    (isCompleteRice || meal?.protein) &&
-    meal?.drink &&
-    meal?.time &&
-    meal?.address?.address &&
-    meal?.payment &&
-    meal?.cutlery &&
-    isSidesComplete;
+  const isComplete = isTableOrder
+    ? isWaitress
+      ? isSoupComplete && isPrincipleComplete && (isCompleteRice || !!meal?.protein) && !!meal?.drink && !!meal?.tableNumber && !!meal?.paymentMethod && !!meal?.orderType && isSidesComplete
+      : isSoupComplete && isPrincipleComplete && (isCompleteRice || !!meal?.protein) && !!meal?.drink && !!meal?.tableNumber && !!meal?.paymentMethod && isSidesComplete
+    : isSoupComplete && isPrincipleComplete && (isCompleteRice || !!meal?.protein) && !!meal?.drink && !!meal?.time && !!meal?.address?.address && !!meal?.payment && meal?.cutlery !== null && isSidesComplete;
 
   const handleTutorialComplete = () => setShowTutorial(false);
 
@@ -118,10 +123,10 @@ const MealItem = ({
 
     switch (field) {
       case 'soup':
-        currentSlideIsComplete = updatedMeal?.soup && (updatedMeal.soup.name !== 'Remplazo por Sopa' || updatedMeal.soupReplacement);
+currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Remplazo por Sopa' || !!updatedMeal?.soup.replacement);
         break;
       case 'soupReplacement':
-        currentSlideIsComplete = updatedMeal.soup?.name === 'Remplazo por Sopa' && !!value;
+        currentSlideIsComplete = !!updatedMeal?.soupReplacement;
         break;
       case 'principle':
         break;
@@ -144,7 +149,11 @@ const MealItem = ({
         }
         break;
       case 'payment':
-        currentSlideIsComplete = !!updatedMeal?.payment;
+      case 'paymentMethod':
+        currentSlideIsComplete = !!updatedMeal?.[field];
+        if (currentSlideIsComplete && currentSlide < slides.length - 1) {
+          setTimeout(() => setCurrentSlide(currentSlide + 1), 300);
+        }
         break;
       case 'sides':
         currentSlideIsComplete = isCompleteRice || (Array.isArray(value) && value.length > 0);
@@ -156,6 +165,18 @@ const MealItem = ({
           if (collapseTimeout) clearTimeout(collapseTimeout);
           const timeout = setTimeout(() => setIsAdditionsExpanded(false), 45000);
           setCollapseTimeout(timeout);
+        }
+        break;
+      case 'tableNumber':
+        currentSlideIsComplete = !!updatedMeal?.tableNumber;
+        if (currentSlideIsComplete && currentSlide < slides.length - 1) {
+          setTimeout(() => setCurrentSlide(currentSlide + 1), 300);
+        }
+        break;
+      case 'orderType':
+        currentSlideIsComplete = !!updatedMeal?.orderType;
+        if (currentSlideIsComplete && currentSlide < slides.length - 1) {
+          setTimeout(() => setCurrentSlide(currentSlide + 1), 300);
         }
         break;
       default:
@@ -347,82 +368,158 @@ const MealItem = ({
       label: 'Bebida',
       associatedField: 'drink'
     },
-    {
-      component: (
-        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
-          <h4 className="text-sm font-semibold text-green-700 mb-2">Cubiertos</h4>
-          <CutlerySelector
-            cutlery={meal?.cutlery}
-            setCutlery={(cutlery) => handleImmediateChange('cutlery', cutlery)}
-          />
-          {meal?.cutlery === null && (
-            <p className="text-[10px] text-red-600 bg-red-50 p-1 rounded mt-1">
-              Por favor, selecciona si necesitas cubiertos
-            </p>
-          )}
-        </div>
-      ),
-      isComplete: meal?.cutlery !== null,
-      associatedField: 'cutlery'
-    },
-    {
-      component: (
-        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
-          <TimeSelector
-            times={times}
-            selectedTime={pendingTime}
-            setSelectedTime={setPendingTime}
-            onConfirm={handleTimeConfirm}
-          />
-          {!meal?.time && (
-            <p className="text-sm font-semibold text-red-600 bg-red-50 p-2 rounded mt-2">
-              Por favor, selecciona una hora y confirma
-            </p>
-          )}
-        </div>
-      ),
-      isComplete: !!meal?.time,
-      label: 'Hora',
-      associatedField: 'time'
-    },
-    {
-      component: (
-        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
-          <p className="mb-2 text-sm text-gray-600 text-center md:text-left">
-            🎉 Ingresa tu dirección y teléfono <strong className="text-green-700">una sola vez</strong>. La próxima vez, solo haz clic en <strong className="text-blue-600">"Confirmar" ¡y listo!</strong>
-          </p>
-          <AddressInput onConfirm={handleAddressConfirm} initialAddress={meal?.address || {}} />
-          {!meal?.address?.address && (
-            <p className="text-[10px] text-red-600 mt-1">
-              Por favor, completa tu dirección y teléfono.
-            </p>
-          )}
-        </div>
-      ),
-      isComplete: !!meal?.address?.address,
-      label: 'Dirección',
-      associatedField: 'address'
-    },
-    {
-      component: (
-        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
-          <h4 className="text-sm font-semibold text-green-700 mb-2">Método de Pago</h4>
-          <PaymentSelector
-            paymentMethods={paymentMethods}
-            selectedPayment={meal?.payment}
-            setSelectedPayment={(payment) => handleImmediateChange('payment', payment)}
-          />
-          {!meal?.payment && (
-            <p className="text-sm font-semibold text-red-600 bg-red-50 p-2 rounded mt-2">
-              Por favor, selecciona un método de pago
-            </p>
-          )}
-        </div>
-      ),
-      isComplete: !!meal?.payment,
-      label: 'Método de pago',
-      associatedField: 'payment'
-    },
+    ...(isTableOrder
+      ? [
+          {
+            component: (
+              <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
+                <h4 className="text-sm font-semibold text-green-700 mb-2">Número de Mesa</h4>
+                <input
+                  type="text"
+                  value={meal?.tableNumber || ''}
+                  onChange={(e) => handleImmediateChange('tableNumber', e.target.value)}
+                  placeholder="Ej. Mesa 1, Mesa 1 y 7"
+                  className="w-full p-2 text-sm border rounded-md"
+                />
+                {!meal?.tableNumber && (
+                  <p className="text-[10px] text-red-600 bg-red-50 p-1 rounded mt-1">
+                    Por favor, ingresa el número de mesa
+                  </p>
+                )}
+              </div>
+            ),
+            isComplete: !!meal?.tableNumber,
+            label: 'Mesa',
+            associatedField: 'tableNumber'
+          },
+          {
+            component: (
+              <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
+                <h4 className="text-sm font-semibold text-green-700 mb-2">Método de Pago</h4>
+                <PaymentSelector
+                  paymentMethods={paymentMethods}
+                  selectedPayment={meal?.paymentMethod}
+                  setSelectedPayment={(payment) => handleImmediateChange('paymentMethod', payment)}
+                />
+                {!meal?.paymentMethod && (
+                  <p className="text-sm font-semibold text-red-600 bg-red-50 p-2 rounded mt-2">
+                    Por favor, selecciona un método de pago
+                  </p>
+                )}
+              </div>
+            ),
+            isComplete: !!meal?.paymentMethod,
+            label: 'Método de pago',
+            associatedField: 'paymentMethod'
+          },
+...(isWaitress && isTableOrder ? [{
+  component: (
+    <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
+      <h4 className="text-sm font-semibold text-green-700 mb-2">¿Para llevar o para mesa?</h4>
+      <div className="flex space-x-4">
+        <button
+          onClick={() => handleImmediateChange('orderType', 'takeaway')}
+          className={`px-4 py-2 rounded-md ${meal.orderType === 'takeaway' ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+        >
+          Para llevar
+        </button>
+        <button
+          onClick={() => handleImmediateChange('orderType', 'table')}
+          className={`px-4 py-2 rounded-md ${meal.orderType === 'table' ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+        >
+          Para mesa
+        </button>
+      </div>
+      {!meal?.orderType && (
+        <p className="text-[10px] text-red-600 bg-red-50 p-1 rounded mt-1">
+          Por favor, selecciona el tipo de pedido
+        </p>
+      )}
+    </div>
+  ),
+  isComplete: !!meal?.orderType,
+  label: 'Tipo de pedido',
+  associatedField: 'orderType'
+}] : [])
+        ]
+      : [
+          {
+            component: (
+              <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
+                <h4 className="text-sm font-semibold text-green-700 mb-2">Cubiertos</h4>
+                <CutlerySelector
+                  cutlery={meal?.cutlery}
+                  setCutlery={(cutlery) => handleImmediateChange('cutlery', cutlery)}
+                />
+                {meal?.cutlery === null && (
+                  <p className="text-[10px] text-red-600 bg-red-50 p-1 rounded mt-1">
+                    Por favor, selecciona si necesitas cubiertos
+                  </p>
+                )}
+              </div>
+            ),
+            isComplete: meal?.cutlery !== null,
+            associatedField: 'cutlery'
+          },
+          {
+            component: (
+              <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
+                <TimeSelector
+                  times={times}
+                  selectedTime={pendingTime}
+                  setSelectedTime={setPendingTime}
+                  onConfirm={handleTimeConfirm}
+                />
+                {!meal?.time && (
+                  <p className="text-sm font-semibold text-red-600 bg-red-50 p-2 rounded mt-2">
+                    Por favor, selecciona una hora y confirma
+                  </p>
+                )}
+              </div>
+            ),
+            isComplete: !!meal?.time,
+            label: 'Hora',
+            associatedField: 'time'
+          },
+          {
+            component: (
+              <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
+                <p className="mb-2 text-sm text-gray-600 text-center md:text-left">
+                  🎉 Ingresa tu dirección y teléfono <strong className="text-green-700">una sola vez</strong>. La próxima vez, solo haz clic en <strong className="text-blue-600">"Confirmar" ¡y listo!</strong>
+                </p>
+                <AddressInput onConfirm={handleAddressConfirm} initialAddress={meal?.address || {}} />
+                {!meal?.address?.address && (
+                  <p className="text-[10px] text-red-600 mt-1">
+                    Por favor, completa tu dirección y teléfono.
+                  </p>
+                )}
+              </div>
+            ),
+            isComplete: !!meal?.address?.address,
+            label: 'Dirección',
+            associatedField: 'address'
+          },
+          {
+            component: (
+              <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
+                <h4 className="text-sm font-semibold text-green-700 mb-2">Método de Pago</h4>
+                <PaymentSelector
+                  paymentMethods={paymentMethods}
+                  selectedPayment={meal?.payment}
+                  setSelectedPayment={(payment) => handleImmediateChange('payment', payment)}
+                />
+                {!meal?.payment && (
+                  <p className="text-sm font-semibold text-red-600 bg-red-50 p-2 rounded mt-2">
+                    Por favor, selecciona un método de pago
+                  </p>
+                )}
+              </div>
+            ),
+            isComplete: !!meal?.payment,
+            label: 'Método de pago',
+            associatedField: 'payment'
+          },
+        ]),
     {
       component: (
         <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
@@ -639,7 +736,7 @@ const MealItem = ({
   const handleDuplicateClick = () => {
     if (totalMeals >= maxMeals) {
       setShowMaxMealsError(true);
-      setTimeout(() => setShowMaxMealsError(false), 3000); // Hide error after 3 seconds
+      setTimeout(() => setShowMaxMealsError(false), 3000);
       return;
     }
     setShowMaxMealsError(false);
@@ -669,7 +766,7 @@ const MealItem = ({
               </div>
               <div>
                 <h3 className="font-bold text-sm text-gray-800">
-                  Almuerzo #{id + 1} - {displayMainItem} - ${calculateMealPrice(meal).toLocaleString('es-CO')}
+                  Almuerzo #{id + 1} - {displayMainItem} - ${calculateMealPrice(meal, userRole).toLocaleString('es-CO')}
                 </h3>
                 <ProgressBar progress={completionPercentage} className="w-24 sm:w-32 mt-1" />
               </div>
@@ -711,20 +808,20 @@ const MealItem = ({
           </div>
         </div>
 
-{showMaxMealsError && (
-  <ErrorMessage
-    message="Has alcanzado el máximo de 15 almuerzos. No puedes duplicar más."
-    className="fixed top-4 right-4 z-50 bg-green-100 text-green-800"
-    onClose={() => setShowMaxMealsError(false)}
-  />
-)}
-{successMessage && !showMaxMealsError && (
-  <ErrorMessage
-    message={successMessage}
-    className="fixed top-12 right-4 z-50 bg-green-100 text-green-800 mt-2"
-    onClose={() => setSuccessMessage('')}
-  />
-)}
+        {showMaxMealsError && (
+          <ErrorMessage
+            message="Has alcanzado el máximo de 15 almuerzos. No puedes duplicar más."
+            className="fixed top-4 right-4 z-50 bg-green-100 text-green-800"
+            onClose={() => setShowMaxMealsError(false)}
+          />
+        )}
+        {successMessage && !showMaxMealsError && (
+          <ErrorMessage
+            message={successMessage}
+            className="fixed top-12 right-4 z-50 bg-green-100 text-green-800 mt-2"
+            onClose={() => setSuccessMessage('')}
+          />
+        )}
         {isExpanded && (
           <div className="p-2">
             <div

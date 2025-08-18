@@ -5,9 +5,9 @@ const ProgressBar = ({ progress, className = '' }) => (
   <div className={`relative w-full bg-primary-100 rounded-full h-3 sm:h-4 shadow-sm ${className}`}>
     <div 
       className="bg-primary-500 h-3 sm:h-4 rounded-full transition-all duration-300 flex items-center justify-end pr-1 text-[8px] sm:text-[10px] font-medium text-white"
-      style={{ width: `${progress}%` }}
+      style={{ width: `${Math.max(progress, 0)}%` }}
     >
-      {progress > 15 && `${progress}%`}
+      {`${Math.round(progress)}%`}
     </div>
   </div>
 );

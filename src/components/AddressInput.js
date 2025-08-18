@@ -107,22 +107,27 @@ const regex = /^(cl|cra|calle|carrera|tv|trasversal|dig|diagonal)\.?\s*(\d{1,3})
     (addressType !== 'complex' || unitDetails) &&
     (addressType !== 'shop' || localName);
 
-  const handleConfirm = () => {
-    if (isFormValid) {
-      const confirmedDetails = {
-        address,
-        phoneNumber,
-        addressType,
-        recipientName: addressType === 'school' ? recipientName : '',
-        unitDetails: addressType === 'complex' ? unitDetails : '',
-        localName: addressType === 'shop' ? localName : '',
-      };
-      onConfirm(confirmedDetails);
-      setIsEditing(false);
-    } else {
-      alert('Por favor, completa todos los campos requeridos correctamente.');
-    }
-  };
+const handleConfirm = () => {
+  if (isFormValid) {
+    const confirmedDetails = {
+      address,
+      phoneNumber,
+      addressType,
+      recipientName: addressType === 'school' ? recipientName : '',
+      unitDetails: addressType === 'complex' ? unitDetails : '',
+      localName: addressType === 'shop' ? localName : '',
+    };
+    onConfirm(confirmedDetails);
+
+    // 👉 Notifica a la app para sincronizar el estado global en App.js
+    window.dispatchEvent(new CustomEvent('userAddressUpdated', { detail: confirmedDetails }));
+
+    setIsEditing(false);
+  } else {
+    alert('Por favor, completa todos los campos requeridos correctamente.');
+  }
+};
+
 
   if (isFormValid && !isEditing) {
     return (

@@ -1,15 +1,107 @@
 // src/components/Admin/TablaPedidos.js
-import React, { useRef, useEffect } from 'react'; // Import useRef and useEffect
+import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { classNames } from '../../utils/classNames.js';
-import { cleanText, getAddressDisplay } from './utils';
-import { ArrowDownTrayIcon, ChevronLeftIcon, ChevronRightIcon, InformationCircleIcon, PencilIcon, TrashIcon, EllipsisVerticalIcon, PlusIcon } from '@heroicons/react/24/outline';
+import { cleanText, getAddressDisplay } from './utils.js';
+import { calculateMealPrice } from '../../utils/MealCalculations';
+import {
+  ArrowDownTrayIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  InformationCircleIcon,
+  PencilIcon,
+  TrashIcon,
+  EllipsisVerticalIcon,
+  PlusIcon
+} from '@heroicons/react/24/outline';
+
+// NUEVO: pagos
+import PaymentSplitEditor from '../common/PaymentSplitEditor';
+import { summarizePayments, sumPaymentsByMethod, defaultPaymentsForOrder } from '../../utils/payments';
+
+// Firestore para persistir pagos
+import { db } from '../../config/firebase';
+import { updateDoc, doc, getDoc } from 'firebase/firestore';
+
+/* ===========================
+   Helpers de resumen (in-file)
+   =========================== */
+
+const normKey = (s) => (s || '').toString().trim().toLowerCase();
+const normalizePaymentMethodKey = (method) => {
+  const raw = normKey(
+    typeof method === 'string'
+      ? method
+      : method?.name || method?.label || method?.title || method?.method || method?.type || ''
+  );
+  if (raw.includes('efect')) return 'cash';
+  if (raw.includes('cash')) return 'cash';
+  if (raw.includes('nequi')) return 'nequi';
+  if (raw.includes('davi')) return 'daviplata';
+  return 'other';
+};
+
+const paymentsRowsFromOrder = (order, fallbackBuilder) => {
+  const total = Math.floor(Number(order?.total || 0)) || 0;
+
+  if (Array.isArray(order?.payments) && order.payments.length) {
+    return order.payments.map((p) => ({
+      methodKey: normalizePaymentMethodKey(p.method),
+      amount: Math.floor(Number(p.amount || 0)) || 0,
+    }));
+  }
+
+  const fb = typeof fallbackBuilder === 'function' ? (fallbackBuilder(order) || []) : [];
+  if (fb.length) {
+    return fb.map((p) => ({
+      methodKey: normalizePaymentMethodKey(p.method),
+      amount: Math.floor(Number(p.amount || 0)) || 0,
+    }));
+  }
+
+  return [{ methodKey: 'other', amount: total }];
+};
+
+const sumPaymentsByDeliveryAndType = (orders, { fallbackBuilder } = {}) => {
+  const acc = {};
+  const ensureBucket = (person, bucket) => {
+    acc[person] = acc[person] || {};
+    acc[person][bucket] = acc[person][bucket] || { cash: 0, nequi: 0, daviplata: 0, other: 0, total: 0 };
+    return acc[person][bucket];
+  };
+  const bump = (obj, methodKey, amount) => {
+    if (!amount) return;
+    obj[methodKey] = (obj[methodKey] || 0) + amount;
+    obj.total += amount;
+  };
+
+  (orders || []).forEach((order) => {
+    const person = String(order?.deliveryPerson || 'JUAN').trim(); // default "JUAN" si no hay asignado
+    const isBreakfast = Array.isArray(order?.breakfasts) || order?.type === 'breakfast';
+    const bucket = isBreakfast ? 'breakfast' : 'lunch';
+    const rows = paymentsRowsFromOrder(order, fallbackBuilder);
+    const byType = ensureBucket(person, bucket);
+    const byTotal = ensureBucket(person, 'total');
+    rows.forEach(({ methodKey, amount }) => {
+      bump(byType, methodKey, amount);
+      bump(byTotal, methodKey, amount);
+    });
+  });
+
+  return acc;
+};
+
+const money = (n) => `$${Math.floor(n || 0).toLocaleString('es-CO')}`;
+
+/* =======================
+   Component principal
+   ======================= */
 
 const TablaPedidos = ({
   theme,
   orders,
   searchTerm,
   setSearchTerm,
-  totals,
+  totals, // puede venir del padre; si no, calculamos localmente con split
   isLoading,
   paginatedOrders,
   currentPage,
@@ -42,8 +134,10 @@ const TablaPedidos = ({
   exportToExcel,
   exportToPDF,
   exportToCSV,
-  // NUEVA PROP
   setShowAddOrderModal,
+  orderTypeFilter,
+  setOrderTypeFilter,
+  uniqueDeliveryPersons,
 }) => {
   const currentDate = new Date().toLocaleDateString('es-CO', {
     weekday: 'long',
@@ -51,50 +145,168 @@ const TablaPedidos = ({
     day: 'numeric',
   });
 
-  // Create a ref for the menu container
   const menuRef = useRef(null);
+  const [deliveryDraft, setDeliveryDraft] = useState('');
+  const lastAssignedRef = useRef('');
 
-  // Effect to handle clicks outside the menu
   useEffect(() => {
     function handleClickOutside(event) {
       if (menuRef.current && !menuRef.current.contains(event.target)) {
-        setIsMenuOpen(false); // Close the menu if clicked outside
+        setIsMenuOpen(false);
       }
     }
+    if (isMenuOpen) document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isMenuOpen, setIsMenuOpen]);
 
-    // Bind the event listener
-    if (isMenuOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
+  // ====== Split de pagos: estado para modal local ======
+  const [editingPaymentsOrder, setEditingPaymentsOrder] = useState(null);
+
+  // ✅ Incluye tus colecciones reales
+  const EXTRA_COLLECTIONS = [
+    'orders',
+    'deliveryOrders',
+    'tableOrders',
+    'deliveryBreakfastOrders', // <— importante para desayunos
+    'breakfastOrders',
+    'domicilioOrders'
+  ];
+
+  // ✅ Heurística afinada a tus nombres reales
+  const resolveCollectionName = (order) => {
+    if (order?.__collection) return order.__collection;
+    if (order?.collectionName) return order.collectionName;
+
+    const isBreakfast =
+      order?.type === 'breakfast' ||
+      Array.isArray(order?.breakfasts);
+
+    if (isBreakfast) return 'deliveryBreakfastOrders';
+    return 'orders'; // almuerzos
+  };
+
+  // ✅ Busca la orden probando todas las variantes conocidas
+  const findExistingOrderRef = async (order) => {
+    const id = order?.id;
+    if (!id) throw new Error('Order sin id');
+
+    const preferred = [];
+    if (order?.__collection) preferred.push(order.__collection);
+    if (order?.collectionName && order?.collectionName !== order?.__collection) {
+      preferred.push(order.collectionName);
     }
 
-    // Unbind the event listener on cleanup
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
+    const guess = resolveCollectionName(order);
+    const BASE = ['orders', 'deliveryOrders', 'tableOrders', 'deliveryBreakfastOrders', 'breakfastOrders'];
+    const orderedBase = [guess, ...BASE.filter((c) => c !== guess)];
+
+    const candidates = [
+      ...preferred.filter(Boolean),
+      ...orderedBase,
+      ...EXTRA_COLLECTIONS,
+    ].filter((v, i, a) => !!v && a.indexOf(v) === i); // únicos
+
+    for (const col of candidates) {
+      const ref = doc(db, col, id);
+      const snap = await getDoc(ref);
+      if (snap.exists()) return ref;
+    }
+
+    return null;
+  };
+
+  const savePaymentsForOrder = async (order, payments) => {
+    const sum = (payments || []).reduce(
+      (a, b) => a + (Math.floor(Number(b.amount || 0)) || 0),
+      0
+    );
+    const total = Math.floor(Number(order.total || 0)) || 0;
+
+    if (sum !== total) {
+      alert(
+        `La suma de pagos (${sum.toLocaleString(
+          'es-CO'
+        )}) no coincide con el total (${total.toLocaleString('es-CO')}).`
+      );
+      return false;
+    }
+
+    const ref = await findExistingOrderRef(order);
+    if (!ref) {
+      alert(
+        'No se pudo guardar los pagos: la orden no existe en ninguna colección conocida (orders/deliveryBreakfastOrders y variantes).'
+      );
+      return false;
+    }
+
+    const payload = {
+      payments: (payments || []).map((p) => ({
+        method: typeof p.method === 'string' ? p.method : p?.method?.name || '',
+        amount: Math.floor(Number(p.amount || 0)) || 0,
+        note: p.note || '',
+      })),
+      updatedAt: new Date(),
     };
-  }, [isMenuOpen, setIsMenuOpen]); // Re-run effect when isMenuOpen changes
+
+    try {
+      await updateDoc(ref, payload);
+      return true;
+    } catch (e) {
+      console.error('[Pagos] updateDoc error', e);
+      const code = e?.code || '';
+      const msg = String(e?.message || '');
+      if (code === 'permission-denied') {
+        alert('No se pudo guardar los pagos: permisos insuficientes según tus reglas de Firestore.');
+      } else {
+        alert('No se pudo guardar los pagos: ' + (msg || code || 'Error desconocido.'));
+      }
+      return false;
+    }
+  };
+
+  // Totales superiores (tiles)
+const totalsDisplay = useMemo(() => sumPaymentsByMethod(orders || []), [orders]);
+
+  // ===== Resumen por Domiciliarios (exacto con split) =====
+  const resumen = useMemo(
+    () => sumPaymentsByDeliveryAndType(orders || [], { fallbackBuilder: defaultPaymentsForOrder }),
+    [orders]
+  );
+  const resumenPersons = useMemo(
+    () => Object.keys(resumen).sort((a, b) => a.localeCompare(b, 'es')),
+    [resumen]
+  );
+
+  const handleSettle = (person, buckets) => {
+    console.log('[Liquidar]', person, buckets);
+  };
 
   return (
     <>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100 mb-6">Gestión de Pedidos</h2>
+        <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100 mb-6">
+          Gestión de Pedidos Domicilios
+        </h2>
 
         {/* Totals Section */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 text-sm text-gray-700 dark:text-gray-300">
-          <div className={classNames("p-3 sm:p-4 rounded-lg shadow-sm", theme === 'dark' ? 'bg-gray-700' : 'bg-gray-100')}>
+          <div className={classNames('p-3 sm:p-4 rounded-lg shadow-sm', theme === 'dark' ? 'bg-gray-700' : 'bg-gray-100')}>
             <p className="font-semibold text-sm sm:text-base">Total Efectivo</p>
-            <p className="text-lg sm:text-xl font-bold">${totals.cash.toLocaleString('es-CO')}</p>
+            <p className="text-lg sm:text-xl font-bold">${Math.floor(totalsDisplay.cash || 0).toLocaleString('es-CO')}</p>
           </div>
-          <div className={classNames("p-3 sm:p-4 rounded-lg shadow-sm", theme === 'dark' ? 'bg-gray-700' : 'bg-gray-100')}>
+          <div className={classNames('p-3 sm:p-4 rounded-lg shadow-sm', theme === 'dark' ? 'bg-gray-700' : 'bg-gray-100')}>
             <p className="font-semibold text-sm sm:text-base">Total Daviplata</p>
-            <p className="text-lg sm:text-xl font-bold">${totals.daviplata.toLocaleString('es-CO')}</p>
+            <p className="text-lg sm:text-xl font-bold">${Math.floor(totalsDisplay.daviplata || 0).toLocaleString('es-CO')}</p>
           </div>
-          <div className={classNames("p-3 sm:p-4 rounded-lg shadow-sm", theme === 'dark' ? 'bg-gray-700' : 'bg-gray-100')}>
+          <div className={classNames('p-3 sm:p-4 rounded-lg shadow-sm', theme === 'dark' ? 'bg-gray-700' : 'bg-gray-100')}>
             <p className="font-semibold text-sm sm:text-base">Total Nequi</p>
-            <p className="text-lg sm:text-xl font-bold">${totals.nequi.toLocaleString('es-CO')}</p>
+            <p className="text-lg sm:text-xl font-bold">${Math.floor(totalsDisplay.nequi || 0).toLocaleString('es-CO')}</p>
           </div>
-          <div className={classNames("p-3 sm:p-4 rounded-lg shadow-sm", theme === 'dark' ? 'bg-gray-700' : 'bg-gray-100')}>
+          <div className={classNames('p-3 sm:p-4 rounded-lg shadow-sm', theme === 'dark' ? 'bg-gray-700' : 'bg-gray-100')}>
             <p className="font-semibold text-sm sm:text-base">Total General</p>
-            <p className="text-lg sm:text-xl font-bold">${(totals.cash + totals.daviplata + totals.nequi).toLocaleString('es-CO')}</p>
+            <p className="text-lg sm:text-xl font-bold">
+              ${Math.floor((totalsDisplay.cash || 0) + (totalsDisplay.daviplata || 0) + (totalsDisplay.nequi || 0)).toLocaleString('es-CO')}
+            </p>
           </div>
         </div>
 
@@ -103,10 +315,10 @@ const TablaPedidos = ({
           <input
             type="text"
             value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
+            onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Buscar pedidos..."
             className={classNames(
-              "p-2 sm:p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:max-w-xs shadow-sm text-sm sm:text-base transition-all duration-200",
+              'p-2 sm:p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:max-w-xs shadow-sm text-sm sm:text-base transition-all duration-200',
               theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-300 bg-white text-gray-900'
             )}
           />
@@ -114,10 +326,8 @@ const TablaPedidos = ({
             <button
               onClick={() => setShowProteinModal(true)}
               className={classNames(
-                "flex items-center justify-center gap-2 px-3 py-2 sm:px-5 sm:py-3 rounded-lg text-xs sm:text-sm font-semibold transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 flex-shrink-0",
-                theme === 'dark'
-                  ? 'bg-gray-600 hover:bg-gray-500 text-white border border-gray-500'
-                  : 'bg-gray-200 hover:bg-gray-300 text-gray-900 border border-gray-400'
+                'flex items-center justify-center gap-2 px-3 py-2 sm:px-5 sm:py-3 rounded-lg text-xs sm:text-sm font-semibold transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 flex-shrink-0',
+                theme === 'dark' ? 'bg-gray-600 hover:bg-gray-500 text-white border border-gray-500' : 'bg-gray-200 hover:bg-gray-300 text-gray-900 border border-gray-400'
               )}
             >
               <PlusIcon className="w-4 h-4" />
@@ -125,86 +335,39 @@ const TablaPedidos = ({
             </button>
             <div
               className={classNames(
-                "flex items-center justify-center gap-2 px-3 py-2 sm:px-5 sm:py-3 rounded-lg text-xs sm:text-sm font-semibold shadow-sm border transition-colors duration-200 flex-shrink-0",
-                theme === 'dark'
-                  ? 'bg-gray-700 text-white border-gray-500'
-                  : 'bg-gray-200 text-gray-900 border-gray-400'
+                'flex items-center justify-center gap-2 px-3 py-2 sm:px-5 sm:py-3 rounded-lg text-xs sm:text-sm font-semibold shadow-sm border transition-colors duration-200 flex-shrink-0',
+                theme === 'dark' ? 'bg-gray-700 text-white border-gray-500' : 'bg-gray-200 text-gray-900 border-gray-400'
               )}
             >
               {currentDate}
             </div>
-            {/* Added ref to the menu container */}
-            <div className="relative z-50 flex-shrink-0" ref={menuRef}>
+            <div className="relative flex-shrink-0" ref={menuRef}>
               <button
                 onClick={() => setIsMenuOpen(!isMenuOpen)}
-                className={classNames(
-                  "flex items-center justify-center p-2 rounded-lg text-xs sm:text-sm font-medium transition-all duration-200",
-                  // Removed background and hover background classes to make it transparent
-                  // Removed text color classes to inherit from parent, or set explicitly if needed
-                  // Added focus ring for accessibility
-                  'focus:outline-none focus:ring-2 focus:ring-blue-500'
-                )}
+                className={classNames('flex items-center justify-center p-2 rounded-lg text-xs sm:text-sm font-medium transition-all duration-200', 'focus:outline-none focus:ring-2 focus:ring-blue-500')}
                 aria-label="Opciones de menú"
               >
-                <EllipsisVerticalIcon
-                  className={classNames(
-                    "w-6 h-6",
-                    theme === 'dark' ? 'text-gray-200 hover:text-white' : 'text-gray-700 hover:text-gray-900' // Ensure icon color is visible
-                  )}
-                />
+                <EllipsisVerticalIcon className={classNames('w-6 h-6', theme === 'dark' ? 'text-gray-200 hover:text-white' : 'text-gray-700 hover:text-gray-900')} />
               </button>
               {isMenuOpen && (
-                <div className={classNames(
-                  "absolute right-0 mt-2 w-48 rounded-lg shadow-xl z-50",
-                  theme === 'dark' ? 'bg-gray-700 text-gray-200' : 'bg-white text-gray-900'
-                )}>
+                <div className={classNames('absolute right-0 mt-2 w-48 rounded-lg shadow-xl z-50', theme === 'dark' ? 'bg-gray-700 text-gray-200' : 'bg-white text-gray-900')}>
                   <div className="py-1">
-                    {/* NUEVO BOTÓN PARA GENERAR ORDEN */}
-                    <button
-                      onClick={() => { setShowAddOrderModal(true); setIsMenuOpen(false); }}
-                      className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200"
-                    >
-                      Generar Orden
+                    <button onClick={() => { setOrderTypeFilter('breakfast'); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">Ver Desayunos</button>
+                    <button onClick={() => { setOrderTypeFilter('lunch'); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">Ver Almuerzos</button>
+                    <button onClick={() => { setOrderTypeFilter('all'); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">Ver Todos</button>
+                    <button onClick={() => { setShowAddOrderModal(true); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">Generar Orden</button>
+                    <button onClick={() => { handleOpenPreview(); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">Vista Previa PDF</button>
+                    <button onClick={() => { handleOpenExcelPreview(); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">Vista Previa Excel</button>
+                    <button onClick={() => { handleExport(exportToExcel, 'Excel'); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 flex items-center">
+                      <ArrowDownTrayIcon className="w-4 h-4 mr-2" /> Exportar Excel
                     </button>
-                    <button
-                      onClick={() => { handleOpenPreview(); setIsMenuOpen(false); }}
-                      className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200"
-                    >
-                      Vista Previa PDF
+                    <button onClick={() => { handleExport(exportToPDF, 'PDF'); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 flex items-center">
+                      <ArrowDownTrayIcon className="w-4 h-4 mr-2" /> Exportar PDF
                     </button>
-                    <button
-                      onClick={() => { handleOpenExcelPreview(); setIsMenuOpen(false); }}
-                      className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200"
-                    >
-                      Vista Previa Excel
+                    <button onClick={() => { handleExport(exportToCSV, 'CSV'); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 flex items-center">
+                      <ArrowDownTrayIcon className="w-4 h-4 mr-2" /> Exportar CSV
                     </button>
-                    <button
-                      onClick={() => { handleExport(exportToExcel, 'Excel'); setIsMenuOpen(false); }}
-                      className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 flex items-center"
-                    >
-                      <ArrowDownTrayIcon className="w-4 h-4 mr-2" />
-                      Exportar Excel
-                    </button>
-                    <button
-                      onClick={() => { handleExport(exportToPDF, 'PDF'); setIsMenuOpen(false); }}
-                      className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 flex items-center"
-                    >
-                      <ArrowDownTrayIcon className="w-4 h-4 mr-2" />
-                      Exportar PDF
-                    </button>
-                    <button
-                      onClick={() => { handleExport(exportToCSV, 'CSV'); setIsMenuOpen(false); }}
-                      className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 flex items-center"
-                    >
-                      <ArrowDownTrayIcon className="w-4 h-4 mr-2" />
-                      Exportar CSV
-                    </button>
-                    <button
-                      onClick={() => { setShowConfirmDeleteAll(true); setIsMenuOpen(false); }}
-                      className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 text-red-500"
-                    >
-                      Eliminar Todos
-                    </button>
+                    <button onClick={() => { setShowConfirmDeleteAll(true); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 text-red-500">Eliminar Todos</button>
                   </div>
                 </div>
               )}
@@ -213,10 +376,7 @@ const TablaPedidos = ({
         </div>
 
         {/* Orders Table */}
-        <div className={classNames(
-          "p-3 sm:p-4 rounded-2xl shadow-xl max-h-[70vh] overflow-y-auto custom-scrollbar transition-all duration-300",
-          theme === 'dark' ? 'bg-gray-800' : 'bg-white'
-        )}>
+        <div className={classNames('p-3 sm:p-4 rounded-2xl shadow-xl max-h-[70vh] overflow-y-auto custom-scrollbar transition-all duration-300', theme === 'dark' ? 'bg-gray-800' : 'bg-white')}>
           {isLoading ? (
             <div className="flex justify-center items-center h-40">
               <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-blue-500"></div>
@@ -226,68 +386,61 @@ const TablaPedidos = ({
               <div className="overflow-x-auto">
                 <table className="min-w-full text-left border-collapse text-sm">
                   <thead>
-                    <tr className={classNames(
-                      "font-semibold sticky top-0 z-10 shadow-sm",
-                      theme === 'dark' ? 'bg-gray-700 text-gray-200' : 'bg-gray-100 text-gray-700'
-                    )}>
-                      <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('orderNumber')}>
-                        Nº {getSortIcon('orderNumber')}
-                      </th>
+                    <tr className={classNames('font-semibold sticky top-0 z-10 shadow-sm', theme === 'dark' ? 'bg-gray-700 text-gray-200' : 'bg-gray-100 text-gray-700')}>
+                      <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('orderNumber')}>Nº {getSortIcon('orderNumber')}</th>
                       <th className="p-2 sm:p-3 border-b whitespace-nowrap">Detalles</th>
-                      <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('meals.0.address.address')}>
-                        Dirección {getSortIcon('meals.0.address.address')}
-                      </th>
-                      <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('meals.0.address.phoneNumber')}>
-                        Teléfono {getSortIcon('meals.0.address.phoneNumber')}
-                      </th>
-                      <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('meals.0.time.name')}>
-                        Hora {getSortIcon('meals.0.time.name')}
-                      </th>
-                      <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('payment')}>
-                        Pago {getSortIcon('payment')}
-                      </th>
-                      <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('total')}>
-                        Total {getSortIcon('total')}
-                      </th>
-                      <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('deliveryPerson')}>
-                        Domiciliario {getSortIcon('deliveryPerson')}
-                      </th>
-                      <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('status')}>
-                        Estado {getSortIcon('status')}
-                      </th>
+                      <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('address')}>Dirección {getSortIcon('address')}</th>
+                      <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('phone')}>Teléfono {getSortIcon('phone')}</th>
+                      <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('time')}>Hora {getSortIcon('time')}</th>
+                      <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('payment')}>Pago {getSortIcon('payment')}</th>
+                      <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('total')}>Total {getSortIcon('total')}</th>
+                      <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('deliveryPerson')}>Domiciliario {getSortIcon('deliveryPerson')}</th>
+                      <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('status')}>Estado {getSortIcon('status')}</th>
                       <th className="p-2 sm:p-3 border-b whitespace-nowrap">Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
                     {paginatedOrders.length === 0 ? (
                       <tr>
-                        <td colSpan="10" className="p-6 text-center text-gray-500 dark:text-gray-400">
-                          No se encontraron pedidos. Intenta ajustar tu búsqueda o filtros.
-                        </td>
+                        <td colSpan="10" className="p-6 text-center text-gray-500 dark:text-gray-400">No se encontraron pedidos. Intenta ajustar tu búsqueda o filtros.</td>
                       </tr>
                     ) : (
                       paginatedOrders.map((order, index) => {
-                        const displayNumber = sortOrder === 'asc'
-                          ? (currentPage - 1) * itemsPerPage + index + 1
-                          : paginatedOrders.length - ((currentPage - 1) * itemsPerPage + index);
-                        const addressDisplay = getAddressDisplay(order.meals?.[0]?.address);
-                        const paymentDisplay = cleanText(order.payment || order.meals?.[0]?.payment?.name || order.meals?.[0]?.payment || 'Sin pago');
-                        const statusClass = order.status === 'Pendiente' ? 'bg-yellow-500 text-black' : order.status === 'Entregado' ? 'bg-green-500 text-white' : order.status === 'Cancelado' ? 'bg-red-500 text-white' : '';
+                        const displayNumber =
+                          sortOrder === 'asc'
+                            ? (currentPage - 1) * itemsPerPage + index + 1
+                            : paginatedOrders.length - ((currentPage - 1) * itemsPerPage + index);
 
-                        // Safely get time display
-                        const timeValue = order.meals?.[0]?.time;
+                        const addressDisplay = getAddressDisplay(order.meals?.[0]?.address || order.breakfasts?.[0]?.address);
+
+                        const rawLegacy = cleanText(
+                          order.payment ||
+                          order.meals?.[0]?.payment?.name ||
+                          order.breakfasts?.[0]?.payment?.name ||
+                          'Sin pago'
+                        );
+
+                        const paymentDisplay =
+                          Array.isArray(order.payments) && order.payments.length
+                            ? summarizePayments(order.payments)
+                            : rawLegacy;
+
+                        const statusClass =
+                          order.status === 'Pendiente' ? 'bg-yellow-500 text-black'
+                            : order.status === 'Entregado' ? 'bg-green-500 text-white'
+                            : order.status === 'Cancelado' ? 'bg-red-500 text-white'
+                            : '';
+
+                        const timeValue = order.meals?.[0]?.time || order.breakfasts?.[0]?.time;
                         let displayTime = 'N/A';
-                        if (typeof timeValue === 'string') {
-                          displayTime = timeValue;
-                        } else if (typeof timeValue === 'object' && timeValue !== null) {
-                          displayTime = timeValue.name || 'N/A';
-                        }
+                        if (typeof timeValue === 'string') displayTime = timeValue;
+                        else if (typeof timeValue === 'object' && timeValue !== null) displayTime = timeValue.name || 'N/A';
 
                         return (
                           <tr
                             key={order.id}
                             className={classNames(
-                              "border-b transition-colors duration-150",
+                              'border-b transition-colors duration-150',
                               theme === 'dark' ? 'border-gray-700 hover:bg-gray-700' : 'border-gray-200 hover:bg-gray-50',
                               index % 2 === 0 ? (theme === 'dark' ? 'bg-gray-750' : 'bg-gray-50') : ''
                             )}
@@ -303,38 +456,66 @@ const TablaPedidos = ({
                                 Ver
                               </button>
                             </td>
-                            <td className="p-2 sm:p-3 text-gray-300 max-w-[150px] sm:max-w-xs overflow-hidden text-ellipsis whitespace-nowrap">{addressDisplay}</td>
-                            <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">{order.meals?.[0]?.address?.phoneNumber || 'N/A'}</td>
-                            {/* MODIFICADO: Asegura que 'time' siempre sea una cadena */}
+                            <td className="p-2 sm:p-3 text-gray-300 max-w-[150px] sm:max-w-xs overflow-hidden text-ellipsis whitespace-nowrap">
+                              {addressDisplay}
+                            </td>
+                            <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">
+                              {order.meals?.[0]?.address?.phoneNumber ||
+                                order.breakfasts?.[0]?.address?.phoneNumber ||
+                                'N/A'}
+                            </td>
                             <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">{displayTime}</td>
                             <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">{paymentDisplay}</td>
-                            <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">${order.total?.toLocaleString('es-CO') || '0'}</td>
+                            <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">
+                              ${order.total?.toLocaleString('es-CO') || '0'}
+                            </td>
                             <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">
                               {editingDeliveryId === order.id ? (
-                                <input
-                                  type="text"
-                                  value={editForm.deliveryPerson}
-                                  onChange={(e) => setEditForm(prev => ({ ...prev, deliveryPerson: e.target.value }))}
-                                  onBlur={() => handleDeliveryChange(order.id, editForm.deliveryPerson)}
-                                  onKeyPress={(e) => {
-                                    if (e.key === 'Enter') {
-                                      handleDeliveryChange(order.id, editForm.deliveryPerson);
-                                    }
-                                  }}
-                                  className={classNames(
-                                    "w-24 p-1 rounded-md border text-sm",
-                                    theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
-                                    "focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                  )}
-                                  autoFocus
-                                />
+                                <>
+                                  <input
+                                    list={`delivery-list-${order.id}`}
+                                    value={deliveryDraft}
+                                    onChange={(e) => setDeliveryDraft(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        const valueToSave = (deliveryDraft || '').trim() || 'Sin asignar';
+                                        handleDeliveryChange(order.id, valueToSave);
+                                        if (valueToSave !== 'Sin asignar') lastAssignedRef.current = valueToSave;
+                                        setEditingDeliveryId(null);
+                                      } else if (e.key === 'Escape') {
+                                        setEditingDeliveryId(null);
+                                      }
+                                    }}
+                                    onBlur={() => {
+                                      const valueToSave = (deliveryDraft || '').trim() || 'Sin asignar';
+                                      handleDeliveryChange(order.id, valueToSave);
+                                      if (valueToSave !== 'Sin asignar') lastAssignedRef.current = valueToSave;
+                                      setEditingDeliveryId(null);
+                                    }}
+                                    placeholder="Escribe y Enter…"
+                                    className={classNames(
+                                      'w-40 p-1 rounded-md border text-sm',
+                                      theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                                      'focus:outline-none focus:ring-1 focus:ring-blue-500'
+                                    )}
+                                    autoFocus
+                                  />
+                                  <datalist id={`delivery-list-${order.id}`}>
+                                    <option value="Sin asignar" />
+                                    {uniqueDeliveryPersons.map((person) => (
+                                      <option key={person} value={person} />
+                                    ))}
+                                  </datalist>
+                                </>
                               ) : (
                                 <span
                                   onClick={() => {
+                                    const initial = order.deliveryPerson || lastAssignedRef.current || '';
+                                    setDeliveryDraft(initial);
                                     setEditingDeliveryId(order.id);
-                                    setEditForm(prev => ({ ...prev, deliveryPerson: order.deliveryPerson || '' }));
                                   }}
                                   className="cursor-pointer hover:text-blue-400"
+                                  title="Click para editar; Enter para guardar"
                                 >
                                   {order.deliveryPerson || 'Sin asignar'}
                                 </span>
@@ -345,10 +526,10 @@ const TablaPedidos = ({
                                 value={order.status || 'Pendiente'}
                                 onChange={(e) => handleStatusChange(order.id, e.target.value)}
                                 className={classNames(
-                                  "px-2 py-1 rounded-full text-xs font-semibold appearance-none cursor-pointer",
+                                  'px-2 py-1 rounded-full text-xs font-semibold appearance-none cursor-pointer',
                                   statusClass,
                                   theme === 'dark' ? 'bg-opacity-70' : 'bg-opacity-90',
-                                  "focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  'focus:outline-none focus:ring-2 focus:ring-blue-500'
                                 )}
                               >
                                 <option value="Pendiente">Pendiente</option>
@@ -367,6 +548,14 @@ const TablaPedidos = ({
                                   aria-label={`Editar pedido ${displayNumber}`}
                                 >
                                   <PencilIcon className="w-5 h-5" />
+                                </button>
+                                <button
+                                  onClick={() => setEditingPaymentsOrder(order)}
+                                  className="text-indigo-500 hover:text-indigo-400 transition-colors duration-150 p-1 rounded-md"
+                                  title="Editar pagos (split)"
+                                  aria-label={`Editar pagos del pedido ${displayNumber}`}
+                                >
+                                  💳
                                 </button>
                                 <button
                                   onClick={() => handleDeleteOrder(order.id)}
@@ -393,10 +582,7 @@ const TablaPedidos = ({
                   <select
                     value={itemsPerPage}
                     onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
-                    className={classNames(
-                      "p-2 rounded-md border text-sm",
-                      theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-300 bg-white text-gray-900'
-                    )}
+                    className={classNames('p-2 rounded-md border text-sm', theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-300 bg-white text-gray-900')}
                   >
                     <option value="10">10</option>
                     <option value="20">20</option>
@@ -406,62 +592,166 @@ const TablaPedidos = ({
                 </div>
                 <div className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
                   <button
-                    onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                    onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
                     disabled={currentPage === 1}
                     className={classNames(
-                      "p-2 rounded-md transition-colors duration-200",
-                      currentPage === 1
-                        ? 'text-gray-400 dark:text-gray-600 cursor-not-allowed'
-                        : theme === 'dark' ? 'hover:bg-gray-700 text-gray-200' : 'hover:bg-gray-100 text-gray-700'
+                      'p-2 rounded-md transition-colors duration-200',
+                      currentPage === 1 ? 'text-gray-400 dark:text-gray-600 cursor-not-allowed' : theme === 'dark' ? 'hover:bg-gray-700 text-gray-200' : 'hover:bg-gray-100 text-gray-700'
                     )}
                   >
                     <ChevronLeftIcon className="w-5 h-5" />
                   </button>
                   <span>Página {currentPage} de {totalPages}</span>
                   <button
-                    onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                    onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
                     disabled={currentPage === totalPages}
                     className={classNames(
-                      "p-2 rounded-md transition-colors duration-200",
-                      currentPage === totalPages
-                        ? 'text-gray-400 dark:text-gray-600 cursor-not-allowed'
-                        : theme === 'dark' ? 'hover:bg-gray-700 text-gray-200' : 'hover:bg-gray-100 text-gray-700'
+                      'p-2 rounded-md transition-colors duration-200',
+                      currentPage === totalPages ? 'text-gray-400 dark:text-gray-600 cursor-not-allowed' : theme === 'dark' ? 'hover:bg-gray-700 text-gray-200' : 'hover:bg-gray-100 text-gray-700'
                     )}
                   >
                     <ChevronRightIcon className="w-5 h-5" />
                   </button>
                 </div>
               </div>
-
-              {/* Delivery Persons Summary */}
-              <div className={classNames(
-                "mt-8 p-4 rounded-lg shadow-inner",
-                theme === 'dark' ? 'bg-gray-700 text-gray-200' : 'bg-gray-100 text-gray-800'
-              )}>
-                <h3 className="text-lg font-semibold mb-4">Resumen por Domiciliarios</h3>
-                {Object.keys(deliveryPersons).length === 0 ? (
-                  <p className="text-sm text-gray-500 dark:text-gray-400">No hay domiciliarios asignados.</p>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {Object.entries(deliveryPersons).map(([name, data]) => (
-                      <div key={name} className={classNames(
-                        "p-3 rounded-md shadow-sm",
-                        theme === 'dark' ? 'bg-gray-600' : 'bg-white'
-                      )}>
-                        <h4 className="font-medium text-base mb-1">{name}</h4>
-                        <p className="text-sm">Efectivo: <span className="font-semibold">${data.cash.toLocaleString('es-CO')}</span></p>
-                        <p className="text-sm">Daviplata: <span className="font-semibold">${data.daviplata.toLocaleString('es-CO')}</span></p>
-                        <p className="text-sm">Nequi: <span className="font-semibold">${data.nequi.toLocaleString('es-CO')}</span></p>
-                        <p className="text-sm font-bold mt-1">Total: <span className="text-green-400">${data.total.toLocaleString('es-CO')}</span></p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
             </>
           )}
         </div>
+
+        {/* === Resumen por Domiciliarios (ÚNICO) === */}
+        <div className="mt-8 space-y-6">
+          <h2 className="text-xl sm:text-2xl font-bold">Resumen por Domiciliarios</h2>
+
+          {resumenPersons.length === 0 ? (
+            <div className={classNames(
+              "rounded-2xl p-6 text-center",
+              theme === 'dark' ? 'bg-gray-800 text-gray-300' : 'bg-white text-gray-700'
+            )}>
+              No hay datos para el resumen de domiciliarios.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-6">
+              {resumenPersons.map((person) => {
+                const buckets = resumen[person] || {};
+                const lunch = buckets.lunch || { cash:0, nequi:0, daviplata:0, other:0, total:0 };
+                const breakfast = buckets.breakfast || { cash:0, nequi:0, daviplata:0, other:0, total:0 };
+                const overall = buckets.total || { cash:0, nequi:0, daviplata:0, other:0, total:0 };
+
+                return (
+                  <div key={person} className={classNames(
+                    "rounded-2xl p-4 sm:p-5 shadow-sm",
+                    theme === 'dark' ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-200'
+                  )}>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-base sm:text-lg font-semibold">{person}</h3>
+                      <button
+                        onClick={() => handleSettle(person, buckets)}
+                        className="text-xs px-3 py-1.5 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white"
+                      >
+                        Liquidar ▸
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Almuerzo */}
+                      <div>
+                        <div className="text-sm font-medium mb-2">Almuerzo</div>
+                        <div className={classNames(
+                          "rounded-lg p-3 sm:p-4 border",
+                          theme === 'dark' ? 'bg-gray-800/60 border-gray-700' : 'bg-gray-50 border-gray-200'
+                        )}>
+                          <div className="flex justify-between text-sm my-0.5"><span>Efectivo</span><span className="font-semibold">{money(lunch.cash)}</span></div>
+                          <div className="flex justify-between text-sm my-0.5"><span>Daviplata</span><span className="font-semibold">{money(lunch.daviplata)}</span></div>
+                          <div className="flex justify-between text-sm my-0.5"><span>Nequi</span><span className="font-semibold">{money(lunch.nequi)}</span></div>
+                          {lunch.other > 0 && (
+                            <div className="flex justify-between text-sm my-0.5"><span>Otros</span><span className="font-semibold">{money(lunch.other)}</span></div>
+                          )}
+                          <div className="h-px my-2 bg-gray-200 dark:bg-gray-700" />
+                          <div className="flex justify-between text-sm"><span className="font-medium">Total</span><span className="font-bold">{money(lunch.total)}</span></div>
+                        </div>
+                      </div>
+
+                      {/* Desayuno */}
+                      <div>
+                        <div className="text-sm font-medium mb-2">Desayuno</div>
+                        <div className={classNames(
+                          "rounded-lg p-3 sm:p-4 border",
+                          theme === 'dark' ? 'bg-gray-800/60 border-gray-700' : 'bg-gray-50 border-gray-200'
+                        )}>
+                          <div className="flex justify-between text-sm my-0.5"><span>Efectivo</span><span className="font-semibold">{money(breakfast.cash)}</span></div>
+                          <div className="flex justify-between text-sm my-0.5"><span>Daviplata</span><span className="font-semibold">{money(breakfast.daviplata)}</span></div>
+                          <div className="flex justify-between text-sm my-0.5"><span>Nequi</span><span className="font-semibold">{money(breakfast.nequi)}</span></div>
+                          {breakfast.other > 0 && (
+                            <div className="flex justify-between text-sm my-0.5"><span>Otros</span><span className="font-semibold">{money(breakfast.other)}</span></div>
+                          )}
+                          <div className="h-px my-2 bg-gray-200 dark:bg-gray-700" />
+                          <div className="flex justify-between text-sm"><span className="font-medium">Total</span><span className="font-bold">{money(breakfast.total)}</span></div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4">
+                      <div className="text-sm font-medium mb-2">Total general</div>
+                      <div className={classNames(
+                        "rounded-lg p-3 sm:p-4 border",
+                        theme === 'dark' ? 'bg-gray-800/60 border-gray-700' : 'bg-gray-50 border-gray-200'
+                      )}>
+                        <div className="flex justify-between text-sm my-0.5"><span>Efectivo</span><span className="font-semibold">{money(overall.cash)}</span></div>
+                        <div className="flex justify-between text-sm my-0.5"><span>Daviplata</span><span className="font-semibold">{money(overall.daviplata)}</span></div>
+                        <div className="flex justify-between text-sm my-0.5"><span>Nequi</span><span className="font-semibold">{money(overall.nequi)}</span></div>
+                        {overall.other > 0 && (
+                          <div className="flex justify-between text-sm my-0.5"><span>Otros</span><span className="font-semibold">{money(overall.other)}</span></div>
+                        )}
+                        <div className="h-px my-2 bg-gray-200 dark:bg-gray-700" />
+                        <div className="flex justify-between text-sm"><span className="font-medium">Total</span><span className="font-bold">{money(overall.total)}</span></div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* Modal de edición de pagos (split) */}
+      {editingPaymentsOrder && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10001]">
+          <div className={classNames('p-4 sm:p-6 rounded-lg max-w-xl w-full max-h-[80vh] overflow-y-auto', theme === 'dark' ? 'bg-gray-800 text-gray-200' : 'bg-white text-gray-900')}>
+            <h3 className="text-lg font-semibold mb-4">
+              Editar pagos — Orden #{editingPaymentsOrder.id.slice(0, 8)}
+            </h3>
+
+            <PaymentSplitEditor
+              theme={theme}
+              total={editingPaymentsOrder.total || 0}
+              value={
+                Array.isArray(editingPaymentsOrder.payments) && editingPaymentsOrder.payments.length
+                  ? editingPaymentsOrder.payments
+                  : defaultPaymentsForOrder(editingPaymentsOrder)
+              }
+              onChange={(rows) => {
+                setEditingPaymentsOrder((prev) => ({ ...prev, payments: rows }));
+              }}
+            />
+
+            <div className="mt-4 flex gap-2 justify-end">
+              <button onClick={() => setEditingPaymentsOrder(null)} className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm">
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  const ok = await savePaymentsForOrder(editingPaymentsOrder, editingPaymentsOrder.payments || []);
+                  if (ok) setEditingPaymentsOrder(null);
+                }}
+                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
+              >
+                Guardar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };

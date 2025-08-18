@@ -1,18 +1,21 @@
-//src/components/OrderSummary.js
+// src/components/OrderSummary.js
 import { useMemo } from 'react';
 import { isValidTime, formatNotes } from '../utils/MealLogic';
 import { calculateMealPrice } from '../utils/MealCalculations';
 
 // Constantes globales
-const fieldsToCheck = ['Sopa', 'Principio', 'Proteína', 'Bebida', 'Cubiertos', 'Acompañamientos', 'Hora', 'Dirección', 'Pago', 'Adiciones'];
+const fieldsToCheck = ['Sopa', 'Principio', 'Proteína', 'Bebida', 'Cubiertos', 'Acompañamientos', 'Hora', 'Dirección', 'Pago', 'Adiciones', 'Mesa'];
 const addressFields = ['address', 'addressType', 'recipientName', 'phoneNumber', 'unitDetails', 'localName'];
 const specialRiceOptions = ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'];
 
 // Función utilitaria para limpiar texto
-const cleanText = (text) => text?.replace(' NUEVO', '') || 'No seleccionado';
+const cleanText = (text) => {
+  if (!text || text === 'Remplazo por Principio' || text === 'Reemplazo por Principio') return 'Sin reemplazo';
+  return text.replace(' NUEVO', '') || 'Sin reemplazo';
+};
 
 // Hook personalizado para manejar la lógica de resumen
-const useOrderSummary = (meals) => {
+const useOrderSummary = (meals, isWaiterView) => {
   const getFieldValue = (meal, field) => {
     if (!meal) return '';
     if (field === 'Sopa') {
@@ -37,7 +40,7 @@ const useOrderSummary = (meals) => {
     } else if (field === 'Dirección') {
       return JSON.stringify(addressFields.map(f => meal.address?.[f] || ''));
     } else if (field === 'Pago') {
-      return meal.payment?.name || 'No especificado';
+      return meal.payment?.name || meal.paymentMethod?.name || 'No especificado';
     } else if (field === 'Adiciones') {
       return JSON.stringify(
         meal.additions?.map(a => ({
@@ -47,6 +50,8 @@ const useOrderSummary = (meals) => {
           quantity: a.quantity || 1,
         })).sort((a, b) => a.name.localeCompare(b.name)) || []
       );
+    } else if (field === 'Mesa') {
+      return meal.tableNumber || 'No especificada';
     }
     return '';
   };
@@ -100,7 +105,9 @@ const useOrderSummary = (meals) => {
         if (differences <= 3) {
           groupData.meals.push(meal);
           groupData.indices.push(index);
-          if (meal.payment?.name) groupData.payments.add(meal.payment.name);
+          if (meal.payment?.name || meal.paymentMethod?.name) {
+            groupData.payments.add(meal.payment?.name || meal.paymentMethod?.name);
+          }
           assigned = true;
           break;
         }
@@ -110,7 +117,7 @@ const useOrderSummary = (meals) => {
         mealGroups.set(key, {
           meals: [meal],
           indices: [index],
-          payments: new Set(meal.payment?.name ? [meal.payment.name] : []),
+          payments: new Set((meal.payment?.name || meal.paymentMethod?.name) ? [meal.payment?.name || meal.paymentMethod?.name] : []),
         });
       }
     });
@@ -162,7 +169,7 @@ const useOrderSummary = (meals) => {
     if (!meals || meals.length === 0) return {};
     return meals.reduce((acc, meal) => {
       const price = calculateMealPrice(meal);
-      const paymentMethod = meal?.payment?.name || 'No especificado';
+      const paymentMethod = meal.payment?.name || meal.paymentMethod?.name || 'No especificado';
       acc[paymentMethod] = (acc[paymentMethod] || 0) + price;
       return acc;
     }, {});
@@ -183,7 +190,6 @@ const useOrderSummary = (meals) => {
 // Componente para renderizar direcciones
 const AddressSummary = ({ commonAddressFields = {}, mealAddress, isCommon = false, globalCommonAddressFields = {} }) => {
   const renderAddressField = (field, value, addrType) => {
-    // Omitir addressType y phoneNumber en bloques si son comunes globalmente
     if ((field === 'address' || field === 'addressType' || field === 'phoneNumber') && globalCommonAddressFields[field] && !isCommon) {
       return null;
     }
@@ -218,7 +224,6 @@ const AddressSummary = ({ commonAddressFields = {}, mealAddress, isCommon = fals
     return null;
   };
 
-  // Usar mealAddress si está definido, de lo contrario, usar commonAddressFields
   const effectiveAddress = mealAddress || commonAddressFields;
   const effectiveAddressType = effectiveAddress?.addressType || '';
 
@@ -233,7 +238,7 @@ const AddressSummary = ({ commonAddressFields = {}, mealAddress, isCommon = fals
 };
 
 // Componente para renderizar campos de una comida
-const MealFields = ({ meal, commonFields }) => {
+const MealFields = ({ meal, commonFields, isWaiterView }) => {
   const hasSpecialRice = meal?.principle?.some(p => specialRiceOptions.includes(p.name));
 
   const fields = [];
@@ -293,20 +298,26 @@ const MealFields = ({ meal, commonFields }) => {
       });
     }
   }
-  // Renderizar notas solo una vez
   if (commonFields.has('all')) {
     fields.push(<p key="notes" className="text-xs sm:text-sm text-gray-600">Notas: {formatNotes(meal.notes) || 'Ninguna'}</p>);
+  }
+  if ((commonFields.has('Mesa') || commonFields.has('all')) && isWaiterView && meal.tableNumber) {
+    fields.push(<p key="table" className="text-xs sm:text-sm text-gray-600">Mesa: {meal.tableNumber}</p>);
   }
   return fields;
 };
 
 // Componente para un grupo de comidas
-const MealGroup = ({ group, globalCommonFields, globalCommonAddressFields }) => {
+const MealGroup = ({ group, globalCommonFields, globalCommonAddressFields, isWaiterView, isTableOrder, calculateTotal }) => {
   const baseMeal = group.meals[0];
   const count = group.meals.length;
-  const totalPrice = group.meals.reduce((sum, m) => sum + calculateMealPrice(m), 0);
-  const paymentNames = Array.from(group.payments).filter(name => name && name !== 'No especificado');
-  const paymentText = paymentNames.length > 0 ? `(${paymentNames.join(' y ')})` : '(No especificado)';
+  // Usar calculateTotal para el total del grupo en la vista de mesera con isTableOrder=true
+  const groupTotal = isWaiterView && isTableOrder ? calculateTotal(group.meals) : group.meals.reduce((sum, meal) => sum + calculateMealPrice(meal), 0);
+  // Forzar 'No especificado' si no hay método de pago válido, según el ejemplo
+  const paymentNames = Array.from(group.payments).filter(name => name && name !== 'No especificado').length > 0
+    ? Array.from(group.payments).filter(name => name && name !== 'No especificado')
+    : ['No especificado'];
+  const paymentText = `(${paymentNames.join(' y ')})`;
   const hasDifferences = group.identicalGroups.length > 1 || group.identicalGroups.some(ig => ig.meals.length < group.meals.length);
 
   const getFieldValue = (meal, field) => {
@@ -328,12 +339,12 @@ const MealGroup = ({ group, globalCommonFields, globalCommonAddressFields }) => 
     } else if (field === 'Cubiertos') {
       return `Cubiertos: ${meal.cutlery ? 'Sí' : 'No'}`;
     } else if (field === 'Acompañamientos') {
-    const hasSpecialRice = meal?.principle?.some(p => specialRiceOptions.includes(p.name));
-    return `Acompañamientos: ${hasSpecialRice ? 'Ya incluidos' : meal.sides?.length > 0 ? meal.sides.map(s => cleanText(s.name)).join(', ') : 'Ninguno'}`;
+      const hasSpecialRice = meal?.principle?.some(p => specialRiceOptions.includes(p.name));
+      return `Acompañamientos: ${hasSpecialRice ? 'Ya incluidos' : meal.sides?.length > 0 ? meal.sides.map(s => cleanText(s.name)).join(', ') : 'Ninguno'}`;
     } else if (field === 'Hora') {
       return meal.time?.name ? isValidTime(meal.time) ? cleanText(meal.time.name) : 'Lo más rápido' : null;
     } else if (field === 'Pago') {
-      return meal.payment?.name || 'No especificado';
+      return meal.payment?.name || meal.paymentMethod?.name || 'No especificado';
     } else if (field === 'Adiciones') {
       return meal.additions?.length > 0
         ? meal.additions.map((a, aIdx) => (
@@ -348,6 +359,8 @@ const MealGroup = ({ group, globalCommonFields, globalCommonAddressFields }) => 
           globalCommonAddressFields={globalCommonAddressFields}
         />
       ) : null;
+    } else if (field === 'Mesa') {
+      return meal.tableNumber || 'No especificada';
     }
     return null;
   };
@@ -355,9 +368,9 @@ const MealGroup = ({ group, globalCommonFields, globalCommonAddressFields }) => 
   return (
     <div className="pb-2">
       <h3 className="font-medium text-gray-800 text-xs sm:text-sm">
-        🍽 {count > 1 ? `${count} Almuerzos iguales – $${totalPrice.toLocaleString('es-CO')} ${paymentText}` : `${count} Almuerzo – $${totalPrice.toLocaleString('es-CO')} ${paymentText}`}
+        🍽 {count > 1 ? `${count} Almuerzos iguales – $${groupTotal.toLocaleString('es-CO')} ${paymentText}` : `${count} Almuerzo – $${groupTotal.toLocaleString('es-CO')} ${paymentText}`}
       </h3>
-      <MealFields meal={baseMeal} commonFields={count > 1 ? group.commonFieldsInGroup : new Set(['all'])} />
+      <MealFields meal={baseMeal} commonFields={count > 1 ? group.commonFieldsInGroup : new Set(['all', 'Mesa'])} isWaiterView={isWaiterView} />
       {count === 1 && !globalCommonFields.has('Dirección') && baseMeal.address && (
         <AddressSummary
           mealAddress={baseMeal.address}
@@ -386,12 +399,11 @@ const MealGroup = ({ group, globalCommonFields, globalCommonAddressFields }) => 
                 const formattedValue = getFieldValue(meal, field);
                 if (!formattedValue) return null;
                 if (field === 'Dirección') {
-                  // Renderizar solo los campos de dirección que no son comunes en el grupo
                   return (
                     <div key={dIdx} className="text-xs sm:text-sm text-gray-600 ml-2">
                       {addressFields.map((addrField, addrIdx) => {
                         const isCommonInGroup = group.commonAddressFieldsInGroup[addrField];
-                        if (isCommonInGroup) return null; // No renderizar si es común
+                        if (isCommonInGroup) return null;
                         const value = meal.address?.[addrField];
                         const addrType = meal.address?.addressType || '';
                         if (addrField === 'address' && value) {
@@ -436,7 +448,7 @@ const MealGroup = ({ group, globalCommonFields, globalCommonAddressFields }) => 
 };
 
 // Componente para resumen de pagos
-const PaymentSummary = ({ paymentSummary, total }) => {
+const PaymentSummary = ({ paymentSummary, total, isWaiterView, isTableOrder }) => {
   const allCashOrUnspecified = Object.keys(paymentSummary).every(method => method === 'Efectivo' || method === 'No especificado');
 
   return (
@@ -444,34 +456,38 @@ const PaymentSummary = ({ paymentSummary, total }) => {
       <p className="text-sm sm:text-base font-bold text-right text-gray-800">
         Total: <span className="text-green-600">${total.toLocaleString('es-CO')}</span>
       </p>
-      {allCashOrUnspecified ? (
+      {!isWaiterView && !isTableOrder && (
         <>
-          <p className="font-medium text-gray-800 text-xs sm:text-sm">Paga en efectivo al momento de la entrega.</p>
-          <p className="text-xs sm:text-sm text-gray-600">💵 Efectivo: ${total.toLocaleString('es-CO')}</p>
-          <p className="text-xs sm:text-sm text-gray-600">
-            Si no tienes efectivo, puedes transferir por Nequi o DaviPlata al número: 313 850 5647.
-          </p>
-        </>
-      ) : (
-        <>
-          <p className="font-medium text-gray-800 text-xs sm:text-sm">💳 Instrucciones de pago:</p>
-          <p className="text-xs sm:text-sm text-gray-600">Envía al número 313 850 5647 (Nequi o DaviPlata):</p>
-          {Object.entries(paymentSummary).map(([method, amount]) => (
-            method !== 'No especificado' && amount > 0 && (
-              <p key={method} className="text-xs sm:text-sm text-gray-600">
-                🔹 {method}: ${amount.toLocaleString('es-CO')}
+          {allCashOrUnspecified ? (
+            <>
+              <p className="font-medium text-gray-800 text-xs sm:text-sm">Paga en efectivo al momento de la entrega.</p>
+              <p className="text-xs sm:text-sm text-gray-600">💵 Efectivo: ${total.toLocaleString('es-CO')}</p>
+              <p className="text-xs sm:text-sm text-gray-600">
+                Si no tienes efectivo, puedes transferir por Nequi o DaviPlata al número: 313 850 5647.
               </p>
-            )
-          ))}
+            </>
+          ) : (
+            <>
+              <p className="font-medium text-gray-800 text-xs sm:text-sm">💳 Instrucciones de pago:</p>
+              <p className="text-xs sm:text-sm text-gray-600">Envía al número 313 850 5647 (Nequi o DaviPlata):</p>
+              {Object.entries(paymentSummary).map(([method, amount]) => (
+                method !== 'No especificado' && amount > 0 && (
+                  <p key={method} className="text-xs sm:text-sm text-gray-600">
+                    🔹 {method}: ${amount.toLocaleString('es-CO')}
+                  </p>
+                )
+              ))}
+            </>
+          )}
+          <p className="font-medium text-gray-800 text-xs sm:text-sm">💰 Total: ${total.toLocaleString('es-CO')}</p>
         </>
       )}
-      <p className="font-medium text-gray-800 text-xs sm:text-sm">💰 Total: ${total.toLocaleString('es-CO')}</p>
     </div>
   );
 };
 
 // Componente principal
-const OrderSummary = ({ meals, onSendOrder, calculateTotal }) => {
+const OrderSummary = ({ meals, onSendOrder, calculateTotal, isTableOrder = false, isWaiterView = false, statusClass = '' }) => {
   const {
     groupedMeals,
     total,
@@ -479,12 +495,16 @@ const OrderSummary = ({ meals, onSendOrder, calculateTotal }) => {
     commonDeliveryTime,
     commonAddressFields,
     globalCommonFields,
-  } = useOrderSummary(meals);
+  } = useOrderSummary(meals, isWaiterView);
+
+  const effectiveTotal = isTableOrder ? calculateTotal(meals) : total;
+
+  const baseClass = isWaiterView ? `${statusClass} p-4 rounded-lg shadow-md` : 'bg-white p-3 rounded-lg shadow-lg mt-6 leading-relaxed';
 
   return (
-    <div className="bg-white p-3 rounded-lg shadow-lg mt-6 leading-relaxed">
+    <div className={baseClass}>
       <h2 className="text-lg font-bold text-gray-800 mb-4">✅ Resumen del Pedido</h2>
-      {meals.length === 0 ? (
+      {meals?.length === 0 ? (
         <div>
           <p className="text-sm text-gray-600">No hay almuerzos en tu pedido.</p>
           <p className="text-base font-bold text-right mt-2 text-gray-800">
@@ -496,16 +516,19 @@ const OrderSummary = ({ meals, onSendOrder, calculateTotal }) => {
           <p className="text-sm text-gray-700">
             <span className="font-medium text-gray-800">🍽 {meals.length} almuerzos en total</span>
           </p>
-          {groupedMeals.map((group, index) => (
-            group.meals.length > 1 && (
-              <p key={`group-${index}`} className="text-sm text-gray-700">
-                * {group.meals.length} almuerzos iguales
-              </p>
-            )
-          ))}
-          <p className="text-sm text-gray-700">
-            <span className="font-medium text-gray-800">💰 Total: ${total.toLocaleString('es-CO')}</span>
-          </p>
+          {!isWaiterView &&
+            groupedMeals.map((group, index) => (
+              group.meals.length > 1 && (
+                <p key={`group-${index}`} className="text-sm text-gray-700">
+                  * {group.meals.length} almuerzos iguales
+                </p>
+              )
+            ))}
+          {!isWaiterView && (
+            <p className="text-sm text-gray-700">
+              <span className="font-medium text-gray-800">💰 Total: ${effectiveTotal.toLocaleString('es-CO')}</span>
+            </p>
+          )}
           <hr className="border-t border-gray-300 my-2" />
           {groupedMeals.map((group, index) => (
             <MealGroup
@@ -513,11 +536,14 @@ const OrderSummary = ({ meals, onSendOrder, calculateTotal }) => {
               group={group}
               globalCommonFields={globalCommonFields}
               globalCommonAddressFields={commonAddressFields}
+              isWaiterView={isWaiterView}
+              isTableOrder={isTableOrder}
+              calculateTotal={calculateTotal}
             />
           ))}
-          <hr className="border-t border-gray-300 my-2" />
-          {meals.length > 0 && (
+          {!isTableOrder && meals.length > 0 && (
             <div className="text-sm text-gray-600">
+              <hr className="border-t border-gray-300 my-2" />
               {commonDeliveryTime && (
                 <p className="font-medium text-gray-800">
                   🕒 Entrega: {isValidTime(meals[0].time) ? cleanText(meals[0].time.name) : 'Lo más rápido'}
@@ -527,19 +553,23 @@ const OrderSummary = ({ meals, onSendOrder, calculateTotal }) => {
                 <AddressSummary commonAddressFields={commonAddressFields} isCommon={true} globalCommonAddressFields={commonAddressFields} />
               )}
               <hr className="border-t border-gray-300 my-2" />
-              <p className="text-sm text-gray-600">🚚 Estimado: 25-30 min (10-15 si están cerca).</p>
+              {!isWaiterView && (
+                <p className="text-sm text-gray-600">🚚 Estimado: 25-30 min (10-15 si están cerca).</p>
+              )}
             </div>
           )}
-          <PaymentSummary paymentSummary={paymentSummary} total={total} />
-          <button
-            onClick={onSendOrder}
-            disabled={!meals || meals.length === 0}
-            className={`w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 rounded-lg mt-2 transition-colors text-sm ${
-              !meals || meals.length === 0 ? 'opacity-50 cursor-not-allowed' : ''
-            }`}
-          >
-            Enviar Pedido por WhatsApp
-          </button>
+          <PaymentSummary paymentSummary={paymentSummary} total={effectiveTotal} isWaiterView={isWaiterView} isTableOrder={isTableOrder} />
+          {onSendOrder && (
+            <button
+              onClick={onSendOrder}
+              disabled={!meals || meals.length === 0}
+              className={`w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 rounded-lg mt-2 transition-colors text-sm ${
+                !meals || meals.length === 0 ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+            >
+              {isTableOrder && !isWaiterView ? 'Guardar Pedido' : 'Enviar Pedido por WhatsApp'}
+            </button>
+          )}
         </div>
       )}
     </div>
