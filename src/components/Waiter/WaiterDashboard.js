@@ -1,4 +1,4 @@
-// src/components/Waiter/WaiterDashboard.js
+//src/components/Waiter/WaiterDashboard.js
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../Auth/AuthProvider';
@@ -13,15 +13,8 @@ import ErrorMessage from '../ErrorMessage';
 import SuccessMessage from '../SuccessMessage';
 import OptionSelector from '../OptionSelector';
 import { initializeMealData, handleMealChange, addMeal, duplicateMeal, removeMeal } from '../../utils/MealLogic';
-import { calculateTotal } from '../../utils/MealCalculations';
-import {
-  initializeBreakfastData,
-  handleBreakfastChange,
-  addBreakfast,
-  duplicateBreakfast,
-  removeBreakfast,
-  calculateTotalBreakfastPrice
-} from '../../utils/BreakfastLogic';
+import { calculateTotal, calculateMealPrice } from '../../utils/MealCalculations';
+import { initializeBreakfastData, handleBreakfastChange, addBreakfast, duplicateBreakfast, removeBreakfast, calculateBreakfastPrice, calculateTotalBreakfastPrice } from '../../utils/BreakfastLogic';
 
 const WaiterDashboard = () => {
   const { user, role, loading } = useAuth();
@@ -65,14 +58,11 @@ const WaiterDashboard = () => {
   });
   const [timeRemaining, setTimeRemaining] = useState('');
 
-  // ---------- UTIL: normaliza cualquier estructura de método de pago a un string ----------
-  const normalizePayment = (val) => {
-    if (!val) return '';
-    if (typeof val === 'string') return val.trim();
-    if (typeof val === 'object') {
-      return (val.name || val.label || val.value || val.method || '').toString().trim();
-    }
-    return '';
+  // Helper: normaliza el nombre del método de pago (acepta string u objeto {name/label/value})
+  const getMethodName = (opt) => {
+    if (!opt) return '';
+    if (typeof opt === 'string') return opt;
+    return (opt.name || opt.label || opt.value || '').toString();
   };
 
   useEffect(() => {
@@ -90,7 +80,7 @@ const WaiterDashboard = () => {
   }, [user, loading, role, navigate]);
 
   useEffect(() => {
-    const collectionsArr = [
+    const collections = [
       'soups', 'soupReplacements', 'principles', 'proteins', 'drinks', 'sides', 'additions', 'paymentMethods',
       'breakfastEggs', 'breakfastBroths', 'breakfastRiceBread', 'breakfastDrinks', 'breakfastAdditions',
       'breakfastTypes', 'breakfastProteins', 'breakfastTimes'
@@ -100,7 +90,7 @@ const WaiterDashboard = () => {
       setBreakfastEggs, setBreakfastBroths, setBreakfastRiceBread, setBreakfastDrinks, setBreakfastAdditions,
       setBreakfastTypes, setBreakfastProteins, setBreakfastTimes
     ];
-    const unsubscribers = collectionsArr.map((col, index) => onSnapshot(collection(db, col), (snapshot) => {
+    const unsubscribers = collections.map((col, index) => onSnapshot(collection(db, col), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setters[index](data);
       if (process.env.NODE_ENV === 'development') console.log(`Updated ${col}:`, data);
@@ -141,7 +131,7 @@ const WaiterDashboard = () => {
 
     const breakfastOrdersUnsubscribe = onSnapshot(collection(db, 'breakfastOrders'), (snapshot) => {
       const breakfastOrders = snapshot.docs
-        .map(docu => ({ id: docu.id, ...docu.data(), type: 'breakfast' }))
+        .map(doc => ({ id: doc.id, ...doc.data(), type: 'breakfast' }))
         .filter(order => order.userId === user?.uid)
         .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
       setOrders(prev => [...prev.filter(order => order.type !== 'breakfast'), ...breakfastOrders]);
@@ -150,7 +140,7 @@ const WaiterDashboard = () => {
 
     const ordersUnsubscribe = onSnapshot(collection(db, 'tableOrders'), (snapshot) => {
       const orderData = snapshot.docs
-        .map(docu => ({ id: docu.id, ...docu.data(), type: 'lunch' }))
+        .map(doc => ({ id: doc.id, ...doc.data(), type: 'lunch' }))
         .filter(order => order.userId === user?.uid)
         .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
       setOrders(prev => [...prev.filter(order => order.type !== 'lunch'), ...orderData]);
@@ -194,7 +184,7 @@ const WaiterDashboard = () => {
     };
 
     updateMenuTypeAndTime();
-    const interval = setInterval(updateMenuTypeAndTime, 60000);
+    const interval = setInterval(updateMenuTypeAndTime, 60000); // Update every minute
     return () => clearInterval(interval);
   }, [schedules]);
 
@@ -213,10 +203,9 @@ const WaiterDashboard = () => {
   }, [successMessage]);
 
   const handleSendOrder = async () => {
-    let incompleteMealIdx = null;
-    let incompleteSlideIdx = null;
+    let incompleteMealIndex = null;
+    let incompleteSlideIndex = null;
     let firstMissingField = '';
-
     for (let i = 0; i < meals.length; i++) {
       const meal = meals[i];
       const isCompleteRice = Array.isArray(meal?.principle) && meal.principle.some(p => ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'].includes(p.name));
@@ -238,8 +227,7 @@ const WaiterDashboard = () => {
       if (!meal?.drink) missing.push('Bebida');
       if (!isCompleteRice && (!meal?.sides || meal.sides.length === 0)) missing.push('Acompañamientos');
       if (!meal?.tableNumber) missing.push('Mesa');
-      // <-- aceptar payment o paymentMethod
-      if (!meal?.paymentMethod && !meal?.payment) missing.push('Método de pago');
+      if (!meal?.paymentMethod) missing.push('Método de pago');
       if (!meal?.orderType) missing.push('Tipo de pedido');
 
       if (missing.length > 0) {
@@ -247,24 +235,24 @@ const WaiterDashboard = () => {
           console.log(`Meal ${i + 1} is incomplete. Missing fields:`, missing);
           console.log(`Meal ${i + 1} data:`, meal);
         }
-        incompleteMealIdx = i;
+        incompleteMealIndex = i;
         firstMissingField = missing[0];
-        incompleteSlideIdx = slideMap[firstMissingField] || 0;
+        incompleteSlideIndex = slideMap[firstMissingField] || 0;
         break;
       }
     }
 
-    if (incompleteMealIdx !== null) {
-      setIncompleteMealIndex(incompleteMealIdx);
-      setIncompleteSlideIndex(incompleteSlideIdx);
-      setErrorMessage(`Por favor, completa el campo "${firstMissingField}" para el Almuerzo #${incompleteMealIdx + 1}.`);
+    if (incompleteMealIndex !== null) {
+      setIncompleteMealIndex(incompleteMealIndex);
+      setIncompleteSlideIndex(incompleteSlideIndex);
+      setErrorMessage(`Por favor, completa el campo "${firstMissingField}" para el Almuerzo #${incompleteMealIndex + 1}.`);
       setTimeout(() => {
-        const element = document.getElementById(`meal-item-${incompleteMealIdx}`);
+        const element = document.getElementById(`meal-item-${incompleteMealIndex}`);
         if (element) {
           element.scrollIntoView({ behavior: 'smooth', block: 'center' });
           element.classList.add('highlight-incomplete');
           setTimeout(() => element.classList.remove('highlight-incomplete'), 3000);
-          element.dispatchEvent(new CustomEvent('updateSlide', { detail: { slideIndex: incompleteSlideIdx } }));
+          element.dispatchEvent(new CustomEvent('updateSlide', { detail: { slideIndex: incompleteSlideIndex } }));
         }
       }, 100);
       return;
@@ -273,9 +261,10 @@ const WaiterDashboard = () => {
     setErrorMessage(null);
     setIsLoading(true);
     try {
-      const mappedMeals = meals.map(meal => {
-        const pm = normalizePayment(meal.payment || meal.paymentMethod);
-        return {
+      const order = {
+        userId: user.uid,
+        userEmail: user.email || `waiter_${user.uid}@example.com`,
+        meals: meals.map(meal => ({
           soup: meal.soup ? { name: meal.soup.name } : null,
           soupReplacement: meal.soupReplacement ? { name: meal.soupReplacement.name, replacement: meal.soupReplacement.replacement || '' } : null,
           principle: Array.isArray(meal.principle) ? meal.principle.map(p => ({ name: p.name, replacement: p.replacement || '' })) : [],
@@ -292,24 +281,10 @@ const WaiterDashboard = () => {
             price: addition.price || 0,
           })) || [],
           tableNumber: meal.tableNumber || '',
-          // --- pago como string + objeto de compatibilidad ---
-          payment: pm || '',
-          paymentMethod: pm ? { name: pm } : null,
+          paymentMethod: meal.paymentMethod ? { name: meal.paymentMethod.name } : null,
           orderType: meal.orderType || '',
           notes: meal.notes || '',
-        };
-      });
-
-      const orderPaymentTop = (() => {
-        const uniques = [...new Set(mappedMeals.map(m => m.payment).filter(Boolean))];
-        return uniques.length === 1 ? uniques[0] : '';
-      })();
-
-      const order = {
-        userId: user.uid,
-        userEmail: user.email || `waiter_${user.uid}@example.com`,
-        meals: mappedMeals,
-        payment: orderPaymentTop, // útil para totales/filtros rápidos
+        })),
         total: calculateTotal(meals, 3),
         status: 'Pendiente',
         createdAt: new Date(),
@@ -342,8 +317,7 @@ const WaiterDashboard = () => {
         if (step === 'tableNumber') {
           if (!breakfast.tableNumber) missing.push('tableNumber');
         } else if (step === 'paymentMethod') {
-          // aceptar payment o paymentMethod
-          if (!breakfast.payment && !breakfast.paymentMethod) missing.push('paymentMethod');
+          if (!breakfast.paymentMethod && !breakfast.payment) missing.push('paymentMethod');
         } else if (step === 'orderType') {
           if (!breakfast.orderType) missing.push('orderType');
         } else if (!breakfast[step]) {
@@ -390,39 +364,46 @@ const WaiterDashboard = () => {
     setIsLoading(true);
 
     try {
-      const mappedBreakfasts = breakfasts.map(b => {
-        const pm = normalizePayment(b.payment || b.paymentMethod);
-        return {
-          type: b.type ? { name: b.type.name } : null,
-          broth: b.broth ? { name: b.broth.name } : null,
-          eggs: b.eggs ? { name: b.eggs.name } : null,
-          riceBread: b.riceBread ? { name: b.riceBread.name } : null,
-          drink: b.drink ? { name: b.drink.name } : null,
-          protein: b.protein ? { name: b.protein.name } : null,
-          additions: b.additions?.map(addition => ({
-            name: addition.name,
-            quantity: addition.quantity || 1,
-          })) || [],
-          tableNumber: b.tableNumber || '',
-          // --- pago como string + objeto de compatibilidad ---
-          payment: pm || '',
-          paymentMethod: pm ? { name: pm } : null,
-          orderType: b.orderType || '',
-          notes: b.notes || '',
-        };
+      // Construir desglose de pagos por método para totales
+      const paymentsByMethodBreakfast = {};
+      breakfasts.forEach((b) => {
+        const method = getMethodName(b.paymentMethod || b.payment);
+        if (!method) return;
+        const amount = Number(calculateBreakfastPrice(b, 3) || 0);
+        paymentsByMethodBreakfast[method] = (paymentsByMethodBreakfast[method] || 0) + amount;
       });
-
-      const orderPaymentTop = (() => {
-        const uniques = [...new Set(mappedBreakfasts.map(m => m.payment).filter(Boolean))];
-        return uniques.length === 1 ? uniques[0] : '';
-      })();
+      const paymentsBreakfast = Object.entries(paymentsByMethodBreakfast).map(([method, amount]) => ({
+        method,
+        amount: Math.floor(amount),
+      }));
 
       const order = {
         userId: user.uid,
         userEmail: user.email || `waiter_${user.uid}@example.com`,
-        breakfasts: mappedBreakfasts,
-        payment: orderPaymentTop, // útil para totales/filtros rápidos
+        breakfasts: breakfasts.map(breakfast => ({
+          type: breakfast.type ? { name: breakfast.type.name } : null,
+          broth: breakfast.broth ? { name: breakfast.broth.name } : null,
+          eggs: breakfast.eggs ? { name: breakfast.eggs.name } : null,
+          riceBread: breakfast.riceBread ? { name: breakfast.riceBread.name } : null,
+          drink: breakfast.drink ? { name: breakfast.drink.name } : null,
+          protein: breakfast.protein ? { name: breakfast.protein.name } : null,
+          additions: breakfast.additions?.map(addition => ({
+            name: addition.name,
+            quantity: addition.quantity || 1,
+          })) || [],
+          tableNumber: breakfast.tableNumber || '',
+          // Normaliza y guarda ambos por compatibilidad
+          paymentMethod: (breakfast.paymentMethod || breakfast.payment)
+            ? { name: getMethodName(breakfast.paymentMethod || breakfast.payment) }
+            : null,
+          payment: (breakfast.payment || breakfast.paymentMethod)
+            ? { name: getMethodName(breakfast.payment || breakfast.paymentMethod) }
+            : null,
+          orderType: breakfast.orderType || '',
+          notes: breakfast.notes || '',
+        })),
         total: calculateTotalBreakfastPrice(breakfasts, 3, breakfastTypes),
+        payments: paymentsBreakfast,
         status: 'Pendiente',
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -482,9 +463,7 @@ const WaiterDashboard = () => {
           drink: meal.drink || null,
           sides: meal.sides || [],
           additions: Array.isArray(meal.additions) ? meal.additions : [],
-          // --- aseguramos que el selector vea un objeto {name} aunque haya string guardado
-          paymentMethod: meal.paymentMethod || (meal.payment ? { name: meal.payment } : null),
-          payment: meal.payment || normalizePayment(meal.paymentMethod),
+          paymentMethod: meal.paymentMethod || null,
           tableNumber: meal.tableNumber || '',
           orderType: meal.orderType || '',
           notes: meal.notes || '',
@@ -497,6 +476,10 @@ const WaiterDashboard = () => {
       setEditingOrder(initializedOrder);
       if (process.env.NODE_ENV === 'development') {
         console.log('[WaiterDashboard] Editing lunch order:', initializedOrder);
+        console.log('[WaiterDashboard] Meals count:', initializedOrder.meals.length);
+        console.log('[WaiterDashboard] Soup replacement:', initializedOrder.meals[0]?.soupReplacement);
+        console.log('[WaiterDashboard] Principle replacement:', initializedOrder.meals[0]?.principle);
+        console.log('[WaiterDashboard] Additions for first meal:', initializedOrder.meals[0]?.additions);
       }
     } else if (order.type === 'breakfast') {
       const initializedOrder = {
@@ -510,9 +493,7 @@ const WaiterDashboard = () => {
           protein: breakfast.protein || null,
           additions: Array.isArray(breakfast.additions) ? breakfast.additions : [],
           tableNumber: breakfast.tableNumber || '',
-          // --- idem
-          paymentMethod: breakfast.paymentMethod || (breakfast.payment ? { name: breakfast.payment } : null),
-          payment: breakfast.payment || normalizePayment(breakfast.paymentMethod),
+          paymentMethod: breakfast.paymentMethod || breakfast.payment || null,
           orderType: breakfast.orderType || '',
           notes: breakfast.notes || '',
         })),
@@ -520,14 +501,14 @@ const WaiterDashboard = () => {
       setEditingOrder(initializedOrder);
       if (process.env.NODE_ENV === 'development') {
         console.log('[WaiterDashboard] Editing breakfast order:', initializedOrder);
+        console.log('[WaiterDashboard] Breakfasts count:', initializedOrder.breakfasts.length);
+        console.log('[WaiterDashboard] Additions for first breakfast:', initializedOrder.breakfasts[0]?.additions);
       }
     }
     setShowMenu(null);
   };
 
   const handleFormChange = (index, field, value) => {
-    if (!editingOrder) return;
-
     if (editingOrder.type === 'lunch') {
       if (field === 'total' && index === -1) {
         setEditingOrder(prev => ({ ...prev, total: parseFloat(value) || 0 }));
@@ -538,9 +519,6 @@ const WaiterDashboard = () => {
           newMeals[index] = { ...newMeals[index], [field]: value ? value : [] };
         } else if (field === 'soup' || field === 'soupReplacement' || field === 'principleReplacement' || field === 'protein' || field === 'drink' || field === 'paymentMethod') {
           newMeals[index] = { ...newMeals[index], [field]: value ? value : null };
-          if (field === 'paymentMethod') {
-            newMeals[index].payment = normalizePayment(value);
-          }
           if (field === 'soupReplacement' && value?.name === 'Remplazo por Sopa') {
             newMeals[index].showReplacementsState = { ...newMeals[index].showReplacementsState, soup: true };
           } else if (field === 'soupReplacement' || field === 'soup') {
@@ -572,9 +550,6 @@ const WaiterDashboard = () => {
           newBreakfasts[index] = { ...newBreakfasts[index], additions: value };
         } else {
           newBreakfasts[index] = { ...newBreakfasts[index], [field]: value ? value : null };
-          if (field === 'paymentMethod') {
-            newBreakfasts[index].payment = normalizePayment(value);
-          }
         }
         const updatedTotal = calculateTotalBreakfastPrice(newBreakfasts, 3, breakfastTypes);
         setEditingOrder(prev => ({ ...prev, breakfasts: newBreakfasts, total: updatedTotal }));
@@ -583,8 +558,6 @@ const WaiterDashboard = () => {
   };
 
   const handleSaveEdit = async () => {
-    if (!editingOrder) return;
-
     if (editingOrder.type === 'lunch') {
       for (const [index, meal] of editingOrder.meals.entries()) {
         const unconfiguredAdditions = meal.additions?.filter(
@@ -610,9 +583,8 @@ const WaiterDashboard = () => {
         setIsLoading(true);
         console.log('[WaiterDashboard] Saving edited lunch order:', editingOrder);
         const orderRef = doc(db, 'tableOrders', editingOrder.id);
-        const mappedMeals = editingOrder.meals.map(meal => {
-          const pm = normalizePayment(meal.payment || meal.paymentMethod);
-          return {
+        await updateDoc(orderRef, {
+          meals: editingOrder.meals.map(meal => ({
             soup: meal.soup ? { name: meal.soup.name } : null,
             soupReplacement: meal.soupReplacement ? { name: meal.soupReplacement.name, replacement: meal.soupReplacement.replacement || '' } : null,
             principle: Array.isArray(meal.principle) ? meal.principle.map(p => ({ name: p.name, replacement: p.replacement || '' })) : [],
@@ -629,25 +601,18 @@ const WaiterDashboard = () => {
               price: a.price || 0,
             })) : [],
             tableNumber: meal.tableNumber || '',
-            payment: pm || '',
-            paymentMethod: pm ? { name: pm } : null,
+            paymentMethod: meal.paymentMethod ? { name: meal.paymentMethod.name } : null,
             orderType: meal.orderType || '',
             notes: meal.notes || '',
-          };
-        });
-        const orderPaymentTop = (() => {
-          const uniques = [...new Set(mappedMeals.map(m => m.payment).filter(Boolean))];
-          return uniques.length === 1 ? uniques[0] : '';
-        })();
-
-        await updateDoc(orderRef, {
-          meals: mappedMeals,
-          payment: orderPaymentTop,
+          })),
           total: editingOrder.total !== undefined ? editingOrder.total : calculateTotal(editingOrder.meals, 3),
           updatedAt: new Date(),
         });
         setEditingOrder(null);
         setSuccessMessage(`Orden ${editingOrder.id.slice(0, 8)} actualizada con éxito`);
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`Orden ${editingOrder.id} actualizada con éxito`);
+        }
       } catch (error) {
         console.error('Error al guardar edición:', error);
         setErrorMessage(`Error al guardar los cambios: ${error.message}. Verifica tu rol y permisos.`);
@@ -662,7 +627,7 @@ const WaiterDashboard = () => {
         if (!breakfast.type?.name) missing.push('type');
         steps.forEach(step => {
           if (step === 'tableNumber' && !breakfast.tableNumber) missing.push('tableNumber');
-          else if (step === 'paymentMethod' && !breakfast.payment && !breakfast.paymentMethod) missing.push('paymentMethod');
+          else if (step === 'paymentMethod' && !breakfast.paymentMethod && !breakfast.payment) missing.push('paymentMethod');
           else if (step === 'orderType' && !breakfast.orderType) missing.push('orderType');
           else if (!breakfast[step]) missing.push(step);
         });
@@ -683,41 +648,33 @@ const WaiterDashboard = () => {
         setIsLoading(true);
         console.log('[WaiterDashboard] Saving edited breakfast order:', editingOrder);
         const orderRef = doc(db, 'breakfastOrders', editingOrder.id);
-
-        const mappedBreakfasts = editingOrder.breakfasts.map(b => {
-          const pm = normalizePayment(b.payment || b.paymentMethod);
-          return {
-            type: b.type ? { name: b.type.name } : null,
-            broth: b.broth ? { name: b.broth.name } : null,
-            eggs: b.eggs ? { name: b.eggs.name } : null,
-            riceBread: b.riceBread ? { name: b.riceBread.name } : null,
-            drink: b.drink ? { name: b.drink.name } : null,
-            protein: b.protein ? { name: b.protein.name } : null,
-            additions: b.additions?.map(addition => ({
+        await updateDoc(orderRef, {
+          breakfasts: editingOrder.breakfasts.map(breakfast => ({
+            type: breakfast.type ? { name: breakfast.type.name } : null,
+            broth: breakfast.broth ? { name: breakfast.broth.name } : null,
+            eggs: breakfast.eggs ? { name: breakfast.eggs.name } : null,
+            riceBread: breakfast.riceBread ? { name: breakfast.riceBread.name } : null,
+            drink: breakfast.drink ? { name: breakfast.drink.name } : null,
+            protein: breakfast.protein ? { name: breakfast.protein.name } : null,
+            additions: breakfast.additions?.map(addition => ({
               name: addition.name,
               quantity: addition.quantity || 1,
             })) || [],
-            tableNumber: b.tableNumber || '',
-            payment: pm || '',
-            paymentMethod: pm ? { name: pm } : null,
-            orderType: b.orderType || '',
-            notes: b.notes || '',
-          };
-        });
-
-        const orderPaymentTop = (() => {
-          const uniques = [...new Set(mappedBreakfasts.map(m => m.payment).filter(Boolean))];
-          return uniques.length === 1 ? uniques[0] : '';
-        })();
-
-        await updateDoc(orderRef, {
-          breakfasts: mappedBreakfasts,
-          payment: orderPaymentTop,
+            tableNumber: breakfast.tableNumber || '',
+            paymentMethod: (breakfast.paymentMethod || breakfast.payment)
+              ? { name: getMethodName(breakfast.paymentMethod || breakfast.payment) }
+              : null,
+            orderType: breakfast.orderType || '',
+            notes: breakfast.notes || '',
+          })),
           total: editingOrder.total !== undefined ? editingOrder.total : calculateTotalBreakfastPrice(editingOrder.breakfasts, 3, breakfastTypes),
           updatedAt: new Date(),
         });
         setEditingOrder(null);
         setSuccessMessage(`Orden ${editingOrder.id.slice(0, 8)} actualizada con éxito`);
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`Orden ${editingOrder.id} actualizada con éxito`);
+        }
       } catch (error) {
         console.error('Error al guardar edición:', error);
         setErrorMessage(`Error al guardar los cambios: ${error.message}. Verifica tu rol y permisos.`);

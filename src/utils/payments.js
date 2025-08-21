@@ -169,28 +169,67 @@ export const calcMethodTotalsAll = (orders = [], tableOrders = [], breakfastOrde
   const acc = {
     nequiTotal: 0,
     daviplataTotal: 0,
+    nequiPendiente: 0,
+    daviplatasPendiente: 0,
     cashSalon: 0,
     cashClientesSettled: 0,
     cashClientesPendiente: 0,
+    totalLiquidado: 0,
+    totalPendiente: 0,
+    totalDomicilios: 0,
+    totalSalon: 0
   };
 
   const accumulate = (list = []) => {
     for (const o of list) {
       const rows = extractOrderPayments(o);
-      let cash = 0, nequi = 0, davi = 0;
+      const isSalon = isSalonOrder(o);
+      
+      // Para cada método de pago en la orden
       for (const r of rows) {
         const amt = Math.floor(Number(r?.amount || 0)) || 0;
-        if (r.methodKey === 'cash') cash += amt;
-        else if (r.methodKey === 'nequi') nequi += amt;
-        else if (r.methodKey === 'daviplata') davi += amt;
-      }
-      acc.nequiTotal += nequi;
-      acc.daviplataTotal += davi;
+        if (amt <= 0) continue;
 
-      if (cash > 0) {
-        if (isSalonOrder(o)) acc.cashSalon += cash;
-        else if (isCashSettled(o)) acc.cashClientesSettled += cash;
-        else acc.cashClientesPendiente += cash;
+        if (isSalon) {
+          // Los pagos de salón siempre se suman al total
+          acc.totalSalon += amt;
+          if (r.methodKey === 'cash') acc.cashSalon += amt;
+          else if (r.methodKey === 'nequi') acc.nequiTotal += amt;
+          else if (r.methodKey === 'daviplata') acc.daviplataTotal += amt;
+          acc.totalLiquidado += amt;
+        } else {
+          // Para domicilios
+          acc.totalDomicilios += amt;
+          
+          // Depende del estado de liquidación
+          if (r.methodKey === 'cash') {
+            if (o?.settled || o?.paymentSettled?.cash) {
+              acc.cashClientesSettled += amt;
+              acc.totalLiquidado += amt;
+            } else {
+              acc.cashClientesPendiente += amt;
+              acc.totalPendiente += amt;
+            }
+          }
+          else if (r.methodKey === 'nequi') {
+            if (o?.settled || o?.paymentSettled?.nequi) {
+              acc.nequiTotal += amt;
+              acc.totalLiquidado += amt;
+            } else {
+              acc.nequiPendiente += amt;
+              acc.totalPendiente += amt;
+            }
+          }
+          else if (r.methodKey === 'daviplata') {
+            if (o?.settled || o?.paymentSettled?.daviplata) {
+              acc.daviplataTotal += amt;
+              acc.totalLiquidado += amt;
+            } else {
+              acc.daviplatasPendiente += amt;
+              acc.totalPendiente += amt;
+            }
+          }
+        }
       }
     }
   };
@@ -199,5 +238,7 @@ export const calcMethodTotalsAll = (orders = [], tableOrders = [], breakfastOrde
   accumulate(tableOrders);
   accumulate(breakfastOrders);
 
-  return { ...acc, cashCaja: acc.cashSalon + acc.cashClientesSettled };
+  acc.cashCaja = acc.cashSalon + acc.cashClientesSettled;
+  
+  return acc;
 };

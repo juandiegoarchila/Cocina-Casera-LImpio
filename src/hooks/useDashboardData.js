@@ -1,5 +1,5 @@
 // src/hooks/useDashboardData.js
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   collection,
   onSnapshot,
@@ -8,7 +8,7 @@ import {
   Timestamp,
   getDocs,
   addDoc,
-  orderBy, 
+  orderBy,
   updateDoc,
   doc,
   deleteDoc,
@@ -23,7 +23,10 @@ import {
 } from '../components/Admin/dashboardConstants';
 import { calcMethodTotalsAll } from '../utils/payments';
 
-// --- Helpers ---
+/* ============================
+   Helpers de fechas / formato
+   ============================ */
+
 const getDateRange = (rangeType, start, end) => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -59,44 +62,86 @@ const getDateRange = (rangeType, start, end) => {
   return { startDate, endDate };
 };
 
-// Normaliza fecha de docs con createdAt / timestamp / date
+// Normaliza fecha de docs con createdAt / timestamp / date → "YYYY-MM-DD"
 const getDocDateISO = (doc) => {
   const ts = doc?.createdAt || doc?.timestamp || doc?.date;
   const d = ts?.toDate ? ts.toDate() : (ts ? new Date(ts) : null);
   return d ? d.toISOString().split('T')[0] : null;
 };
 
-// ---------- NUEVOS HELPERS (agregación por tipo de venta) ----------
-const isBreakfastOrder = (o) =>
-  Boolean(
-    o?.isBreakfast ||
-    o?.meal === 'breakfast' ||
-    (Array.isArray(o?.breakfasts) && o.breakfasts.length > 0)
-  );
+/* ======================================
+   Normalización de servicio y de comida
+   ====================================== */
 
+const _asStr = (val) => {
+  if (typeof val === 'string') return val;
+  if (val && typeof val === 'object') {
+    return String(val.name ?? val.value ?? val.label ?? '').trim();
+  }
+  return '';
+};
+
+// ¿Es un pedido de desayuno?
+const isBreakfastOrder = (o) => {
+  // Señales directas
+  if (o?.isBreakfast) return true;
+  if (_asStr(o?.meal).toLowerCase() === 'breakfast') return true;
+  if (Array.isArray(o?.breakfasts) && o.breakfasts.length > 0) return true;
+
+  // Señales derivadas (por si la estructura varía)
+  const maybeBreakfastStrs = [
+    _asStr(o?.type),
+    _asStr(o?.category),
+    _asStr(o?.group),
+    _asStr(o?.tag),
+  ]
+    .concat(
+      Array.isArray(o?.items)
+        ? o.items.map((it) => _asStr(it?.category ?? it?.type))
+        : []
+    )
+    .join(' ')
+    .toLowerCase();
+
+  if (maybeBreakfastStrs.includes('desayun') || maybeBreakfastStrs.includes('breakfast')) return true;
+
+  return false;
+};
+
+// Devuelve 'mesa' | 'llevar' | 'domicilio' | null
 const normalizeServiceFromOrder = (o) => {
-  const v = (
-    o?.orderTypeNormalized ??
-    o?.serviceType ??
-    o?.orderType ??
-    o?.channel ??
-    o?.tipoPedido ??
-    o?.typeOfOrder ??
-    ''
-  ).toString().toLowerCase();
+  const candidates = [
+    o?.orderTypeNormalized,
+    o?.serviceType,
+    o?.orderType,
+    o?.channel,
+    o?.tipoPedido,
+    o?.typeOfOrder,
+    // anidados frecuentes
+    o?.meals?.[0]?.orderType,
+    o?.breakfasts?.[0]?.orderType,
+  ];
 
-  if (/mesa|table|sal[oó]n|dine/.test(v)) return 'mesa';
-  if (/llevar|para\s*llevar|take(?:-|\s)?away|to-?go|takeout/.test(v)) return 'llevar';
-  if (/domicil|deliver|env[ií]o/.test(v)) return 'domicilio';
+  for (const c of candidates) {
+    const v = _asStr(c).toLowerCase();
+    if (!v) continue;
+    if (/mesa|table|sal[oó]n|dine/.test(v)) return 'mesa';
+    if (/llevar|para\s*llevar|take(?:-|\s)?away|to-?go|takeout/.test(v)) return 'llevar';
+    if (/domicil|deliver|env[ií]o/.test(v)) return 'domicilio';
+  }
+
+  // Heurísticas
+  if (o?.tableNumber || o?.mesa || o?.table) return 'mesa';
+  if (o?.address?.address || o?.deliveryAddress) return 'domicilio';
+
   return null;
 };
 
+// Agregador genérico por tipo de venta (usa normalizadores)
 const buildSaleTypeBreakdown = (orders = []) => {
   const acc = {
-    // Domicilios
     domicilio_almuerzo: 0,
     domicilio_desayuno: 0,
-    // Salón
     mesa_almuerzo: 0,
     llevar_almuerzo: 0,
     mesa_desayuno: 0,
@@ -118,6 +163,10 @@ const buildSaleTypeBreakdown = (orders = []) => {
 
   return acc;
 };
+
+/* ============================
+   Hook principal
+   ============================ */
 
 export const useDashboardData = (
   db,
@@ -157,7 +206,6 @@ export const useDashboardData = (
     startOfDay = p5 || null;
     endOfDay = p6 || null;
     selectedDate = p7 || null;
-    // lo demás queda con defaults
   } else {
     // FIRMA ANTIGUA
     setError = p4;
@@ -169,7 +217,6 @@ export const useDashboardData = (
     ordersCustomStartDate = p10 ?? null;
     ordersCustomEndDate = p11 ?? null;
     selectedMonth = arguments.length >= 12 ? arguments[11] : null;
-    // Estos no existen en esa firma
     notify = null;
     startOfDay = null;
     endOfDay = null;
@@ -177,9 +224,11 @@ export const useDashboardData = (
   }
 
   const [loadingData, setLoadingData] = useState(true);
-  const [orders, setOrders] = useState([]);
-  const [tableOrders, setTableOrders] = useState([]);
-  const [breakfastOrders, setBreakfastOrders] = useState([]);
+  const [orders, setOrders] = useState([]);            // Domicilios almuerzo
+  const [tableOrders, setTableOrders] = useState([]);  // Salón (mesa/llevar) — puede haber desayuno/almuerzo
+  const [waiterOrders, setWaiterOrders] = useState([]); // Salón (mesa/llevar) creados por mesero
+  const [breakfastOrders, setBreakfastOrders] = useState([]); // deliveryBreakfastOrders
+  const [breakfastSalonOrders, setBreakfastSalonOrders] = useState([]); // ⬅️ desayunos de salón (colección 'breakfastOrders')
   const [users, setUsers] = useState([]);
 
   const [totals, setTotals] = useState({
@@ -189,14 +238,14 @@ export const useDashboardData = (
     daviplata: 0,
     nequi: 0,
     expenses: 0,
-    expensesByProvider: { total: 0, byProvider: {}, counts: {} }, // 👈 NUEVO
+    expensesByProvider: { total: 0, byProvider: {}, counts: {} },
     byCategory: {
       domiciliosAlmuerzo: 0,
       mesasAlmuerzo: 0,
-      llevarAlmuerzo: 0,       // 👈 NUEVO
+      llevarAlmuerzo: 0,
       domiciliosDesayuno: 0,
       mesasDesayuno: 0,
-      llevarDesayuno: 0,       // 👈 NUEVO
+      llevarDesayuno: 0,
     },
     grossIncome: 0,
     net: 0,
@@ -222,19 +271,29 @@ export const useDashboardData = (
   const initialLoadRefs = useRef({
     orders: false,
     tableOrders: false,
-    breakfastOrders: false,
+    waiterOrders: false,
+    breakfastOrders: false,          // delivery
+    breakfastSalonOrders: false,     // salón
     users: false,
     activity: false,
     ingresos: false,
     pedidosDiariosGuardados: false,
-    payments: false, // para gastos
+    payments: false,
   });
+
+  // Unificar todos los pedidos de salón (excepto desayunos de salón que tratamos aparte para prorrateo)
+  const salonOrders = useMemo(
+    () => [...tableOrders, ...waiterOrders],
+    [tableOrders, waiterOrders]
+  );
 
   const checkIfAllLoaded = () => {
     if (
       initialLoadRefs.current.orders &&
       initialLoadRefs.current.tableOrders &&
+      initialLoadRefs.current.waiterOrders &&
       initialLoadRefs.current.breakfastOrders &&
+      initialLoadRefs.current.breakfastSalonOrders &&
       initialLoadRefs.current.users &&
       initialLoadRefs.current.activity &&
       initialLoadRefs.current.ingresos &&
@@ -245,7 +304,9 @@ export const useDashboardData = (
     }
   };
 
-  // --- Sumas por categoría (robusto con normalización + detección desayuno/almuerzo) ---
+  /* ==========================================================
+     Sumas por categoría (usa normalización + detección robusta)
+     ========================================================== */
   useEffect(() => {
     const sum = {
       domiciliosAlmuerzo: 0,
@@ -256,32 +317,78 @@ export const useDashboardData = (
       llevarDesayuno: 0,
     };
 
-    // 1) Almuerzo: 'orders' (legacy: delivery de almuerzo)
+    // 1) Almuerzo — Domicilios: colección 'orders'
     sum.domiciliosAlmuerzo = orders.reduce((acc, o) => acc + Number(o.total || 0), 0);
 
-    // 2) Salón (y llevar) en 'tableOrders' — separar desayuno vs almuerzo
-    for (const t of tableOrders) {
+    // 2) Salón (mesa / llevar) en 'tableOrders' + 'waiterOrders' — puede haber desayuno/almuerzo
+    for (const t of salonOrders) {
       const amount = Number(t.total || 0);
       if (amount <= 0) continue;
 
-      const esDesayuno = isBreakfastOrder(t);           // ✅ detecta si esta orden de mesa es desayuno
-      const service = normalizeServiceFromOrder(t)      // ✅ 'mesa' | 'llevar' | 'domicilio' | null
-                      || 'mesa';                        //     default razonable en salón
+      const esDesayuno = isBreakfastOrder(t);
+      const service = normalizeServiceFromOrder(t) || 'mesa'; // por defecto, salón
 
       if (!esDesayuno) {
         if (service === 'mesa') sum.mesasAlmuerzo += amount;
         else if (service === 'llevar') sum.llevarAlmuerzo += amount;
-        else if (service === 'domicilio') sum.domiciliosAlmuerzo += amount; // por si llegara algo mal guardado
+        else if (service === 'domicilio') sum.domiciliosAlmuerzo += amount; // por si se guardó raro
         else sum.mesasAlmuerzo += amount; // fallback
       } else {
-        if (service === 'mesa') sum.mesasDesayuno += amount;
-        else if (service === 'llevar') sum.llevarDesayuno += amount;
-        else if (service === 'domicilio') sum.domiciliosDesayuno += amount;
-        else sum.mesasDesayuno += amount; // fallback
+        // NOTA: aquí NO sumamos desayunos de salón que vienen en colección 'breakfastOrders'
+        // porque los tratamos abajo con prorrateo por ítem.
+        if (t.__collection !== 'breakfastOrders') {
+          if (service === 'mesa') sum.mesasDesayuno += amount;
+          else if (service === 'llevar') sum.llevarDesayuno += amount;
+          else if (service === 'domicilio') sum.domiciliosDesayuno += amount;
+          else sum.mesasDesayuno += amount;
+        }
       }
     }
 
-    // 3) 'deliveryBreakfastOrders' — normalmente son domicilios, pero normalizamos por si hay mesa/llevar
+    // 2.5) Desayunos de salón (colección 'breakfastOrders'): prorratear por ítems
+    const sumBreakfastSalon = (ordersArr = []) => {
+      let mesa = 0;
+      let llevar = 0;
+      for (const o of ordersArr) {
+        const amount = Number(o.total || 0);
+        if (amount <= 0) continue;
+
+        const items = Array.isArray(o.breakfasts) ? o.breakfasts : [];
+        if (items.length === 0) {
+          // Fallback: usa el servicio al nivel de orden
+          const s = normalizeServiceFromOrder(o) || 'mesa';
+          if (s === 'mesa') mesa += amount;
+          else if (s === 'llevar') llevar += amount;
+          continue;
+        }
+
+        const isMesa = (v) => {
+          const s = _asStr(v).toLowerCase();
+          return /mesa|table|sal[oó]n|dine/.test(s);
+        };
+        const isLlevar = (v) => {
+          const s = _asStr(v).toLowerCase();
+          return /llevar|take(?:-|\s)?away|to-?go|takeout/.test(s);
+        };
+
+        const n = items.length;
+        const nMesa = items.filter(b => isMesa(b?.orderType)).length;
+        const nLlevar = items.filter(b => isLlevar(b?.orderType)).length;
+
+        // Reparte el total en proporción a cuántos ítems son mesa/llevar
+        if (n > 0) {
+          mesa += amount * (nMesa / n);
+          llevar += amount * (nLlevar / n);
+        }
+      }
+      return { mesa: Math.round(mesa), llevar: Math.round(llevar) };
+    };
+
+    const bSalon = sumBreakfastSalon(breakfastSalonOrders || []);
+    sum.mesasDesayuno += bSalon.mesa;
+    sum.llevarDesayuno += bSalon.llevar;
+
+    // 3) Desayunos delivery (deliveryBreakfastOrders) — normalizar por si hay mesa/llevar
     for (const b of breakfastOrders) {
       const amount = Number(b.total || 0);
       if (amount <= 0) continue;
@@ -292,41 +399,48 @@ export const useDashboardData = (
       if (service === 'mesa') sum.mesasDesayuno += amount;
       else if (service === 'llevar') sum.llevarDesayuno += amount;
       else if (service === 'domicilio' || (!service && hasAddr)) sum.domiciliosDesayuno += amount;
-      else sum.domiciliosDesayuno += amount; // fallback conservador
+      else sum.domiciliosDesayuno += amount; // conservador
     }
 
-    const gross =
-      sum.domiciliosAlmuerzo +
+    // Separar ingresos de salón y domicilios
+    const ingresosSalon = 
       sum.mesasAlmuerzo +
       sum.llevarAlmuerzo +
-      sum.domiciliosDesayuno +
       sum.mesasDesayuno +
       sum.llevarDesayuno;
 
-    setTotals(prev => ({
+    // Para domicilios, calcular total y liquidados separadamente
+    const { totalDomicilios, totalLiquidado: ingresosDomiciliosLiquidados } = calcMethodTotalsAll(orders);
+
+    // El ingreso bruto es la suma de todo lo liquidado más el total de salón
+    const gross = ingresosSalon + totalDomicilios;
+
+    setTotals((prev) => ({
       ...prev,
-      byCategory: sum,
+      byCategory: {
+        ...sum,
+        totalDomicilios,
+        ingresosSalon
+      },
       grossIncome: gross,
       net: Math.max(gross - (prev.expenses || 0), 0),
     }));
 
-    // Mantén este breakdown (ya usaba la normalización correcta)
-    const mixed = [...orders, ...tableOrders, ...breakfastOrders];
+    // Desglose adicional (si lo usas en UI)
+    const mixed = [...orders, ...salonOrders, ...breakfastOrders, ...breakfastSalonOrders];
     setSaleTypeBreakdown(buildSaleTypeBreakdown(mixed));
-  }, [orders, tableOrders, breakfastOrders]);
+  }, [orders, salonOrders, breakfastOrders, breakfastSalonOrders]);
 
-
-
-  // --- Suscripciones a Firestore ---
+  /* =========================
+     Suscripciones a Firestore
+     ========================= */
   useEffect(() => {
-    if (!db || !userId || !isAuthReady) {
-      return;
-    }
+    if (!db || !userId || !isAuthReady) return;
 
     setLoadingData(true);
     const unsubscribes = [];
 
-    // Orders
+    // Orders (domicilios almuerzo)
     const ordersCollectionRef = collection(db, 'orders');
     const unsubscribeOrders = onSnapshot(
       ordersCollectionRef,
@@ -349,7 +463,6 @@ export const useDashboardData = (
           else if (orderStatus === ORDER_STATUS.CANCELLED) newStatusCounts.Cancelled += 1;
         });
 
- 
         setStatusCounts(newStatusCounts);
 
         const pieChartData = [
@@ -365,7 +478,7 @@ export const useDashboardData = (
         }
       },
       (error) => {
-        setError(`Error al cargar pedidos: ${error.message}`);
+        setError?.(`Error al cargar pedidos: ${error.message}`);
         if (!initialLoadRefs.current.orders) {
           initialLoadRefs.current.orders = true;
           checkIfAllLoaded();
@@ -374,7 +487,7 @@ export const useDashboardData = (
     );
     unsubscribes.push(unsubscribeOrders);
 
-    // Table orders
+    // Table orders (salón)
     const tableOrdersCollectionRef = collection(db, 'tableOrders');
     const unsubscribeTableOrders = onSnapshot(
       tableOrdersCollectionRef,
@@ -388,7 +501,7 @@ export const useDashboardData = (
         }
       },
       (error) => {
-        setError(`Error al cargar pedidos de mesa: ${error.message}`);
+        setError?.(`Error al cargar pedidos de mesa: ${error.message}`);
         if (!initialLoadRefs.current.tableOrders) {
           initialLoadRefs.current.tableOrders = true;
           checkIfAllLoaded();
@@ -397,7 +510,29 @@ export const useDashboardData = (
     );
     unsubscribes.push(unsubscribeTableOrders);
 
-    // Breakfast orders (deliveryBreakfastOrders)
+    // Waiter orders (salón creados en alguna vista de mesero)
+    const waiterOrdersCollectionRef = collection(db, 'waiterOrders');
+    const unsubscribeWaiterOrders = onSnapshot(
+      waiterOrdersCollectionRef,
+      (snapshot) => {
+        const data = snapshot.docs.map((doc) => ({ id: doc.id, __collection: 'waiterOrders', ...doc.data() }));
+        setWaiterOrders(data);
+        if (!initialLoadRefs.current.waiterOrders) {
+          initialLoadRefs.current.waiterOrders = true;
+          checkIfAllLoaded();
+        }
+      },
+      (error) => {
+        setError?.(`Error al cargar pedidos del mesero: ${error.message}`);
+        if (!initialLoadRefs.current.waiterOrders) {
+          initialLoadRefs.current.waiterOrders = true;
+          checkIfAllLoaded();
+        }
+      }
+    );
+    unsubscribes.push(unsubscribeWaiterOrders);
+
+    // Breakfast orders DELIVERY (deliveryBreakfastOrders)
     const deliveryBreakfastOrdersRef = collection(db, 'deliveryBreakfastOrders');
     const unsubscribeBreakfastOrders = onSnapshot(
       deliveryBreakfastOrdersRef,
@@ -410,7 +545,7 @@ export const useDashboardData = (
         }
       },
       (error) => {
-        setError(`Error al cargar desayunos: ${error.message}`);
+        setError?.(`Error al cargar desayunos (delivery): ${error.message}`);
         if (!initialLoadRefs.current.breakfastOrders) {
           initialLoadRefs.current.breakfastOrders = true;
           checkIfAllLoaded();
@@ -418,6 +553,28 @@ export const useDashboardData = (
       }
     );
     unsubscribes.push(unsubscribeBreakfastOrders);
+
+    // Breakfast orders de SALÓN (colección 'breakfastOrders' creada en WaiterDashboard)
+    const breakfastSalonOrdersRef = collection(db, 'breakfastOrders');
+    const unsubscribeBreakfastSalonOrders = onSnapshot(
+      breakfastSalonOrdersRef,
+      (snapshot) => {
+        const data = snapshot.docs.map((doc) => ({ id: doc.id, __collection: 'breakfastOrders', ...doc.data() }));
+        setBreakfastSalonOrders(data);
+        if (!initialLoadRefs.current.breakfastSalonOrders) {
+          initialLoadRefs.current.breakfastSalonOrders = true;
+          checkIfAllLoaded();
+        }
+      },
+      (error) => {
+        setError?.(`Error al cargar desayunos de salón: ${error.message}`);
+        if (!initialLoadRefs.current.breakfastSalonOrders) {
+          initialLoadRefs.current.breakfastSalonOrders = true;
+          checkIfAllLoaded();
+        }
+      }
+    );
+    unsubscribes.push(unsubscribeBreakfastSalonOrders);
 
     // Users
     const usersCollectionRef = collection(db, 'users');
@@ -432,7 +589,7 @@ export const useDashboardData = (
         }
       },
       (error) => {
-        setError(`Error al cargar usuarios: ${error.message}`);
+        setError?.(`Error al cargar usuarios: ${error.message}`);
         if (!initialLoadRefs.current.users) {
           initialLoadRefs.current.users = true;
           checkIfAllLoaded();
@@ -460,7 +617,7 @@ export const useDashboardData = (
         }
       },
       (error) => {
-        setError(`Error al cargar actividad: ${error.message}`);
+        setError?.(`Error al cargar actividad: ${error.message}`);
         if (!initialLoadRefs.current.activity) {
           initialLoadRefs.current.activity = true;
           checkIfAllLoaded();
@@ -469,7 +626,7 @@ export const useDashboardData = (
     );
     unsubscribes.push(unsubscribeActivity);
 
-    // Ingresos
+    // Ingresos (históricos guardados)
     const ingresosColRef = collection(db, INGRESOS_COLLECTION);
     const unsubscribeIngresos = onSnapshot(
       ingresosColRef,
@@ -482,7 +639,7 @@ export const useDashboardData = (
         }
       },
       (error) => {
-        setError(`Error al cargar ingresos: ${error.message}`);
+        setError?.(`Error al cargar ingresos: ${error.message}`);
         if (!initialLoadRefs.current.ingresos) {
           initialLoadRefs.current.ingresos = true;
           checkIfAllLoaded();
@@ -491,7 +648,7 @@ export const useDashboardData = (
     );
     unsubscribes.push(unsubscribeIngresos);
 
-    // Pedidos diarios guardados
+    // Pedidos diarios guardados (conteos)
     const pedidosDiariosGuardadosColRef = collection(db, PEDIDOS_DIARIOS_GUARDADOS_COLLECTION);
     const unsubscribePedidosDiariosGuardados = onSnapshot(
       pedidosDiariosGuardadosColRef,
@@ -504,7 +661,7 @@ export const useDashboardData = (
         }
       },
       (error) => {
-        setError(`Error al cargar pedidos diarios guardados: ${error.message}`);
+        setError?.(`Error al cargar pedidos diarios guardados: ${error.message}`);
         if (!initialLoadRefs.current.pedidosDiariosGuardados) {
           initialLoadRefs.current.pedidosDiariosGuardados = true;
           checkIfAllLoaded();
@@ -513,7 +670,7 @@ export const useDashboardData = (
     );
     unsubscribes.push(unsubscribePedidosDiariosGuardados);
 
-    // Payments (gastos) — filtra por la FECHA seleccionada si startOfDay/endOfDay existen
+    // Payments (gastos) — opcionalmente filtrados por día seleccionado
     const paymentsQuery = (startOfDay && endOfDay)
       ? query(
           collection(db, 'payments'),
@@ -526,7 +683,7 @@ export const useDashboardData = (
     const unsubscribePayments = onSnapshot(
       paymentsQuery,
       (snapshot) => {
-        // Ignorar docs sin timestamp aún (serverTimestamp “en vuelo”)
+        // Ignorar docs sin timestamp (serverTimestamp pendiente)
         const items = snapshot.docs
           .map(d => ({ id: d.id, ...d.data() }))
           .filter(p => !!p.timestamp);
@@ -568,44 +725,37 @@ export const useDashboardData = (
     );
     unsubscribes.push(unsubscribePayments);
 
-
     return () => {
       unsubscribes.forEach((unsubscribe) => unsubscribe());
     };
-  }, [db, userId, isAuthReady]); // 👈 evita el bucle
+  }, [db, userId, isAuthReady]); // evita bucles
 
-  // --- Recalcular métodos de pago sumando orders + mesas + desayunos ---
+  /* ===========================================
+     Recalcular métodos de pago (orders + salón + desayunos)
+     =========================================== */
   useEffect(() => {
-    const m = calcMethodTotalsAll(orders, tableOrders, breakfastOrders);
+    const m = calcMethodTotalsAll(orders, salonOrders, [...breakfastOrders, ...breakfastSalonOrders]);
     setTotals((prev) => ({
       ...prev,
-      // Compatibilidad: mantenemos 'cash' pero ahora equivale a lo que realmente está en caja
-      cash: m.cashCaja,
-      // Nuevos campos explícitos (opcionales para UI):
+      cash: m.cashCaja, // compat: cash == caja real
       cashCaja: m.cashCaja,
       cashPendiente: m.cashClientesPendiente,
       daviplata: m.daviplataTotal,
       nequi: m.nequiTotal,
+      grossIncome: m.totalLiquidado, // Solo incluye pagos liquidados
+      net: Math.max(m.totalLiquidado - (prev.expenses || 0), 0)
     }));
-  }, [orders, tableOrders, breakfastOrders]);
+  }, [orders, salonOrders, breakfastOrders, breakfastSalonOrders]);
 
-  // --- Daily Sales Chart (categorías) ---
+  /* ==========================
+     Daily Sales Chart (categorías)
+     ========================== */
   useEffect(() => {
     if (!isAuthReady) return;
 
     const monthNames = [
-      'Enero',
-      'Febrero',
-      'Marzo',
-      'Abril',
-      'Mayo',
-      'Junio',
-      'Julio',
-      'Agosto',
-      'Septiembre',
-      'Octubre',
-      'Noviembre',
-      'Diciembre',
+      'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+      'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
     ];
     const { startDate: salesStartDate, endDate: salesEndDate } = getDateRange(
       salesFilterRange,
@@ -644,7 +794,7 @@ export const useDashboardData = (
         }
       });
 
-      // Realtime del mes actual
+      // Realtime del mes actual (simple: mesa+llevar juntos)
       const currentMonthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
       let rt = { da: 0, dd: 0, ma: 0, md: 0 };
 
@@ -653,24 +803,33 @@ export const useDashboardData = (
         if (d && d.getFullYear() === currentYear && d.getMonth() === today.getMonth())
           rt.da += Number(o.total || 0);
       });
-      tableOrders.forEach((t) => {
+      salonOrders.forEach((t) => {
         const d = t.createdAt?.toDate ? new Date(t.createdAt.toDate()) : null;
-        if (d && d.getFullYear() === currentYear && d.getMonth() === today.getMonth())
-          rt.ma += Number(t.total || 0);
+        if (d && d.getFullYear() === currentYear && d.getMonth() === today.getMonth()) {
+          const esDesayuno = isBreakfastOrder(t);
+          if (esDesayuno) rt.md += Number(t.total || 0);
+          else rt.ma += Number(t.total || 0);
+        }
+      });
+      // ⬇️ desayunos de salón (colección 'breakfastOrders') suman al bucket de "Mesas/Llevar Desayuno"
+      breakfastSalonOrders.forEach((b) => {
+        const d = b.createdAt?.toDate ? new Date(b.createdAt.toDate()) : null;
+        if (d && d.getFullYear() === currentYear && d.getMonth() === today.getMonth()) {
+          rt.md += Number(b.total || 0);
+        }
       });
       breakfastOrders.forEach((b) => {
         const dISO = getDocDateISO(b);
-        if (dISO) {
-          const d = new Date(dISO);
-          if (d.getFullYear() === currentYear && d.getMonth() === today.getMonth()) {
-            const amount = Number(b.total || 0);
-            const orderType = (b.breakfasts?.[0]?.orderType || b.orderType || '').toLowerCase();
-            const hasAddress = !!(b.address?.address || b.breakfasts?.[0]?.address?.address);
-            if (orderType === 'table' || orderType === 'takeaway') rt.md += amount;
-            else if (hasAddress) rt.dd += amount;
-            else rt.dd += amount;
-          }
-        }
+        if (!dISO) return;
+        const d = new Date(dISO);
+        if (d.getFullYear() !== currentYear || d.getMonth() !== today.getMonth()) return;
+
+        const amount = Number(b.total || 0);
+        const service = normalizeServiceFromOrder(b);
+        const hasAddr = !!(b.address?.address || b.breakfasts?.[0]?.address?.address);
+        if (service === 'mesa' || service === 'llevar') rt.md += amount;
+        else if (service === 'domicilio' || (!service && hasAddr)) rt.dd += amount;
+        else rt.dd += amount;
       });
 
       monthlySales[currentMonthKey]['Domicilios Almuerzo'] += rt.da;
@@ -714,45 +873,42 @@ export const useDashboardData = (
         }
       });
 
-      // Realtime del rango
+      // Realtime del rango (simple: mesa+llevar juntos)
       if (today >= salesStartDate && today <= salesEndDate) {
-        let da = 0,
-          dd = 0,
-          ma = 0,
-          md = 0;
+        let da = 0, dd = 0, ma = 0, md = 0;
 
         orders.forEach((o) => {
           const dISO = o.createdAt?.toDate ? new Date(o.createdAt.toDate()).toISOString().split('T')[0] : null;
-          if (
-            dISO &&
-            dISO >= salesStartDate.toISOString().split('T')[0] &&
-            dISO <= salesEndDate.toISOString().split('T')[0]
-          ) {
+          if (dISO && dISO >= salesStartDate.toISOString().split('T')[0] && dISO <= salesEndDate.toISOString().split('T')[0]) {
             da += Number(o.total || 0);
           }
         });
-        tableOrders.forEach((t) => {
+
+        salonOrders.forEach((t) => {
           const dISO = t.createdAt?.toDate ? new Date(t.createdAt.toDate()).toISOString().split('T')[0] : null;
-          if (
-            dISO &&
-            dISO >= salesStartDate.toISOString().split('T')[0] &&
-            dISO <= salesEndDate.toISOString().split('T')[0]
-          ) {
-            ma += Number(t.total || 0);
+          if (dISO && dISO >= salesStartDate.toISOString().split('T')[0] && dISO <= salesEndDate.toISOString().split('T')[0]) {
+            const esDesayuno = isBreakfastOrder(t);
+            if (esDesayuno) md += Number(t.total || 0);
+            else ma += Number(t.total || 0);
           }
         });
+
+        // ⬇️ desayunos de salón de 'breakfastOrders'
+        breakfastSalonOrders.forEach((b) => {
+          const dISO = b.createdAt?.toDate ? new Date(b.createdAt.toDate()).toISOString().split('T')[0] : getDocDateISO(b);
+          if (dISO && dISO >= salesStartDate.toISOString().split('T')[0] && dISO <= salesEndDate.toISOString().split('T')[0]) {
+            md += Number(b.total || 0);
+          }
+        });
+
         breakfastOrders.forEach((b) => {
           const dISO = getDocDateISO(b);
-          if (
-            dISO &&
-            dISO >= salesStartDate.toISOString().split('T')[0] &&
-            dISO <= salesEndDate.toISOString().split('T')[0]
-          ) {
+          if (dISO && dISO >= salesStartDate.toISOString().split('T')[0] && dISO <= salesEndDate.toISOString().split('T')[0]) {
             const amount = Number(b.total || 0);
-            const orderType = (b.breakfasts?.[0]?.orderType || b.orderType || '').toLowerCase();
-            const hasAddress = !!(b.address?.address || b.breakfasts?.[0]?.address?.address);
-            if (orderType === 'table' || orderType === 'takeaway') md += amount;
-            else if (hasAddress) dd += amount;
+            const service = normalizeServiceFromOrder(b);
+            const hasAddr = !!(b.address?.address || b.breakfasts?.[0]?.address?.address);
+            if (service === 'mesa' || service === 'llevar') md += amount;
+            else if (service === 'domicilio' || (!service && hasAddr)) dd += amount;
             else dd += amount;
           }
         });
@@ -779,8 +935,9 @@ export const useDashboardData = (
     setDailySalesChartData(chartData);
   }, [
     orders,
-    tableOrders,
+    salonOrders,
     breakfastOrders,
+    breakfastSalonOrders,
     ingresosData,
     salesFilterRange,
     salesCustomStartDate,
@@ -789,23 +946,15 @@ export const useDashboardData = (
     selectedMonth,
   ]);
 
-  // --- Daily Orders Chart (conteos) ---
+  /* ==========================
+     Daily Orders Chart (conteos)
+     ========================== */
   useEffect(() => {
     if (!isAuthReady) return;
 
     const monthNames = [
-      'Enero',
-      'Febrero',
-      'Marzo',
-      'Abril',
-      'Mayo',
-      'Junio',
-      'Julio',
-      'Agosto',
-      'Septiembre',
-      'Octubre',
-      'Noviembre',
-      'Diciembre',
+      'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+      'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
     ];
     const { startDate: ordersStartDate, endDate: ordersEndDate } = getDateRange(
       ordersFilterRange,
@@ -846,8 +995,16 @@ export const useDashboardData = (
         }
       });
 
-      tableOrders.forEach((tableOrder) => {
+      salonOrders.forEach((tableOrder) => {
         const d = tableOrder.createdAt?.toDate ? new Date(tableOrder.createdAt.toDate()) : null;
+        if (d && d.getFullYear() === currentYear && d.getMonth() === today.getMonth()) {
+          currentMonthRealtimeMesas++;
+        }
+      });
+
+      // ⬇️ contar órdenes de desayunos de salón como "Mesas"
+      breakfastSalonOrders.forEach((bo) => {
+        const d = bo.createdAt?.toDate ? new Date(bo.createdAt.toDate()) : null;
         if (d && d.getFullYear() === currentYear && d.getMonth() === today.getMonth()) {
           currentMonthRealtimeMesas++;
         }
@@ -903,13 +1060,21 @@ export const useDashboardData = (
           }
         });
 
-        tableOrders.forEach((tableOrder) => {
+        salonOrders.forEach((tableOrder) => {
           const tableOrderDate = tableOrder.createdAt?.toDate
             ? new Date(tableOrder.createdAt.toDate()).toISOString().split('T')[0]
             : null;
           if (tableOrderDate === todayISO) {
             currentDayRealtimeMesas++;
           }
+        });
+
+        // ⬇️ incluir desayuno de salón en el conteo de "Mesas"
+        breakfastSalonOrders.forEach((bo) => {
+          const dISO = bo.createdAt?.toDate
+            ? new Date(bo.createdAt.toDate()).toISOString().split('T')[0]
+            : getDocDateISO(bo);
+          if (dISO === todayISO) currentDayRealtimeMesas++;
         });
 
         if (ordersFilterRange === 'year' && selectedMonth) {
@@ -939,7 +1104,8 @@ export const useDashboardData = (
     setDailyOrdersChartData(chartData);
   }, [
     orders,
-    tableOrders,
+    salonOrders,
+    breakfastSalonOrders,
     pedidosDiariosGuardadosData,
     ordersFilterRange,
     ordersCustomStartDate,
@@ -948,32 +1114,47 @@ export const useDashboardData = (
     selectedMonth,
   ]);
 
-  // --- Guardar ingresos diarios (hoy) ---
+  /* ==========================================
+     Guardar ingresos diarios (HOY) — coherente
+     ========================================== */
   const handleSaveDailyIngresos = useCallback(async () => {
     setLoadingData(true);
     try {
       const today = new Date().toISOString().split('T')[0];
 
-      let da = 0,
-        dd = 0,
-        ma = 0,
-        md = 0;
+      let da = 0, dd = 0, ma = 0, md = 0;
 
+      // Domicilios almuerzo (orders)
       orders.forEach((o) => {
         const dISO = o.createdAt?.toDate ? new Date(o.createdAt.toDate()).toISOString().split('T')[0] : null;
         if (dISO === today) da += Number(o.total || 0);
       });
-      tableOrders.forEach((t) => {
+
+      // Salón (tableOrders + waiterOrders) — separar desayuno/almuerzo
+      salonOrders.forEach((t) => {
         const dISO = t.createdAt?.toDate ? new Date(t.createdAt.toDate()).toISOString().split('T')[0] : null;
-        if (dISO === today) ma += Number(t.total || 0);
+        if (dISO !== today) return;
+        const amount = Number(t.total || 0);
+        if (amount <= 0) return;
+        const esDesayuno = isBreakfastOrder(t);
+        if (esDesayuno) md += amount;
+        else ma += amount;
       });
+
+      // Desayunos de salón (colección 'breakfastOrders'): van al bucket de "Mesas/Llevar Desayuno"
+      breakfastSalonOrders.forEach((b) => {
+        const dISO = b.createdAt?.toDate ? new Date(b.createdAt.toDate()).toISOString().split('T')[0] : getDocDateISO(b);
+        if (dISO === today) md += Number(b.total || 0);
+      });
+
+      // Desayunos delivery
       breakfastOrders.forEach((b) => {
         if (getDocDateISO(b) === today) {
           const amount = Number(b.total || 0);
-          const orderType = (b.breakfasts?.[0]?.orderType || b.orderType || '').toLowerCase();
-          const hasAddress = !!(b.address?.address || b.breakfasts?.[0]?.address?.address);
-          if (orderType === 'table' || orderType === 'takeaway') md += amount;
-          else if (hasAddress) dd += amount;
+          const service = normalizeServiceFromOrder(b);
+          const hasAddr = !!(b.address?.address || b.breakfasts?.[0]?.address?.address);
+          if (service === 'mesa' || service === 'llevar') md += amount;
+          else if (service === 'domicilio' || (!service && hasAddr)) dd += amount;
           else dd += amount;
         }
       });
@@ -999,20 +1180,22 @@ export const useDashboardData = (
           ...payload,
           createdAt: serverTimestamp(),
         });
-        setSuccess(`Resumen de ingresos para ${today} guardado correctamente.`);
+        setSuccess?.(`Resumen de ingresos para ${today} guardado correctamente.`);
       } else {
         await updateDoc(doc(db, INGRESOS_COLLECTION, snap.docs[0].id), payload);
-        setSuccess(`Resumen de ingresos para ${today} actualizado correctamente.`);
+        setSuccess?.(`Resumen de ingresos para ${today} actualizado correctamente.`);
       }
     } catch (error) {
-      setError(`Error al guardar/actualizar resumen de ingresos: ${error.message}`);
+      setError?.(`Error al guardar/actualizar resumen de ingresos: ${error.message}`);
       console.error('Error al guardar ingresos diarios:', error);
     } finally {
       setLoadingData(false);
     }
-  }, [db, orders, tableOrders, breakfastOrders, setSuccess, setError]);
+  }, [db, orders, salonOrders, breakfastOrders, breakfastSalonOrders, setSuccess, setError]);
 
-  // --- Cierre automático diario (ayer) ---
+  /* ===================================
+     Cierre automático diario (para AYER)
+     =================================== */
   useEffect(() => {
     if (!isAuthReady) return;
 
@@ -1031,25 +1214,37 @@ export const useDashboardData = (
           return d.toISOString().split('T')[0] === targetISO;
         };
 
-        let da = 0,
-          dd = 0,
-          ma = 0,
-          md = 0;
+        let da = 0, dd = 0, ma = 0, md = 0;
 
         orders.forEach((o) => {
           if (inDayISO(o.createdAt, yesterdayISO)) da += Number(o.total || 0);
         });
-        tableOrders.forEach((t) => {
-          if (inDayISO(t.createdAt, yesterdayISO)) ma += Number(t.total || 0);
+
+        salonOrders.forEach((t) => {
+          if (!inDayISO(t.createdAt, yesterdayISO)) return;
+          const amount = Number(t.total || 0);
+          if (amount <= 0) return;
+          const esDesayuno = isBreakfastOrder(t);
+          if (esDesayuno) md += amount;
+          else ma += amount;
         });
+
+        // Desayunos de salón (ayer)
+        breakfastSalonOrders.forEach((b) => {
+          const bISO = getDocDateISO(b);
+          if (bISO !== yesterdayISO) return;
+          md += Number(b.total || 0);
+        });
+
+        // Desayunos delivery (ayer)
         breakfastOrders.forEach((b) => {
           const bISO = getDocDateISO(b);
           if (bISO !== yesterdayISO) return;
           const amount = Number(b.total || 0);
-          const orderType = (b.breakfasts?.[0]?.orderType || b.orderType || '').toLowerCase();
-          const hasAddress = !!(b.address?.address || b.breakfasts?.[0]?.address?.address);
-          if (orderType === 'table' || orderType === 'takeaway') md += amount;
-          else if (hasAddress) dd += amount;
+          const service = normalizeServiceFromOrder(b);
+          const hasAddr = !!(b.address?.address || b.breakfasts?.[0]?.address?.address);
+          if (service === 'mesa' || service === 'llevar') md += amount;
+          else if (service === 'domicilio' || (!service && hasAddr)) dd += amount;
           else dd += amount;
         });
 
@@ -1107,9 +1302,11 @@ export const useDashboardData = (
 
     const timer = schedule();
     return () => clearTimeout(timer);
-  }, [isAuthReady, orders, tableOrders, breakfastOrders, setError]);
+  }, [isAuthReady, orders, salonOrders, breakfastOrders, breakfastSalonOrders, setError]);
 
-  // --- Guardar / borrar conteo de pedidos diarios ---
+  /* ==========================================
+     Guardar / borrar conteo de pedidos diarios
+     ========================================== */
   const handleDeleteDailyIngresos = useCallback(async () => {
     setLoadingData(true);
     try {
@@ -1120,12 +1317,12 @@ export const useDashboardData = (
       if (!existingSummarySnapshot.empty) {
         const docToDelete = existingSummarySnapshot.docs[0];
         await deleteDoc(doc(db, INGRESOS_COLLECTION, docToDelete.id));
-        setSuccess(`Resumen de ingresos para ${today} eliminado correctamente.`);
+        setSuccess?.(`Resumen de ingresos para ${today} eliminado correctamente.`);
       } else {
-        setSuccess(`No se encontró un resumen de ingresos para ${today} para eliminar.`);
+        setSuccess?.(`No se encontró un resumen de ingresos para ${today} para eliminar.`);
       }
     } catch (error) {
-      setError(`Error al eliminar resumen de ingresos: ${error.message}`);
+      setError?.(`Error al eliminar resumen de ingresos: ${error.message}`);
       console.error('Error al eliminar ingresos diarios:', error);
     } finally {
       setLoadingData(false);
@@ -1140,19 +1337,25 @@ export const useDashboardData = (
       let currentDayMesas = 0;
 
       orders.forEach((order) => {
-        const orderDate = order.createdAt?.toDate ? new Date(order.createdAt.toDate()).toISOString().split('T')[0] : null;
-        if (orderDate === today) {
-          currentDayDomicilios++;
-        }
+        const orderDate = order.createdAt?.toDate
+          ? new Date(order.createdAt.toDate()).toISOString().split('T')[0]
+          : null;
+        if (orderDate === today) currentDayDomicilios++;
       });
 
-      tableOrders.forEach((tableOrder) => {
+      salonOrders.forEach((tableOrder) => {
         const tableOrderDate = tableOrder.createdAt?.toDate
           ? new Date(tableOrder.createdAt.toDate()).toISOString().split('T')[0]
           : null;
-        if (tableOrderDate === today) {
-          currentDayMesas++;
-        }
+        if (tableOrderDate === today) currentDayMesas++;
+      });
+
+      // ⬇️ contar también las órdenes de desayunos de salón
+      breakfastSalonOrders.forEach((bo) => {
+        const dISO = bo.createdAt?.toDate
+          ? new Date(bo.createdAt.toDate()).toISOString().split('T')[0]
+          : getDocDateISO(bo);
+        if (dISO === today) currentDayMesas++;
       });
 
       const q = query(collection(db, PEDIDOS_DIARIOS_GUARDADOS_COLLECTION), where('date', '==', today));
@@ -1166,7 +1369,7 @@ export const useDashboardData = (
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
-        setSuccess(`Conteo de pedidos diarios para ${today} guardado correctamente.`);
+        setSuccess?.(`Conteo de pedidos diarios para ${today} guardado correctamente.`);
       } else {
         const docToUpdate = existingSummarySnapshot.docs[0];
         await updateDoc(doc(db, PEDIDOS_DIARIOS_GUARDADOS_COLLECTION, docToUpdate.id), {
@@ -1174,15 +1377,15 @@ export const useDashboardData = (
           mesas: currentDayMesas,
           updatedAt: serverTimestamp(),
         });
-        setSuccess(`Conteo de pedidos diarios para ${today} actualizado correctamente.`);
+        setSuccess?.(`Conteo de pedidos diarios para ${today} actualizado correctamente.`);
       }
     } catch (error) {
-      setError(`Error al guardar/actualizar conteo de pedidos diarios: ${error.message}`);
+      setError?.(`Error al guardar/actualizar conteo de pedidos diarios: ${error.message}`);
       console.error('Error al guardar conteo de pedidos diarios:', error);
     } finally {
       setLoadingData(false);
     }
-  }, [db, orders, tableOrders, setSuccess, setError]);
+  }, [db, orders, salonOrders, breakfastSalonOrders, setSuccess, setError]);
 
   const handleDeleteDailyOrders = useCallback(async () => {
     setLoadingData(true);
@@ -1194,43 +1397,47 @@ export const useDashboardData = (
       if (!existingSummarySnapshot.empty) {
         const docToDelete = existingSummarySnapshot.docs[0];
         await deleteDoc(doc(db, PEDIDOS_DIARIOS_GUARDADOS_COLLECTION, docToDelete.id));
-        setSuccess(`Conteo de pedidos diarios para ${today} eliminado correctamente.`);
+        setSuccess?.(`Conteo de pedidos diarios para ${today} eliminado correctamente.`);
       } else {
-        setSuccess(`No se encontró un conteo de pedidos diarios para ${today} para eliminar.`);
+        setSuccess?.(`No se encontró un conteo de pedidos diarios para ${today} para eliminar.`);
       }
     } catch (error) {
-      setError(`Error al eliminar conteo de pedidos diarios: ${error.message}`);
+      setError?.(`Error al eliminar conteo de pedidos diarios: ${error.message}`);
       console.error('Error al eliminar conteo de pedidos diarios:', error);
     } finally {
       setLoadingData(false);
     }
   }, [db, setSuccess, setError]);
 
+  /* ============
+     Retorno hook
+     ============ */
   return {
     loadingData,
     orders,
     tableOrders,
-    breakfastOrders,
+    waiterOrders,
+    breakfastOrders,        // delivery
+    breakfastSalonOrders,   // salón
     users,
     totals,
     statusCounts,
     userActivity,
 
-    // ALIAS para que coincida con tu DashboardCharts:
+    // ALIAS para DashboardCharts:
     ingresosCategoriasData: dailySalesChartData,
     gastosPorTiendaData: Object.entries(totals?.expensesByProvider?.byProvider || {})
       .map(([name, value]) => ({ name, value })),
     pedidosDiariosChartData: dailyOrdersChartData,
     statusPieChartData,
 
-    // NUEVO: desglose robusto por Tipo de Venta
+    // Desglose robusto por Tipo de Venta
     saleTypeBreakdown,
 
-    // (si ya los tienes) — handlers:
+    // Handlers:
     handleSaveDailyIngresos,
     handleDeleteDailyIngresos,
     handleSaveDailyOrders,
     handleDeleteDailyOrders,
   };
-
 };

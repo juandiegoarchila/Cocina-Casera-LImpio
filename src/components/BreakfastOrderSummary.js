@@ -472,7 +472,7 @@ const BreakfastOrderSummary = ({ items, onSendOrder, user, breakfastTypes, statu
     paymentSummary,
     globalCommonFields,
     commonAddressFields,
-    areAddressesGlobelyCommon, // (no usado, se mantiene para compat)
+    areAddressesGloballyCommon, // (no usado, se mantiene para compat)
   } = useBreakfastOrderSummary(items, isWaiterView, selectedPaymentNameFallback);
 
   const baseClass = isWaiterView && !showSaveButton ? `${statusClass} p-4 rounded-lg shadow-md` : 'bg-white p-3 rounded-lg shadow-lg mt-6 leading-relaxed';

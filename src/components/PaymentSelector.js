@@ -49,7 +49,8 @@ const PaymentSelector = ({ paymentMethods, selectedPayment, onChange, setSelecte
             >
               <span>{method.name}</span>
 
-              {method.name === 'Efectivo' && <img src={EfectivoPNG} alt="Efectivo" className="h-20 w-20" />}
+              {method.name === 'Efectivo' &&               <img src={EfectivoPNG} alt="Efectivo" className="h-20 w-20" />
+}
               {method.name === 'Daviplata' && <DaviplataLogo className="h-20 w-20" />}
               {method.name === 'Nequi' && <NequiLogo className="h-20 w-20" />}
             </button>

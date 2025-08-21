@@ -91,7 +91,24 @@ const sumPaymentsByDeliveryAndType = (orders, { fallbackBuilder } = {}) => {
 };
 
 const money = (n) => `$${Math.floor(n || 0).toLocaleString('es-CO')}`;
+// === NUEVO: mostrar solo método(s) sin montos ===
+const methodLabel = (k) =>
+  k === 'cash' ? 'Efectivo' : k === 'nequi' ? 'Nequi' : k === 'daviplata' ? 'Daviplata' : '';
 
+const paymentMethodsOnly = (order) => {
+  const rows = paymentsRowsFromOrder(order, defaultPaymentsForOrder);
+  const names = [...new Set(rows.map((r) => methodLabel(r.methodKey)).filter(Boolean))];
+  if (names.length) return names.join(' + ');
+
+  const legacy =
+    order?.payment ||
+    order?.paymentMethod ||
+    order?.meals?.[0]?.payment?.name ||
+    order?.meals?.[0]?.paymentMethod ||
+    order?.breakfasts?.[0]?.payment?.name ||
+    order?.breakfasts?.[0]?.paymentMethod || '';
+  return String(legacy).trim() || 'Sin pago';
+};
 /* =======================
    Component principal
    ======================= */
@@ -159,6 +176,16 @@ const TablaPedidos = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isMenuOpen, setIsMenuOpen]);
 
+  /* ===== Toast flotante estilo “éxito” ===== */
+  const [toast, setToast] = useState(null); // { type: 'success'|'warning'|'error', text: string }
+  const toastTimer = useRef(null);
+  const showToast = (type, text) => {
+    setToast({ type, text });
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2600);
+  };
+  useEffect(() => () => toastTimer.current && clearTimeout(toastTimer.current), []);
+
   // ====== Split de pagos: estado para modal local ======
   const [editingPaymentsOrder, setEditingPaymentsOrder] = useState(null);
 
@@ -223,18 +250,18 @@ const TablaPedidos = ({
     const total = Math.floor(Number(order.total || 0)) || 0;
 
     if (sum !== total) {
-      alert(
-        `La suma de pagos (${sum.toLocaleString(
-          'es-CO'
-        )}) no coincide con el total (${total.toLocaleString('es-CO')}).`
+      showToast(
+        'warning',
+        `La suma de pagos (${sum.toLocaleString('es-CO')}) no coincide con el total (${total.toLocaleString('es-CO')}).`
       );
       return false;
     }
 
     const ref = await findExistingOrderRef(order);
     if (!ref) {
-      alert(
-        'No se pudo guardar los pagos: la orden no existe en ninguna colección conocida (orders/deliveryBreakfastOrders y variantes).'
+      showToast(
+        'error',
+        'No se pudo guardar los pagos: la orden no existe en una colección conocida.'
       );
       return false;
     }
@@ -250,26 +277,56 @@ const TablaPedidos = ({
 
     try {
       await updateDoc(ref, payload);
+      showToast('success', 'Pagos actualizados correctamente.');
       return true;
     } catch (e) {
       console.error('[Pagos] updateDoc error', e);
       const code = e?.code || '';
-      const msg = String(e?.message || '');
       if (code === 'permission-denied') {
-        alert('No se pudo guardar los pagos: permisos insuficientes según tus reglas de Firestore.');
+        showToast('error', 'Permisos insuficientes para guardar pagos.');
       } else {
-        alert('No se pudo guardar los pagos: ' + (msg || code || 'Error desconocido.'));
+        showToast('error', 'No se pudo guardar los pagos.');
       }
       return false;
     }
   };
 
-  // Totales superiores (tiles)
-const totalsDisplay = useMemo(() => sumPaymentsByMethod(orders || []), [orders]);
+  // Totales superiores (tiles) - Muestra todos los totales
+  const totalsDisplay = useMemo(() => {
+    const acc = { cash: 0, nequi: 0, daviplata: 0, other: 0, total: 0 };
+    
+    (orders || []).forEach((order) => {
+      // Para los métodos específicos
+      if (order.payments && Array.isArray(order.payments)) {
+        order.payments.forEach(payment => {
+          const methodKey = normalizePaymentMethodKey(payment.method);
+          const amount = Math.floor(Number(payment.amount || 0)) || 0;
+          if (amount <= 0) return;
+          
+          acc[methodKey] = (acc[methodKey] || 0) + amount;
+          acc.total += amount;
+        });
+      } else {
+        // Estructura antigua
+        const methodKey = normalizePaymentMethodKey(order.payment || order.paymentMethod);
+        const amount = Math.floor(Number(order.total || 0)) || 0;
+        if (amount <= 0) return;
+        
+        acc[methodKey] = (acc[methodKey] || 0) + amount;
+        acc.total += amount;
+      }
+    });
+    
+    return acc;
+  }, [orders]);
 
   // ===== Resumen por Domiciliarios (exacto con split) =====
   const resumen = useMemo(
-    () => sumPaymentsByDeliveryAndType(orders || [], { fallbackBuilder: defaultPaymentsForOrder }),
+    () => sumPaymentsByDeliveryAndType(orders || [], { 
+      fallbackBuilder: defaultPaymentsForOrder,
+      // Solo incluir pedidos no liquidados en el resumen
+      filter: order => !order.settled 
+    }),
     [orders]
   );
   const resumenPersons = useMemo(
@@ -277,12 +334,102 @@ const totalsDisplay = useMemo(() => sumPaymentsByMethod(orders || []), [orders])
     [resumen]
   );
 
-  const handleSettle = (person, buckets) => {
-    console.log('[Liquidar]', person, buckets);
+  const handleSettle = async (person, buckets) => {
+    try {
+      const personKey = String(person || '').trim();
+      const toSettle = (orders || []).filter((o) => {
+        const normalized = String(o?.deliveryPerson || 'JUAN').trim();
+        return !o?.settled && normalized === personKey;
+      });
+
+      if (!toSettle.length) {
+        showToast('warning', `No hay pedidos pendientes para liquidar de ${personKey}.`);
+        return;
+      }
+
+      // Calcular totales por método de pago
+      const totals = {
+        cash: 0,
+        nequi: 0,
+        daviplata: 0
+      };
+
+      toSettle.forEach(order => {
+        const payments = order.payments || [];
+        payments.forEach(payment => {
+          const methodKey = normalizePaymentMethodKey(payment.method);
+          if (methodKey in totals) {
+            totals[methodKey] += Math.floor(Number(payment.amount || 0));
+          }
+        });
+      });
+
+      let ok = 0, fail = 0;
+
+      for (const order of toSettle) {
+        const ref = await findExistingOrderRef(order);
+        if (!ref) { fail++; continue; }
+
+        try {
+          // Determinar qué métodos de pago están presentes
+          const payments = order.payments || [];
+          const hasPaymentMethod = (method) => 
+            payments.some(p => normalizePaymentMethodKey(p.method) === method);
+          
+          // Determinar qué métodos están presentes
+          const hasNequi = hasPaymentMethod('nequi');
+          const hasDaviplata = hasPaymentMethod('daviplata');
+          const hasCash = hasPaymentMethod('cash');
+          
+      // Construir el objeto de actualización
+      const updateData = {
+        settledAt: new Date().toISOString(),
+      };
+
+      // Marcar como settled y actualizar el estado de liquidación de cada método
+      updateData.settled = true;
+      updateData.paymentSettled = {
+        ...(order.paymentSettled || {}),
+        nequi: hasNequi ? true : (order.paymentSettled?.nequi || false),
+        daviplata: hasDaviplata ? true : (order.paymentSettled?.daviplata || false),
+        cash: hasCash ? true : (order.paymentSettled?.cash || false)
+      };          await updateDoc(ref, updateData);
+          ok++;
+        } catch (e) {
+          console.error('[Liquidar] updateDoc error', e);
+          fail++;
+        }
+      }
+
+      if (fail === 0) {
+        showToast('success', `Domiciliario liquidado: ${personKey} (${ok} órdenes).`);
+      } else {
+        showToast('warning', `Liquidado con advertencias: ${personKey}. OK: ${ok}, errores: ${fail}.`);
+      }
+    } catch (e) {
+      console.error('[Liquidar] error general', e);
+      showToast('error', 'Ocurrió un error al liquidar.');
+    }
   };
 
   return (
     <>
+      {/* TOAST FLOTANTE */}
+      {toast && (
+        <div className="fixed right-4 top-4 z-[10002]">
+          <div
+            className={classNames(
+              'rounded-xl px-4 py-3 shadow-lg border',
+              toast.type === 'success' && 'bg-green-600 text-white border-green-500',
+              toast.type === 'warning' && 'bg-yellow-400 text-black border-yellow-300',
+              toast.type === 'error' && 'bg-red-600 text-white border-red-500'
+            )}
+          >
+            <span className="font-semibold">{toast.text}</span>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100 mb-6">
           Gestión de Pedidos Domicilios
@@ -420,10 +567,7 @@ const totalsDisplay = useMemo(() => sumPaymentsByMethod(orders || []), [orders])
                           'Sin pago'
                         );
 
-                        const paymentDisplay =
-                          Array.isArray(order.payments) && order.payments.length
-                            ? summarizePayments(order.payments)
-                            : rawLegacy;
+                        const paymentDisplay = paymentMethodsOnly(order);
 
                         const statusClass =
                           order.status === 'Pendiente' ? 'bg-yellow-500 text-black'
@@ -524,7 +668,19 @@ const totalsDisplay = useMemo(() => sumPaymentsByMethod(orders || []), [orders])
                             <td className="p-2 sm:p-3 whitespace-nowrap">
                               <select
                                 value={order.status || 'Pendiente'}
-                                onChange={(e) => handleStatusChange(order.id, e.target.value)}
+                                onChange={async (e) => {
+                                  const value = e.target.value;
+                                  try {
+                                    const maybePromise = handleStatusChange(order.id, value);
+                                    if (maybePromise && typeof maybePromise.then === 'function') {
+                                      await maybePromise;
+                                    }
+                                    showToast('success', 'Estado actualizado correctamente.');
+                                  } catch (err) {
+                                    console.error('[Estado] error al actualizar', err);
+                                    showToast('error', 'No se pudo actualizar el estado.');
+                                  }
+                                }}
                                 className={classNames(
                                   'px-2 py-1 rounded-full text-xs font-semibold appearance-none cursor-pointer',
                                   statusClass,

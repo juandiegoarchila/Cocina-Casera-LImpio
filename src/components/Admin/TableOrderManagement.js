@@ -116,7 +116,8 @@ const handleSaveEdit = async () => {
         soup: meal.soup ? { name: meal.soup.name } : null,
         soupReplacement: meal.soupReplacement ? { name: meal.soupReplacement.name } : null,
         principle: Array.isArray(meal.principle) ? meal.principle.map(p => ({ name: p.name })) : [],
-       蛋白: meal.protein ? { name: meal.protein.name } : null,
+       principle: Array.isArray(meal.principle) ? meal.principle.map(p => ({ name: p.name })) : [],
+       protein: meal.protein ? { name: meal.protein.name } : null,
         drink: meal.drink ? { name: meal.drink.name } : null,
         sides: Array.isArray(meal.sides) ? meal.sides.map(s => ({ name: s.name })) : [],
         additions: meal.additions ? meal.additions.map(a => ({

@@ -1,5 +1,5 @@
-// src/components/Admin/DashboardCharts.js
-import React, { Fragment, useState, useEffect, useMemo } from 'react';
+//src/components/Admin/DashboardCharts.js
+import React, { Fragment, useState, useEffect, useMemo, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -79,9 +79,7 @@ const copFormatter = new Intl.NumberFormat('es-CO', {
 const CustomBarTooltip = ({ active, payload, label, theme, chartTextColor, copFormatter, isOrderChart = false }) => {
   if (active && payload && payload.length) {
     const total = payload.reduce((sum, entry) => sum + entry.value, 0);
-    const formatValue = isOrderChart
-      ? (value) => value.toLocaleString()
-      : (value) => (typeof copFormatter === 'function' ? copFormatter(value) : copFormatter.format(value));
+    const formatValue = isOrderChart ? (value) => value.toLocaleString() : (value) => typeof copFormatter === 'function' ? copFormatter(value) : copFormatter.format(value);
     return (
       <motion.div
         initial={{ opacity: 0, y: 5 }}
@@ -249,9 +247,7 @@ const DashboardCharts = React.memo(({
 
   const paymentsForSelectedRecipient = useMemo(() => {
     if (!selectedRecipient) return [];
-    return payments
-      .filter(payment => payment.store === selectedRecipient)
-      .sort((a, b) => b.timestamp.toDate() - a.timestamp.toDate());
+    return payments.filter(payment => payment.store === selectedRecipient).sort((a, b) => b.timestamp.toDate() - a.timestamp.toDate());
   }, [payments, selectedRecipient]);
 
   const chartVariants = {
@@ -270,7 +266,7 @@ const DashboardCharts = React.memo(({
   const chartHeight = isMobileDevice ? "h-[250px]" : "h-[300px]";
 
   return (
-<div className="flex flex-col gap-12 mb-8 pb-12 w-full">
+    <div className="flex flex-col gap-12 mb-8 px-4 sm:px-6 lg:px-8 pb-12">
       <style dangerouslySetInnerHTML={{ __html: scrollbarStyles }} />
       {/* Daily Sales Chart */}
       <div className={classNames(
@@ -458,42 +454,40 @@ const DashboardCharts = React.memo(({
                     verticalAlign="top"
                     iconType="circle"
                   />
-                  <Bar
-                    dataKey="Domicilios Almuerzo"
-                    fill="#34D399"
-                    stroke="#34D399"
-                    radius={[8, 8, 0, 0]}
-                    maxBarSize={isMobileDevice ? 12 : 25}
-                    animationDuration={800}
-                    onClick={(data) => { if (salesFilterRange === 'year' && data.monthKey) setSelectedMonth(data.monthKey); }}
-                  />
-                  <Bar
-                    dataKey="Domicilios Desayuno"
-                    fill="#60A5FA"
-                    stroke="#60A5FA"
-                    radius={[8, 8, 0, 0]}
-                    maxBarSize={isMobileDevice ? 12 : 25}
-                    animationDuration={800}
-                    onClick={(data) => { if (salesFilterRange === 'year' && data.monthKey) setSelectedMonth(data.monthKey); }}
-                  />
-                  <Bar
-                    dataKey="Mesas/Llevar Almuerzo"
-                    fill="#FBBF24"
-                    stroke="#FBBF24"
-                    radius={[8, 8, 0, 0]}
-                    maxBarSize={isMobileDevice ? 12 : 25}
-                    animationDuration={800}
-                    onClick={(data) => { if (salesFilterRange === 'year' && data.monthKey) setSelectedMonth(data.monthKey); }}
-                  />
-                  <Bar
-                    dataKey="Mesas/Llevar Desayuno"
-                    fill="#F472B6"
-                    stroke="#F472B6"
-                    radius={[8, 8, 0, 0]}
-                    maxBarSize={isMobileDevice ? 12 : 25}
-                    animationDuration={800}
-                    onClick={(data) => { if (salesFilterRange === 'year' && data.monthKey) setSelectedMonth(data.monthKey); }}
-                  />
+<Bar
+  dataKey="Domicilios Almuerzo"
+  fill="#34D399"
+  stroke="#34D399"
+  radius={[8, 8, 0, 0]}
+  maxBarSize={isMobileDevice ? 12 : 25}
+  animationDuration={800}
+  onClick={(data) => { if (salesFilterRange === 'year' && data.monthKey) setSelectedMonth(data.monthKey); }}
+/>
+<Bar
+  dataKey="Domicilios Desayuno"
+  fill="#60A5FA"
+  stroke="#60A5FA"
+  radius={[8, 8, 0, 0]}
+  maxBarSize={isMobileDevice ? 12 : 25}
+  animationDuration={800}
+/>
+<Bar
+  dataKey="Mesas/Llevar Almuerzo"
+  fill="#FBBF24"
+  stroke="#FBBF24"
+  radius={[8, 8, 0, 0]}
+  maxBarSize={isMobileDevice ? 12 : 25}
+  animationDuration={800}
+/>
+<Bar
+  dataKey="Mesas/Llevar Desayuno"
+  fill="#F472B6"
+  stroke="#F472B6"
+  radius={[8, 8, 0, 0]}
+  maxBarSize={isMobileDevice ? 12 : 25}
+  animationDuration={800}
+/>
+
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -760,31 +754,31 @@ const DashboardCharts = React.memo(({
                 </button>
                 <h4 className="text-lg font-semibold text-gray-200 mb-3">{selectedRecipient}</h4>
                 <div className={classNames("text-sm max-h-52 overflow-y-auto custom-scrollbar pr-2", isMobileDevice ? "overflow-x-auto" : "overflow-x-hidden")}>
-                  <div className="min-w-full inline-block align-middle">
-                    {paymentsForSelectedRecipient.length === 0 ? (
-                      <p className="text-gray-500 text-center py-6">
-                        No hay movimientos para este remitente en el rango de fechas seleccionado.
-                      </p>
-                    ) : (
-                      paymentsForSelectedRecipient.map((payment, idx) => (
-                        <div
-                          key={idx}
-                          className="flex items-center py-3 border-b last:border-b-0 transition-colors duration-200 hover:bg-gray-700 dark:hover:bg-gray-800 rounded-md px-2 -mx-2"
-                          style={{ borderColor: theme === 'dark' ? '#374151' : '#e5e7eb' }}
-                        >
-                          <span className="text-gray-400 font-normal mr-3 min-w-[80px]">
-                            {payment.name || 'N/A'}
-                          </span>
-                          <span className="text-gray-300 font-light text-nowrap mr-3 min-w-[150px]">
-                            {new Date(payment.timestamp?.toDate()).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })}
-                          </span>
-                          <span className="text-red-300 font-semibold text-right flex-grow">
-                            {copFormatter.format(payment.amount)}
-                          </span>
-                        </div>
-                      ))
-                    )}
-                  </div>
+                    <div className="min-w-full inline-block align-middle">
+                        {paymentsForSelectedRecipient.length === 0 ? (
+                            <p className="text-gray-500 text-center py-6">
+                                No hay movimientos para este remitente en el rango de fechas seleccionado.
+                            </p>
+                        ) : (
+                            paymentsForSelectedRecipient.map((payment, idx) => (
+                                <div
+                                    key={idx}
+                                    className="flex items-center py-3 border-b last:border-b-0 transition-colors duration-200 hover:bg-gray-700 dark:hover:bg-gray-800 rounded-md px-2 -mx-2"
+                                    style={{ borderColor: theme === 'dark' ? '#374151' : '#e5e7eb' }}
+                                >
+                                    <span className="text-gray-400 font-normal mr-3 min-w-[80px]">
+                                        {payment.name || 'N/A'}
+                                    </span>
+                                    <span className="text-gray-300 font-light text-nowrap mr-3 min-w-[150px]">
+                                        {new Date(payment.timestamp?.toDate()).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })}
+                                    </span>
+                                    <span className="text-red-300 font-semibold text-right flex-grow">
+                                        {copFormatter.format(payment.amount)}
+                                    </span>
+                                </div>
+                            ))
+                        )}
+                    </div>
                 </div>
               </>
             )}
@@ -942,64 +936,64 @@ const DashboardCharts = React.memo(({
             {loading ? (
               <SkeletonLoader type="bar" theme={theme} isMobile={isMobileDevice} />
             ) : (
-              <div className={classNames("w-full", chartHeight, chartMinWidth)}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={dailyOrdersChartData}
-                    margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
-                    barCategoryGap={isMobileDevice ? "0%" : "40%"}
-                    barGap={1}
-                  >
-                    <CartesianGrid
-                      strokeDasharray={isMobileDevice ? "2 2" : "3 3"}
-                      stroke={theme === 'dark' ? '#4b5563' : '#e5e7eb'}
-                      vertical={false}
-                    />
-                    <XAxis
-                      dataKey="name"
-                      stroke={chartTextColor}
-                      tick={{ fill: chartTextColor, fontSize: isMobileDevice ? 9 : 11 }}
-                      angle={-45}
-                      textAnchor="end"
-                      interval={0}
-                      height={60}
-                    />
-                    <YAxis
-                      stroke={chartTextColor}
-                      tick={{ fill: chartTextColor, fontSize: isMobileDevice ? 9 : 11 }}
-                      width={isMobileDevice ? 30 : 50}
-                    />
-                    <Tooltip
-                      cursor={{ fill: theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)', rx: 4 }}
-                      content={<CustomBarTooltip theme={theme} chartTextColor={chartTextColor} copFormatter={(val) => val.toLocaleString()} />}
-                    />
-                    <Legend
-                      wrapperStyle={{ color: chartTextColor, paddingTop: '10px', fontSize: isMobileDevice ? 8 : 12 }}
-                      align="center"
-                      verticalAlign="top"
-                      iconType="circle"
-                    />
-                    <Bar
-                      dataKey="Domicilios"
-                      fill="#8B5CF6"
-                      stroke="#8B5CF6"
-                      radius={[10, 10, 0, 0]}
-                      opacity={1}
-                      isAnimationActive={false}
-                      maxBarSize={isMobileDevice ? 12 : 25}
-                    />
-                    <Bar
-                      dataKey="Mesas"
-                      fill="#10B981"
-                      stroke="#10B981"
-                      radius={[10, 10, 0, 0]}
-                      opacity={1}
-                      isAnimationActive={false}
-                      maxBarSize={isMobileDevice ? 12 : 25}
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+        <div className={classNames("w-full", chartHeight, chartMinWidth)}>
+  <ResponsiveContainer width="100%" height="100%">
+    <BarChart
+      data={dailyOrdersChartData}
+      margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
+      barCategoryGap={isMobileDevice ? "0%" : "40%"}
+      barGap={1}
+    >
+      <CartesianGrid
+        strokeDasharray={isMobileDevice ? "2 2" : "3 3"}
+        stroke={theme === 'dark' ? '#4b5563' : '#e5e7eb'}
+        vertical={false}
+      />
+      <XAxis
+        dataKey="name"
+        stroke={chartTextColor}
+        tick={{ fill: chartTextColor, fontSize: isMobileDevice ? 9 : 11 }}
+        angle={-45}
+        textAnchor="end"
+        interval={0}
+        height={60}
+      />
+      <YAxis
+        stroke={chartTextColor}
+        tick={{ fill: chartTextColor, fontSize: isMobileDevice ? 9 : 11 }}
+        width={isMobileDevice ? 30 : 50}
+      />
+      <Tooltip
+        cursor={{ fill: theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)', rx: 4 }}
+        content={<CustomBarTooltip theme={theme} chartTextColor={chartTextColor} copFormatter={(val) => val.toLocaleString()} />}
+      />
+      <Legend
+        wrapperStyle={{ color: chartTextColor, paddingTop: '10px', fontSize: isMobileDevice ? 8 : 12 }}
+        align="center"
+        verticalAlign="top"
+        iconType="circle"
+      />
+      <Bar
+        dataKey="Domicilios"
+        fill="#8B5CF6"
+        stroke="#8B5CF6"
+        radius={[10, 10, 0, 0]}
+        opacity={1}
+        isAnimationActive={false}
+        maxBarSize={isMobileDevice ? 12 : 25}
+      />
+      <Bar
+        dataKey="Mesas"
+        fill="#10B981"
+        stroke="#10B981"
+        radius={[10, 10, 0, 0]}
+        opacity={1}
+        isAnimationActive={false}
+        maxBarSize={isMobileDevice ? 12 : 25}
+      />
+    </BarChart>
+  </ResponsiveContainer>
+</div>
             )}
           </motion.div>
         </div>
@@ -1038,12 +1032,7 @@ const DashboardCharts = React.memo(({
                   innerRadius={isMobileDevice ? 40 : 60}
                 >
                   {statusPieChartData.map((entry, index) => (
-                    <Cell
-                      key={`cell-${index}`}
-                      fill={PIE_COLORS[index % PIE_COLORS.length]}
-                      stroke={theme === 'dark' ? '#1f2937' : '#ffffff'}
-                      strokeWidth={2}
-                    />
+                    <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} stroke={theme === 'dark' ? '#1f2937' : '#ffffff'} strokeWidth={2} />
                   ))}
                   <Label
                     value={`${totalOrders} Pedidos`}

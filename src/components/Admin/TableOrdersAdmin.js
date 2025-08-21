@@ -75,6 +75,27 @@ const getOrderPaymentText = (order) => formatValue(getOrderPaymentRaw(order));
 const normalizePaymentKey = (raw) =>
   (typeof raw === 'string' ? raw : formatValue(raw)).toLowerCase().trim();
 
+// === NUEVO: mostrar solo método(s) sin montos ===
+const displayPaymentLabel = (val) => {
+  const raw = (typeof val === 'string' ? val : val?.name || val?.label || val?.method || val?.type || '').toString().trim().toLowerCase();
+  if (!raw) return '';
+  if (raw.includes('efect') || raw.includes('cash')) return 'Efectivo';
+  if (raw.includes('nequi')) return 'Nequi';
+  if (raw.includes('davi')) return 'Daviplata';
+  return '';
+};
+
+const paymentMethodsOnly = (order) => {
+  if (Array.isArray(order?.payments) && order.payments.length) {
+    const names = order.payments
+      .map((p) => displayPaymentLabel(typeof p.method === 'string' ? p.method : p?.method?.name || p?.method))
+      .filter(Boolean);
+    return [...new Set(names)].join(' + ') || 'Sin pago';
+  }
+  return displayPaymentLabel(getOrderPaymentRaw(order)) || 'Sin pago';
+};
+
+
 const TableOrdersAdmin = ({ theme = 'light' }) => {
   const { user, role, loading } = useAuth();
   const navigate = useNavigate();
@@ -256,8 +277,7 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
         );
       }) ||
       // Búsqueda por método en split
-      (Array.isArray(order.payments) && order.payments.some((p) => normalizePaymentKey(p.method).includes(searchLower)));
-
+normalizePaymentKey(typeof p.method === 'string' ? p.method : p?.method?.name).includes(searchLower)
     return matchesSearch && (orderTypeFilter === 'all' || order.type === orderTypeFilter);
   });
 
@@ -404,8 +424,7 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
     if (!editingOrder) return;
 
     if (Array.isArray(editingOrder.meals)) {
-      const newTotal = Number(calculateTotal(editingOrder.meals, role) || 0);
-      if ((editingOrder.total || 0) !== newTotal) {
+const newTotal = Number(calculateTotal(editingOrder.meals, 3) || 0);      if ((editingOrder.total || 0) !== newTotal) {
         setEditingOrder((prev) => ({ ...prev, total: newTotal }));
       }
     } else if (Array.isArray(editingOrder.breakfasts)) {
@@ -766,9 +785,7 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
                           ? (currentPage - 1) * itemsPerPage + index + 1
                           : paginatedOrders.length - ((currentPage - 1) * itemsPerPage + index);
 
-                      const paymentDisplay = (Array.isArray(order.payments) && order.payments.length)
-                        ? summarizePayments(order.payments)
-                        : getOrderPaymentText(order);
+                  const paymentDisplay = paymentMethodsOnly(order);
 
                       const statusClass =
                         order.status === 'Pendiente'

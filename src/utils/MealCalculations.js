@@ -18,15 +18,33 @@ const PRICE_MAP = {
 };
 
 // Normaliza 'orderType' a 'table' | 'takeaway'
-const normalizeOrderType = (val) => {
-  if (!val) return 'table';
+// Acepta sinónimos y aplica una heurística:
+// - 'delivery' / 'domicilio' => 'takeaway'
+// - Si no viene orderType pero hay dirección (pedido de cliente), asumimos 'takeaway'
+const normalizeOrderType = (val, meal) => {
   const raw = typeof val === 'string' ? val : (val?.name || val?.value || '');
   const lc = String(raw || '').toLowerCase().trim();
 
+  // Mesa
   if (['table', 'mesa', 'para mesa', 'en mesa'].includes(lc)) return 'table';
-  if (['takeaway', 'para llevar', 'llevar', 'take away', 'take-away'].includes(lc)) return 'takeaway';
 
-  // Por defecto, mesa
+  // Llevar / Delivery / Domicilio
+  if ([
+    'takeaway', 'para llevar', 'llevar', 'take away', 'take-away',
+    'delivery', 'deliveri', 'deli', 'domicilio', 'domicilios', 'a domicilio'
+  ].includes(lc)) return 'takeaway';
+
+  // Heurística: si hay dirección (pedido de cliente) y no hay mesa, tratar como llevar
+  const hasAddress =
+    !!(meal?.address) ||
+    !!(meal?.address?.street) ||
+    !!(meal?.address?.phoneNumber) ||
+    !!(meal?.address?.name);
+  const hasTable = !!(meal?.tableNumber);
+
+  if (hasAddress && !hasTable) return 'takeaway';
+
+  // Por defecto conservador: mesa
   return 'table';
 };
 
@@ -37,8 +55,10 @@ const isSoloBandeja = (meal) => {
   const replacement = (meal?.soupReplacement?.replacement || '').toLowerCase().trim();
 
   if (soup === 'solo bandeja') return true;
-  // Cuando usan "Remplazo por Sopa" y el replacement es "Solo bandeja"
-  if (replName.includes('remplazo') && replacement === 'solo bandeja') return true;
+
+  // Aceptar 'Remplazo' y 'Reemplazo'
+  const includesReplace = replName.includes('remplazo') || replName.includes('reemplazo');
+  if (includesReplace && replacement === 'solo bandeja') return true;
 
   return false;
 };
@@ -58,9 +78,9 @@ export const calculateMealPrice = (meal) => {
     return 15000 + additionsTotal(meal);
   }
 
-  const orderType = normalizeOrderType(meal?.orderType);
+  const orderType = normalizeOrderType(meal?.orderType, meal);
   const kind = isSoloBandeja(meal) ? 'bandeja' : 'normal';
-  const base = PRICE_MAP[orderType][kind];
+  const base = PRICE_MAP[orderType]?.[kind] ?? PRICE_MAP.table.normal;
 
   return base + additionsTotal(meal);
 };
