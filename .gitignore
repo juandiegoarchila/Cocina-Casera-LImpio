@@ -1,5 +1,79 @@
-node_modules
+# Dependencias
+/node_modules
+/.pnp
+.pnp.js
+
+# Testing
+/coverage
+
+# Producción
+/build
+/dist
+
+# Configuración Firebase
+/src/config/firebase.js
 firebase.json
+.firebaserc
+firebase-debug.log
+firebase-debug.*.log
+pglite-debug.log
+
+# Variables de entorno
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Archivos de seguridad
 *.key
 *.pem
-.env
+*.cert
+*.p12
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs
+*.log
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+
+# IDEs y editores
+/.idea
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# Archivos temporales
+*.swp
+*.swo
+*~
+
+# Cachés
+.cache
+.parcel-cache
+.next
+.nuxt
+.tmp
+.temp
+
+# Archivos locales de desarrollo
+.env.development
+.env.local
+.env.*.local
+
+# Archivos de compilación
+*.compiled.*
+*.min.*
