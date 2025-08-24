@@ -1,8 +1,8 @@
 //src/components/Admin/Payments.js
 import { useState, useEffect, useMemo } from 'react'; // Agregamos useMemo
 import { db } from '../../config/firebase';
-import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, query, orderBy, serverTimestamp } from 'firebase/firestore';
-import { Edit2, Trash2, PlusCircle, XCircle, ChevronLeft } from 'lucide-react'; // Agregamos ChevronLeft para volver
+import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, query, orderBy, serverTimestamp, where } from 'firebase/firestore';
+import { Edit2, Trash2, PlusCircle, XCircle, ChevronLeft, TrashIcon } from 'lucide-react'; // Agregamos TrashIcon para el botón de eliminar todos
 
 // Colombian Peso formatter
 const copFormatter = new Intl.NumberFormat('es-CO', {
@@ -397,9 +397,64 @@ Fecha de Registro: {(
           ) : (
             // --- Vista de Dashboard con Totales por Tienda ---
             <div>
-              <h3 className={`text-xl sm:text-2xl font-bold mb-4 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                Gastos por Tienda 📊
-              </h3>
+              <div className="flex justify-between items-center mb-4">
+                <h3 className={`text-xl sm:text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                  Gastos por Tienda 📊
+                </h3>
+                <button
+                  onClick={() => {
+                    if (window.confirm('¿Estás seguro de que deseas eliminar todos los pagos de hoy? Esta acción no se puede deshacer.')) {
+                      const today = new Date();
+                      today.setHours(0, 0, 0, 0);
+                      const tomorrow = new Date(today);
+                      tomorrow.setDate(tomorrow.getDate() + 1);
+                      
+                      const todayPayments = payments.filter(payment => {
+                        if (!payment.timestamp) return false;
+                        
+                        const paymentDate = payment.timestamp.toDate ? 
+                          payment.timestamp.toDate() : 
+                          new Date(payment.timestamp);
+                          
+                        return paymentDate >= today && paymentDate < tomorrow;
+                      });
+
+                      console.log('Pagos encontrados hoy:', todayPayments.length);
+
+                      if (todayPayments.length === 0) {
+                        setError('No hay pagos registrados hoy para eliminar.');
+                        return;
+                      }
+
+                      // Mostrar detalles de los pagos que se van a eliminar
+                      console.log('Pagos a eliminar:', todayPayments.map(p => ({
+                        id: p.id,
+                        fecha: p.timestamp.toDate().toLocaleString(),
+                        monto: p.amount
+                      })));
+
+                      Promise.all(
+                        todayPayments.map(payment => {
+                          console.log('Eliminando pago:', payment.id);
+                          return deleteDoc(doc(db, 'payments', payment.id));
+                        })
+                      )
+                        .then(() => {
+                          setSuccess(`${todayPayments.length} pagos de hoy han sido eliminados exitosamente.`);
+                        })
+                        .catch(error => {
+                          console.error('Error al eliminar pagos:', error);
+                          setError(`Error al eliminar los pagos: ${error.message}`);
+                        });
+                    }
+                  }}
+                  className={`p-2 rounded-full hover:bg-red-100 dark:hover:bg-red-900 transition-colors duration-200
+                    ${theme === 'dark' ? 'text-red-400 hover:text-red-300' : 'text-red-500 hover:text-red-600'}`}
+                  title="Eliminar todos los pagos de hoy"
+                >
+                  <TrashIcon className="w-6 h-6" />
+                </button>
+              </div>
               {Object.keys(totalExpensesByStore).length === 0 ? (
                 <p className="text-center text-gray-500 dark:text-gray-400 py-4 sm:py-8 text-sm sm:text-base">
                   No hay tiendas con gastos registrados.

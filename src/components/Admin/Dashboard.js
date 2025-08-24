@@ -2,7 +2,7 @@
 import React, { useState, useEffect, Fragment, useMemo, useCallback, useRef } from 'react';
 import { db, auth } from '../../config/firebase';
 import { onAuthStateChanged, signInAnonymously, signInWithCustomToken } from 'firebase/auth';
-import { writeBatch, getDocs, collection } from 'firebase/firestore';
+import { writeBatch, getDocs, collection, onSnapshot } from 'firebase/firestore';
 import { classNames } from '../../utils/classNames';
 import {
   Dialog, Transition, Popover, PopoverButton, PopoverPanel
@@ -270,6 +270,8 @@ const GeneralTotalsCard = ({
   proteinDaily,
   tableOrders,
   breakfastOrders,
+  salonOrders,
+  breakfastSalonOrders,
   cardHeight = CARD_HEIGHT
 }) => {
   const [expanded, setExpanded] = useState(false);
@@ -278,8 +280,31 @@ const GeneralTotalsCard = ({
   const [showCashBreakdown, setShowCashBreakdown] = useState(false);
   const [showDaviBreakdown, setShowDaviBreakdown] = useState(false);
   const [showNequiBreakdown, setShowNequiBreakdown] = useState(false);
+  const [remainingProteins, setRemainingProteins] = useState([]);
 
   const { selectedDate, setSelectedDate, timeAgo } = useDashboardDate();
+
+  // Suscribirse a la colección dailyProteins para obtener sobrantes en tiempo real
+  useEffect(() => {
+    const ref = collection(db, 'dailyProteins');
+    const unsub = onSnapshot(ref, (snap) => {
+      const list = [];
+      snap.forEach(docSnap => {
+        const data = docSnap.data() || {};
+        const quantity = Number(data.quantity) || 0;
+        const remaining = data.remaining != null ? Number(data.remaining) : (data.leftover != null ? Number(data.leftover) : (data.remainingUnits != null ? Number(data.remainingUnits) : null));
+        const sold = data.sold != null ? Number(data.sold) : (remaining != null ? (quantity - remaining) : null);
+        // Considerar solo si hay un nombre válido
+        const name = data.name || docSnap.id;
+        list.push({ id: docSnap.id, name, quantity, remaining, sold });
+      });
+      setRemainingProteins(list);
+    }, (err) => {
+      console.error('Error cargando dailyProteins', err);
+      setRemainingProteins([]);
+    });
+    return () => unsub();
+  }, []);
 
   // --- helpers ---
   const toInt = (v) => {
@@ -295,40 +320,121 @@ const GeneralTotalsCard = ({
   };
 
   const bc = totals?.byCategory || {};
-  const domiciliosTotal =
-    toInt(bc.domiciliosAlmuerzo) + toInt(bc.domiciliosDesayuno);
-  const salonTotal =
-    toInt(bc.mesasAlmuerzo) + toInt(bc.llevarAlmuerzo) +
-    toInt(bc.mesasDesayuno) + toInt(bc.llevarDesayuno);
-
-  const grossIncomeDisplay =
-    typeof totals?.grossIncome === 'number'
-      ? toInt(totals.grossIncome)
-      : (domiciliosTotal + salonTotal);
-
+  const salonTotal = toInt(bc.mesasAlmuerzo) + toInt(bc.llevarAlmuerzo) + toInt(bc.mesasDesayuno) + toInt(bc.llevarDesayuno);
+  // Recalcular domicilios liquidados (solo settled y no cancelados) para evitar arrastre de cancelados
+  const activeDomiciliosLiquid = useMemo(() => {
+    return (orders || [])
+      .filter(o => !/(cancel)/i.test(o?.status || ''))
+      .reduce((sum, o) => {
+        const settled = o.settled === true || Object.values(o.paymentSettled || {}).some(v => v);
+        if (!settled) return sum;
+        return sum + toInt(o.total);
+      }, 0);
+  }, [orders]);
+  const grossIncomeDisplay = salonTotal + activeDomiciliosLiquid;
+  const domiciliosLiquidado = activeDomiciliosLiquid;
   const expensesDisplay = toInt(totals?.expenses);
   const netDisplay = grossIncomeDisplay - expensesDisplay;
 
   const methodTotals = useMemo(() => {
-    const cash = { salon: 25000, domicilio: 25000 };
-    const daviplata = { salon: 23000, domicilio: 25000 };
-    const nequi = { salon: 24000, domicilio: 25000 };
-    return {
-      cash: cash.salon + cash.domicilio,
-      daviplata: daviplata.salon + daviplata.domicilio,
-      nequi: nequi.salon + nequi.domicilio,
-      byOrigin: {
-        salon: { cash: cash.salon, daviplata: daviplata.salon, nequi: nequi.salon },
-        domicilio: { cash: cash.domicilio, daviplata: daviplata.domicilio, nequi: nequi.domicilio }
-      }
-    };
-  }, []);
+    // Acumulador final
+    const acc = { cash: 0, nequi: 0, daviplata: 0, byOrigin: { salon: { cash: 0, nequi: 0, daviplata: 0 }, domicilio: { cash: 0, nequi: 0, daviplata: 0 } } };
 
-  const deliveryPersonsData = useMemo(() => {
-    return deliveryPersons || {
-      'Dylan': { desayuno: { total: 12000 }, almuerzo: { total: 39000 } }
+    // Normalizar nombre de método
+    const norm = (m) => {
+      const r = (m || '').toString().toLowerCase();
+      if (r.includes('efect') || r.includes('cash')) return 'cash';
+      if (r.includes('nequi')) return 'nequi';
+      if (r.includes('davi')) return 'daviplata';
+      return null;
     };
-  }, [deliveryPersons]);
+
+    // Añadir pago (filtra por liquidación si es domicilio)
+    const isCancelled = (o) => {
+      const v = (o?.status || '').toString().toLowerCase();
+      return v.includes('cancel'); // cubre 'cancelado', 'cancelada', 'cancelled'
+    };
+
+    const push = (order, origin) => {
+      if (isCancelled(order)) return; // ignorar cancelados en totales
+      const add = (k, amt) => { if (!k || amt <= 0) return; acc[k] += amt; acc.byOrigin[origin][k] += amt; };
+      const settledFor = (k) => origin === 'salon' ? true : (order.settled === true || (k && order.paymentSettled?.[k] === true));
+
+      if (Array.isArray(order?.payments) && order.payments.length) {
+        order.payments.forEach(p => { const k = norm(p.method); const amt = toInt(p.amount); if (settledFor(k)) add(k, amt); });
+        return;
+      }
+
+      const methodRaw = (() => {
+        if (order?.payment && typeof order.payment === 'string') return order.payment;
+        if (order?.paymentMethod) return order.paymentMethod.name || order.paymentMethod;
+        const mealPM = order?.meals?.[0]?.paymentMethod; if (mealPM) return mealPM.name || mealPM;
+        const bPM = order?.breakfasts?.[0]?.paymentMethod; if (bPM) return bPM.name || bPM;
+        return null;
+      })();
+      const k = norm(methodRaw);
+      const amt = toInt(order?.total);
+      if (settledFor(k)) add(k, amt);
+    };
+
+    // 1. Construir conjunto único de órdenes de salón (almuerzo + desayuno)
+    const seen = new Set();
+    const keyOf = (o) => o?.id || o?.orderId || o?._id || (o?.tableNumber != null ? `table:${o.tableNumber}:${o?.createdAt || ''}` : null) || Math.random().toString(36); // fallback mínimo
+
+    const addSalonCollection = (arr) => {
+      (arr || []).forEach(o => {
+        const k = keyOf(o);
+        if (seen.has(k)) return;
+        seen.add(k);
+        push(o, 'salon');
+      });
+    };
+    addSalonCollection(tableOrders);            // almuerzo mesas (incluye pendientes)
+    addSalonCollection(salonOrders);            // combinación (por si trae waiterOrders u otros)
+    addSalonCollection(breakfastSalonOrders);   // desayuno salón
+
+    // 3. Domicilios almuerzo
+    (orders || []).forEach(o => push(o, 'domicilio'));
+
+    // 4. Domicilios desayuno (filtrar sólo los que NO son de salón)
+    const breakfastDomicilio = (breakfastOrders || []).filter(o => {
+      const hasAddr = !!(o.address?.address || o.breakfasts?.[0]?.address?.address);
+      return hasAddr; // sólo con dirección => domicilio
+    });
+    breakfastDomicilio.forEach(o => push(o, 'domicilio'));
+
+    return acc;
+  }, [orders, tableOrders, salonOrders, breakfastOrders, breakfastSalonOrders]);
+
+  // Construir resumen por domiciliario (pendiente de liquidar) usando orders (domicilios almuerzo) + breakfastOrders con address
+  const deliveryPersonsData = useMemo(() => {
+    // Excluir cancelados siempre
+    const notCancelled = (o) => !/(cancel)/i.test((o?.status || '').toLowerCase());
+    const accPend = {};
+    const accLiq = {};
+    const add = (target, person, tipo, amount) => {
+      if (amount <= 0) return;
+      if (!target[person]) target[person] = { desayuno: { total: 0 }, almuerzo: { total: 0 }, total: 0 };
+      target[person][tipo].total += amount;
+      target[person].total += amount;
+    };
+    const normPerson = (p) => { const v = (p || '').toString().trim(); return v.length ? v : 'Sin asignar'; };
+    (orders || []).filter(notCancelled).forEach(o => {
+      const person = normPerson(o.deliveryPerson);
+      const amt = toInt(o.total);
+      if (amt <= 0) return;
+      if (o.settled) add(accLiq, person, 'almuerzo', amt); else add(accPend, person, 'almuerzo', amt);
+    });
+    (breakfastOrders || []).filter(o => notCancelled(o) && (o.address?.address || o.breakfasts?.[0]?.address?.address)).forEach(o => {
+      const person = normPerson(o.deliveryPerson);
+      const amt = toInt(o.total);
+      if (amt <= 0) return;
+      if (o.settled) add(accLiq, person, 'desayuno', amt); else add(accPend, person, 'desayuno', amt);
+    });
+    // Mostrar pendientes si existen, sino liquidados
+    const hasPend = Object.keys(accPend).length > 0;
+    return hasPend ? accPend : accLiq;
+  }, [orders, breakfastOrders]);
 
   // --- Fila compacta: NUNCA truncamos la etiqueta, NUNCA partimos el monto ---
   const Row = ({ left, right, strong, rightClass, percentage, onClick, className = '' }) => (
@@ -417,14 +523,14 @@ const GeneralTotalsCard = ({
                 <div className="mt-1 pl-2 space-y-0.5 text-sm text-gray-400">
                   <Row 
                     left="- De Domicilios:" 
-                    right={money(domiciliosTotal)} 
-                    percentage={((domiciliosTotal / grossIncomeDisplay) * 100).toFixed(1)}
+                    right={money(domiciliosLiquidado)} 
+                    percentage={grossIncomeDisplay ? ((domiciliosLiquidado / grossIncomeDisplay) * 100).toFixed(1) : '0.0'}
                     rightClass="text-emerald-300" 
                   />
                   <Row 
                     left="- De Salón:" 
                     right={money(salonTotal)} 
-                    percentage={((salonTotal / grossIncomeDisplay) * 100).toFixed(1)}
+                    percentage={grossIncomeDisplay ? ((salonTotal / grossIncomeDisplay) * 100).toFixed(1) : '0.0'}
                     rightClass="text-emerald-300" 
                   />
                 </div>
@@ -524,7 +630,7 @@ const GeneralTotalsCard = ({
             </div>
 
             <div className={classNames('border-t my-3', theme === 'dark' ? 'border-gray-700' : 'border-gray-200')} />
-            <Row left="Ingresos por Domiciliario" right={null} strong className="mb-2" />
+            <Row left={`Ingresos por Domiciliario${Object.values(deliveryPersonsData).some(p=>p.total>0) ? '' : ''}`} right={null} strong className="mb-2" />
             <div className="space-y-3">
               {Object.entries(deliveryPersonsData || {}).map(([person, d]) => {
                 const desayuno = toInt(d?.desayuno?.total);
@@ -568,33 +674,30 @@ const GeneralTotalsCard = ({
             </div>
 
             <div className={classNames('border-t my-3', theme === 'dark' ? 'border-gray-700' : 'border-gray-200')} />
-            <Row left="Proteínas restantes" right={null} strong className="mb-1" />
-            <div className="space-y-0.5 pl-2">
-              <Row 
-                left="• Res" 
-                right={toInt(proteinDaily?.leftovers?.res || 0)} 
-                rightClass="text-gray-100" 
-              />
-              <Row 
-                left="• Lomo" 
-                right={toInt(proteinDaily?.leftovers?.lomo || 0)} 
-                rightClass="text-gray-100" 
-              />
-              <Row 
-                left="• Pechuga" 
-                right={toInt(proteinDaily?.leftovers?.pechuga || 0)} 
-                rightClass="text-gray-100" 
-              />
-              <Row 
-                left="• Pollo" 
-                right={toInt(proteinDaily?.leftovers?.pollo || 0)} 
-                rightClass="text-gray-100" 
-              />
-              <Row 
-                left="• Recuperada" 
-                right={toInt(proteinDaily?.leftovers?.recuperada || 0)} 
-                rightClass="text-gray-100" 
-              />
+            {/* Cabecera Proteínas con columnas centradas y estilo unificado */}
+            <div className="grid grid-cols-[1fr_52px_52px] px-1 mb-1 items-center border-b border-white/20 pb-1">
+              <span className="text-xs font-semibold text-gray-100 tracking-wide text-left">Proteínas</span>
+              <span className="text-xs font-semibold text-gray-100 tracking-wide text-center">Rest.</span>
+              <span className="text-xs font-semibold text-gray-100 tracking-wide text-center">Vend.</span>
+            </div>
+            <div className="space-y-0.5">
+              {remainingProteins
+                .filter(p => p.remaining != null && p.remaining > 0)
+                .sort((a,b) => a.name.localeCompare(b.name, 'es'))
+                .map(p => {
+                  const remaining = toInt(p.remaining);
+                  const sold = toInt(p.sold != null ? p.sold : (p.quantity != null ? (p.quantity - remaining) : 0));
+                  return (
+                    <div key={p.id} className="grid grid-cols-[1fr_52px_52px] px-1 text-sm items-center">
+                      <span className="truncate">• {p.name}</span>
+                      <span className={classNames('font-semibold tabular-nums text-center', remaining <= 5 ? 'text-red-400' : 'text-gray-100')}>{remaining}</span>
+                      <span className="text-gray-400 tabular-nums text-center">{sold}</span>
+                    </div>
+                  );
+                })}
+              {remainingProteins.filter(p => p.remaining != null && p.remaining > 0).length === 0 && (
+                <div className="text-xs text-gray-500 pl-2">Sin datos de sobrantes</div>
+              )}
             </div>
           </div>
         </div>
@@ -651,7 +754,7 @@ const DashboardInner = ({ theme }) => {
     orders, users, totals, statusCounts, userActivity,
     deliveryPersons, proteinDaily, lastUpdatedAt,
     ingresosCategoriasData, gastosPorTiendaData, pedidosDiariosChartData, statusPieChartData,
-    tableOrders, breakfastOrders,
+  tableOrders, breakfastOrders, salonOrders, breakfastSalonOrders,
     handleSaveDailyIngresos, handleDeleteDailyIngresos, handleSaveDailyOrders, handleDeleteDailyOrders
   } = useDashboardData(db, userId, isAuthReady, notify, startOfDay, endOfDay, selectedDate);
   
@@ -739,6 +842,8 @@ const DashboardInner = ({ theme }) => {
           proteinDaily={proteinDaily}
           tableOrders={tableOrders}
           breakfastOrders={breakfastOrders}
+          salonOrders={salonOrders}
+          breakfastSalonOrders={breakfastSalonOrders}
           cardHeight={CARD_HEIGHT}
         />
 

@@ -294,8 +294,9 @@ const TablaPedidos = ({
   // Totales superiores (tiles) - Muestra todos los totales
   const totalsDisplay = useMemo(() => {
     const acc = { cash: 0, nequi: 0, daviplata: 0, other: 0, total: 0 };
-    
-    (orders || []).forEach((order) => {
+    const isActive = (o) => !/(cancel|canelad)/i.test((o?.status || '')); // ignora cancelados
+
+    (orders || []).filter(isActive).forEach((order) => {
       // Para los métodos específicos
       if (order.payments && Array.isArray(order.payments)) {
         order.payments.forEach(payment => {

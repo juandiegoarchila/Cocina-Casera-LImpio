@@ -402,15 +402,64 @@ export const useDashboardData = (
       else sum.domiciliosDesayuno += amount; // conservador
     }
 
-    // Separar ingresos de salón y domicilios
-    const ingresosSalon = 
-      sum.mesasAlmuerzo +
-      sum.llevarAlmuerzo +
-      sum.mesasDesayuno +
-      sum.llevarDesayuno;
+    // Separar ingresos de salón y domicilios (EXCLUYENDO cancelados)
+    const isNotCancelled = (o) => {
+      const s = (o?.status || '').toString().toLowerCase();
+      return !s.includes('cancel');
+    };
 
-    // Para domicilios, calcular total y liquidados separadamente
-    const { totalDomicilios, totalLiquidado: ingresosDomiciliosLiquidados } = calcMethodTotalsAll(orders);
+    // Limpiar sum para cancelar: reconstruiremos sólo con órdenes no canceladas
+    const cleanSum = { ...sum };
+    // Recalcular desde cero usando arrays fuente filtrados si detectamos cancelados presentes
+    const rebuildIfCancelled = () => {
+      // Detectar si había cancelados entre arrays base
+      const anyCancelled = [...tableOrders, ...waiterOrders, ...breakfastSalonOrders, ...breakfastOrders, ...orders].some(o => !isNotCancelled(o));
+      if (!anyCancelled) return; // nada que rehacer
+      const fresh = {
+        domiciliosAlmuerzo: 0,
+        mesasAlmuerzo: 0,
+        llevarAlmuerzo: 0,
+        domiciliosDesayuno: 0,
+        mesasDesayuno: 0,
+        llevarDesayuno: 0,
+      };
+      // Salón almuerzo (table+waiter)
+      [...tableOrders, ...waiterOrders].filter(isNotCancelled).forEach(o => {
+        const total = Number(o.total || 0); if (total<=0) return;
+        const service = normalizeServiceFromOrder(o) || 'mesa';
+        if (service === 'mesa') fresh.mesasAlmuerzo += total; else if (service === 'llevar') fresh.llevarAlmuerzo += total;
+      });
+      // Desayunos salón
+      const bSal = sumBreakfastSalon(breakfastSalonOrders.filter(isNotCancelled));
+      fresh.mesasDesayuno += bSal.mesa;
+      fresh.llevarDesayuno += bSal.llevar;
+      // Desayunos delivery
+      breakfastOrders.filter(isNotCancelled).forEach(b => {
+        const amount = Number(b.total || 0); if (amount<=0) return;
+        const service = normalizeServiceFromOrder(b);
+        const hasAddr = !!(b.address?.address || b.breakfasts?.[0]?.address?.address);
+        if (service === 'mesa') fresh.mesasDesayuno += amount;
+        else if (service === 'llevar') fresh.llevarDesayuno += amount;
+        else if (service === 'domicilio' || (!service && hasAddr)) fresh.domiciliosDesayuno += amount;
+        else fresh.domiciliosDesayuno += amount;
+      });
+      // Domicilios almuerzo
+      orders.filter(isNotCancelled).forEach(o => { const t=Number(o.total||0); if(t>0) fresh.domiciliosAlmuerzo += t; });
+      return fresh;
+    };
+    const rebuilt = rebuildIfCancelled();
+    const effective = rebuilt || cleanSum;
+
+    // Recalcular ingresosSalon y totalDomicilios en base a effective
+    const ingresosSalon = 
+      effective.mesasAlmuerzo +
+      effective.llevarAlmuerzo +
+      effective.mesasDesayuno +
+      effective.llevarDesayuno;
+
+    // Para domicilios: sólo pedidos no cancelados
+    const activeOrders = orders.filter(isNotCancelled);
+    const { totalDomicilios } = calcMethodTotalsAll(activeOrders);
 
     // El ingreso bruto es la suma de todo lo liquidado más el total de salón
     const gross = ingresosSalon + totalDomicilios;
@@ -418,7 +467,7 @@ export const useDashboardData = (
     setTotals((prev) => ({
       ...prev,
       byCategory: {
-        ...sum,
+        ...effective,
         totalDomicilios,
         ingresosSalon
       },
@@ -429,7 +478,7 @@ export const useDashboardData = (
     // Desglose adicional (si lo usas en UI)
     const mixed = [...orders, ...salonOrders, ...breakfastOrders, ...breakfastSalonOrders];
     setSaleTypeBreakdown(buildSaleTypeBreakdown(mixed));
-  }, [orders, salonOrders, breakfastOrders, breakfastSalonOrders]);
+  }, [orders, salonOrders, breakfastOrders, breakfastSalonOrders, waiterOrders, tableOrders, breakfastSalonOrders]);
 
   /* =========================
      Suscripciones a Firestore

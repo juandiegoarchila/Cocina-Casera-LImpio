@@ -303,18 +303,31 @@ useEffect(() => {
   };
 
   const handleEditProtein = (protein) => {
-    setEditingProtein(protein);
+    // Aseguramos incluir campos derivados: remaining (cantidad restante) y sold
+    setEditingProtein({
+      ...protein,
+      remaining: protein.remaining != null ? protein.remaining : (protein.remainingUnits != null ? protein.remainingUnits : (protein.leftover || 0)),
+      sold: protein.sold != null ? protein.sold : (protein.quantity != null && protein.remaining != null ? (Number(protein.quantity) - Number(protein.remaining)) : protein.sold)
+    });
   };
 
   const handleUpdateProtein = async () => {
-    if (!editingProtein.name || !editingProtein.quantity || isNaN(editingProtein.quantity) || Number(editingProtein.quantity) <= 0) {
-      setError('Por favor, ingrese un nombre de proteína válido y una cantidad mayor a 0.');
+    if (!editingProtein.name || editingProtein.quantity === '' || isNaN(editingProtein.quantity) || Number(editingProtein.quantity) < 0) {
+      setError('Por favor, ingrese un nombre de proteína válido y una cantidad inicial >= 0.');
       return;
     }
+    // Normalizamos valores
+    const quantityNum = Number(editingProtein.quantity) || 0;
+    let remainingNum = Number(editingProtein.remaining);
+    if (isNaN(remainingNum) || remainingNum < 0) remainingNum = 0;
+    if (remainingNum > quantityNum) remainingNum = quantityNum; // No permitir sobrantes mayores a la inicial
+    const soldNum = quantityNum - remainingNum;
     try {
       await updateDoc(doc(db, 'dailyProteins', editingProtein.id), {
         name: editingProtein.name.trim(),
-        quantity: Number(editingProtein.quantity),
+        quantity: quantityNum,
+        remaining: remainingNum,
+        sold: soldNum,
       });
       setSuccess('Proteína actualizada correctamente.');
       setEditingProtein(null);
@@ -383,6 +396,22 @@ useEffect(() => {
                           min="0"
                         />
                       </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Cantidad Restante</label>
+                        <input
+                          type="number"
+                          value={editingProtein.remaining ?? 0}
+                          onChange={(e) => setEditingProtein({ ...editingProtein, remaining: e.target.value })}
+                          className={classNames(
+                            'w-full p-2 rounded-md border text-sm',
+                            theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                            'focus:outline-none focus:ring-1 focus:ring-blue-500'
+                          )}
+                          placeholder="Ej: 5"
+                          min="0"
+                        />
+                        <p className="text-xs mt-1 text-gray-500 dark:text-gray-400">Vendidas calculadas: {Math.max(0, (Number(editingProtein.quantity)||0) - (Number(editingProtein.remaining)||0))}</p>
+                      </div>
                       <div className="flex justify-end gap-2">
                         <button onClick={handleCancelEditProtein} className={classNames('px-4 py-2 rounded-md text-sm font-medium', theme === 'dark' ? 'bg-gray-600 hover:bg-gray-700 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-900')}>Cancelar</button>
                         <button onClick={handleUpdateProtein} disabled={isLoading} className={classNames('px-4 py-2 rounded-md text-sm font-medium', isLoading ? 'bg-gray-400 cursor-not-allowed' : theme === 'dark' ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-blue-500 hover:bg-blue-600 text-white')}>
@@ -440,9 +469,14 @@ useEffect(() => {
                     <ul className="space-y-2">
                       {proteins.map((protein) => (
                         <li key={protein.id} className={classNames('flex justify-between items-center p-2 rounded-md', theme === 'dark' ? 'bg-gray-700' : 'bg-gray-100')}>
-                          <span className="text-sm">
-                            {protein.name}: {protein.quantity} unidades
-                          </span>
+                          <div className="flex flex-col text-xs sm:text-sm">
+                            <span className="font-medium">{protein.name}</span>
+                            <div className="flex gap-3 mt-0.5">
+                              <span>Inicial: <strong>{protein.quantity || 0}</strong></span>
+                              <span>Restante: <strong>{protein.remaining != null ? protein.remaining : (protein.remainingUnits || 0)}</strong></span>
+                              <span>Vendidas: <strong>{(protein.quantity || 0) - (protein.remaining != null ? protein.remaining : (protein.remainingUnits || 0))}</strong></span>
+                            </div>
+                          </div>
                           <div className="flex gap-2">
                             <button onClick={() => handleEditProtein(protein)} className="text-blue-500 hover:text-blue-400 transition-colors duration-150 p-1 rounded-md" title="Editar proteína" aria-label={`Editar ${protein.name}`}>
                               <PencilIcon className="w-4 h-4" />

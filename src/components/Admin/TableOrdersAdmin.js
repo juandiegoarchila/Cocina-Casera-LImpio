@@ -249,8 +249,8 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
     };
   }, [isMenuOpen]);
 
-  // ====== Totales usando split de pagos (con fallback legacy) ======
-  const totals = sumPaymentsByMethod(orders);
+  // ====== Totales usando split de pagos (con fallback legacy) EXCLUYENDO cancelados ======
+  const totals = sumPaymentsByMethod(orders.filter(o => !/(cancel)/i.test((o.status || '').toLowerCase())));
 
   // ===== Filtro/búsqueda (incluye pago) =====
   const filteredOrders = orders.filter((order) => {
