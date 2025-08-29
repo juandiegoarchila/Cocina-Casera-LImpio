@@ -272,6 +272,7 @@ const GeneralTotalsCard = ({
   breakfastOrders,
   salonOrders,
   breakfastSalonOrders,
+  pedidosDiariosChartData,
   cardHeight = CARD_HEIGHT
 }) => {
   const [expanded, setExpanded] = useState(false);
@@ -288,13 +289,23 @@ const GeneralTotalsCard = ({
   useEffect(() => {
     const ref = collection(db, 'dailyProteins');
     const unsub = onSnapshot(ref, (snap) => {
+      const sel = selectedDate; // YYYY-MM-DD
       const list = [];
       snap.forEach(docSnap => {
         const data = docSnap.data() || {};
+        // Filtrar por fecha si el documento tiene 'date' (string o Timestamp)
+        if (sel) {
+          let docDate = null;
+          if (typeof data.date === 'string') {
+            docDate = data.date.split('T')[0];
+          } else if (data.date?.toDate) {
+            docDate = data.date.toDate().toISOString().split('T')[0];
+          }
+          if (docDate && docDate !== sel) return; // excluir otros días
+        }
         const quantity = Number(data.quantity) || 0;
         const remaining = data.remaining != null ? Number(data.remaining) : (data.leftover != null ? Number(data.leftover) : (data.remainingUnits != null ? Number(data.remainingUnits) : null));
         const sold = data.sold != null ? Number(data.sold) : (remaining != null ? (quantity - remaining) : null);
-        // Considerar solo si hay un nombre válido
         const name = data.name || docSnap.id;
         list.push({ id: docSnap.id, name, quantity, remaining, sold });
       });
@@ -304,7 +315,7 @@ const GeneralTotalsCard = ({
       setRemainingProteins([]);
     });
     return () => unsub();
-  }, []);
+  }, [selectedDate]);
 
   // --- helpers ---
   const toInt = (v) => {
@@ -321,18 +332,11 @@ const GeneralTotalsCard = ({
 
   const bc = totals?.byCategory || {};
   const salonTotal = toInt(bc.mesasAlmuerzo) + toInt(bc.llevarAlmuerzo) + toInt(bc.mesasDesayuno) + toInt(bc.llevarDesayuno);
-  // Recalcular domicilios liquidados (solo settled y no cancelados) para evitar arrastre de cancelados
-  const activeDomiciliosLiquid = useMemo(() => {
-    return (orders || [])
-      .filter(o => !/(cancel)/i.test(o?.status || ''))
-      .reduce((sum, o) => {
-        const settled = o.settled === true || Object.values(o.paymentSettled || {}).some(v => v);
-        if (!settled) return sum;
-        return sum + toInt(o.total);
-      }, 0);
-  }, [orders]);
-  const grossIncomeDisplay = salonTotal + activeDomiciliosLiquid;
-  const domiciliosLiquidado = activeDomiciliosLiquid;
+  // Domicilios liquidados (nuevos campos)
+  const domiciliosAlmuerzoLiquidado = toInt(bc.domiciliosAlmuerzoLiquidado);
+  const domiciliosDesayunoLiquidado = toInt(bc.domiciliosDesayunoLiquidado);
+  const domiciliosLiquidado = domiciliosAlmuerzoLiquidado + domiciliosDesayunoLiquidado;
+  const grossIncomeDisplay = salonTotal + domiciliosLiquidado;
   const expensesDisplay = toInt(totals?.expenses);
   const netDisplay = grossIncomeDisplay - expensesDisplay;
 
@@ -670,7 +674,39 @@ const GeneralTotalsCard = ({
             <div className="space-y-1">
               <Row left="Proteínas preparadas (unid.)" right={String(toInt(proteinDaily?.preparedUnits || 0))} rightClass="text-gray-100" />
               <Row left="Almuerzos vendidos (unid.)" right={String(toInt((orders || []).length + (tableOrders || []).length))} rightClass="text-gray-100" />
-              <Row left="Desayunos vendidos (unid.)" right={String(toInt((breakfastOrders || []).length))} rightClass="text-gray-100" />
+              {(() => {
+                // Usar datos agregados de pedidosDiariosChartData (conteos) si disponibles para el día
+                const targetISO = (selectedDate ? new Date(selectedDate) : new Date()).toISOString().split('T')[0];
+                const dayEntry = (pedidosDiariosChartData||[]).find(d => d.name === targetISO);
+                let totalBreakfastSold;
+                if(dayEntry){
+                  // Suma granular si existen campos detallados
+                  const desDom = Number(dayEntry.domiciliosDesayuno||0);
+                  const desMesa = Number(dayEntry.mesasDesayuno||0);
+                  const desLle = Number(dayEntry.llevarDesayuno||0);
+                  const granular = desDom + desMesa + desLle;
+                  if(granular>0) {
+                    totalBreakfastSold = granular;
+                  } else if(typeof dayEntry.desTotal !== 'undefined') {
+                    totalBreakfastSold = Number(dayEntry.desTotal||0);
+                  }
+                }
+                if(typeof totalBreakfastSold === 'undefined') {
+                  // Fallback al conteo directo (caso histórico sin granular)
+                  const base = selectedDate ? new Date(selectedDate) : new Date();
+                  base.setHours(0,0,0,0);
+                  const dateFilter = (o) => {
+                    if(!o) return false;
+                    const ts = o.createdAt?.toDate ? o.createdAt.toDate() : (o.timestamp?.toDate ? o.timestamp.toDate() : (o.date ? (o.date.toDate? o.date.toDate(): new Date(o.date)) : null));
+                    if(!ts || isNaN(ts)) return false;
+                    return ts.getFullYear()===base.getFullYear() && ts.getMonth()===base.getMonth() && ts.getDate()===base.getDate();
+                  };
+                  const deliveryCount = (breakfastOrders||[]).filter(dateFilter).length;
+                  const salonCount = (breakfastSalonOrders||[]).filter(dateFilter).length;
+                  totalBreakfastSold = deliveryCount + salonCount;
+                }
+                return <Row left="Desayunos vendidos (unid.)" right={String(toInt(totalBreakfastSold||0))} rightClass="text-gray-100" />;
+              })()}
             </div>
 
             <div className={classNames('border-t my-3', theme === 'dark' ? 'border-gray-700' : 'border-gray-200')} />
@@ -752,9 +788,11 @@ const DashboardInner = ({ theme }) => {
   const {
     loadingData,
     orders, users, totals, statusCounts, userActivity,
-    deliveryPersons, proteinDaily, lastUpdatedAt,
-    ingresosCategoriasData, gastosPorTiendaData, pedidosDiariosChartData, statusPieChartData,
+  deliveryPersons, proteinDaily, lastUpdatedAt,
+  ingresosCategoriasData, gastosPorTiendaData, pedidosDiariosChartData, statusPieChartData,
+  ingresosData, pedidosDiariosGuardadosData, periodStructures,
   tableOrders, breakfastOrders, salonOrders, breakfastSalonOrders,
+  paymentsRaw, paymentsAllRaw,
     handleSaveDailyIngresos, handleDeleteDailyIngresos, handleSaveDailyOrders, handleDeleteDailyOrders
   } = useDashboardData(db, userId, isAuthReady, notify, startOfDay, endOfDay, selectedDate);
   
@@ -812,6 +850,42 @@ const DashboardInner = ({ theme }) => {
 
   if (loading) return <LoadingSpinner theme={theme} />;
 
+  // Calcular grossIncome para los charts (mismo criterio que GeneralTotalsCard)
+  const toInt = (v) => {
+    if (typeof v === 'number' && Number.isFinite(v)) return Math.floor(v);
+    const str = String(v ?? '').replace(/[^0-9-]/g, '');
+    const n = parseInt(str, 10);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const bcCharts = totals?.byCategory || {};
+  const salonTotalCharts = toInt(bcCharts.mesasAlmuerzo) + toInt(bcCharts.llevarAlmuerzo) + toInt(bcCharts.mesasDesayuno) + toInt(bcCharts.llevarDesayuno);
+  const domiciliosBrutoCharts = toInt(bcCharts.domiciliosAlmuerzo) + toInt(bcCharts.domiciliosDesayuno);
+  let grossIncomeForCharts = salonTotalCharts + domiciliosBrutoCharts;
+  const todayISO = new Date().toISOString().split('T')[0];
+  if(selectedDate && selectedDate !== todayISO){
+    const hist = ingresosData?.find(r=> new Date(r.date).toISOString().split('T')[0] === selectedDate);
+    if(hist){
+      const c = hist.categories || {};
+      grossIncomeForCharts = toInt(c.domiciliosAlmuerzo)+toInt(c.domiciliosDesayuno)+toInt(c.mesasAlmuerzo)+toInt(c.mesasDesayuno);
+    } else {
+      grossIncomeForCharts = 0;
+    }
+  }
+
+  // Cálculo detallado de domicilios liquidados por tipo (almuerzo / desayuno) para alinear breakdown del gráfico con Totales Generales
+  const isCancelled = (o) => /(cancel)/i.test(o?.status || '');
+  const isSettled = (o) => o.settled === true || Object.values(o.paymentSettled || {}).some(v => v);
+
+  // Almuerzo domicilios: ya vienen en orders
+  const settledDomiciliosAlmuerzoCharts = (orders || [])
+    .filter(o => !isCancelled(o) && isSettled(o))
+    .reduce((sum,o)=> sum + toInt(o.total), 0);
+
+  // Desayuno domicilios: breakfastOrders con dirección (no son de salón) + liquidados
+  const settledDomiciliosDesayunoCharts = (breakfastOrders || [])
+    .filter(o => !isCancelled(o) && (o.address?.address || o.breakfasts?.[0]?.address?.address) && isSettled(o))
+    .reduce((sum,o)=> sum + toInt(o.total), 0);
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 font-inter">
       <h2 className="text-3xl font-extrabold mb-8 text-gray-900 dark:text-white transition-colors duration-200">Dashboard</h2>
@@ -844,6 +918,7 @@ const DashboardInner = ({ theme }) => {
           breakfastOrders={breakfastOrders}
           salonOrders={salonOrders}
           breakfastSalonOrders={breakfastSalonOrders}
+          pedidosDiariosChartData={pedidosDiariosChartData}
           cardHeight={CARD_HEIGHT}
         />
 
@@ -867,18 +942,28 @@ const DashboardInner = ({ theme }) => {
 
       <DashboardCharts
         theme={theme}
-         cardHeight={CARD_HEIGHT} 
+        cardHeight={CARD_HEIGHT}
         chartTextColor={chartTextColor}
-        ingresosCategoriasData={ingresosCategoriasData}
-        gastosPorTiendaData={gastosPorTiendaData}
-        pedidosDiariosChartData={pedidosDiariosChartData}
+        dailySalesChartData={ingresosCategoriasData}
+        dailyOrdersChartData={pedidosDiariosChartData}
         statusPieChartData={statusPieChartData}
         loading={loading}
         handleSaveDailyIngresos={handleSaveDailyIngresos}
         handleDeleteDailyIngresos={handleDeleteDailyIngresos}
         handleSaveDailyOrders={handleSaveDailyOrders}
         handleDeleteDailyOrders={handleDeleteDailyOrders}
-        proteinDaily={proteinDaily}
+        totalGrossToday={grossIncomeForCharts}
+  categoryTotals={totals?.byCategory}
+  selectedDate={selectedDate}
+  totalExpensesTodayProp={totals?.expenses || 0}
+  expensesByProvider={totals?.expensesByProvider || { total:0, byProvider:{}, counts:{} }}
+  settledDomiciliosAlmuerzo={settledDomiciliosAlmuerzoCharts}
+  settledDomiciliosDesayuno={settledDomiciliosDesayunoCharts}
+  ingresosData={ingresosData}
+  pedidosDiariosGuardadosData={pedidosDiariosGuardadosData}
+  periodStructures={periodStructures}
+  paymentsRaw={paymentsRaw}
+  paymentsAllRaw={paymentsAllRaw}
       />
 
       <ConfirmationModal 

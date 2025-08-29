@@ -110,6 +110,10 @@ const isBreakfastOrder = (o) => {
 
 // Devuelve 'mesa' | 'llevar' | 'domicilio' | null
 const normalizeServiceFromOrder = (o) => {
+  // Si la colección indica delivery (incluye desayuno delivery), forzamos 'domicilio'
+  if (o?.__collection && o.__collection.toLowerCase().includes('delivery')) {
+    return 'domicilio';
+  }
   const candidates = [
     o?.orderTypeNormalized,
     o?.serviceType,
@@ -268,6 +272,175 @@ export const useDashboardData = (
   const [dailyOrdersChartData, setDailyOrdersChartData] = useState([]);
   const [statusPieChartData, setStatusPieChartData] = useState([]);
 
+  /* =====================================================
+     Agregaciones estructuradas para vistas: Hoy / 7d / Mes / Año
+     ===================================================== */
+  const sevenCategoryKeys = ['domiciliosAlmuerzo','domiciliosDesayuno','mesasAlmuerzo','llevarAlmuerzo','mesasDesayuno','llevarDesayuno','gastos'];
+
+  // Mapa de gastos por día (a partir de payments listener más abajo). Añadimos listener aquí ligero.
+  const [paymentsRaw, setPaymentsRaw] = useState([]);
+  // Todos los pagos (sin filtrar por selectedDate) para gráficos de rangos amplios
+  const [paymentsAllRaw, setPaymentsAllRaw] = useState([]);
+
+  // Cálculo de gastos por día
+  const expensesByDay = useMemo(()=>{
+    const map = {};
+    paymentsRaw.forEach(p => {
+      const ts = p.timestamp;
+      if(!ts) return;
+      const d = ts.toDate ? ts.toDate() : new Date(ts);
+      if(!d) return;
+      d.setHours(0,0,0,0);
+      const iso = d.toISOString().split('T')[0];
+      const amt = Number(p.amount||0);
+      map[iso] = (map[iso]||0) + (amt>0?amt:0);
+    });
+    return map;
+  },[paymentsRaw]);
+
+  // Helper: sumar categorías de un registro histórico
+  const sumHistCategories = (c={}) => (
+    Number(c.domiciliosAlmuerzo||0)+Number(c.domiciliosDesayuno||0)+Number(c.mesasAlmuerzo||0)+Number(c.mesasDesayuno||0)+Number(c.llevarAlmuerzo||0)+Number(c.llevarDesayuno||0)
+  );
+
+  // Construir índice de históricos por día actual (solo fecha -> categorías)
+  const historicIndex = useMemo(()=>{
+    const idx = {};
+    ingresosData.forEach(r => {
+      if(!r?.date) return;
+      const d = new Date(r.date);
+      if(isNaN(d)) return;
+      const iso = d.toISOString().split('T')[0];
+      idx[iso] = { ...(r.categories||{}) };
+    });
+    return idx;
+  },[ingresosData]);
+
+  // Realtime builder para un día (si no hay histórico o es hoy abierto)
+  const buildRealtimeDay = useCallback((isoDate) => {
+    const dateObj = new Date(isoDate);
+    if(isNaN(dateObj)) return null;
+    const year = dateObj.getFullYear();
+    const month = dateObj.getMonth();
+    const day = dateObj.getDate();
+    const isCancelled = (o) => (o?.status||'').toLowerCase().includes('cancel');
+    const sameDay = (o) => {
+      const ts = o?.createdAt || o?.timestamp || o?.date;
+      const d = ts?.toDate ? ts.toDate() : (ts ? new Date(ts) : null);
+      if(!d) return false;
+      return d.getFullYear()===year && d.getMonth()===month && d.getDate()===day;
+    };
+    const cat = { domiciliosAlmuerzo:0, domiciliosDesayuno:0, mesasAlmuerzo:0, llevarAlmuerzo:0, mesasDesayuno:0, llevarDesayuno:0 };
+    // orders -> domicilios almuerzo
+    orders.filter(o=>!isCancelled(o) && sameDay(o)).forEach(o=> { cat.domiciliosAlmuerzo += Number(o.total||0); });
+    // salón (table + waiter)
+    const combinedSalon = [...tableOrders, ...waiterOrders];
+    combinedSalon.filter(o=>!isCancelled(o) && sameDay(o)).forEach(o => {
+      const amount = Number(o.total||0); if(amount<=0) return;
+      const esDes = isBreakfastOrder(o);
+      const serv = normalizeServiceFromOrder(o) || 'mesa';
+      if(esDes){
+        if(serv==='mesa') cat.mesasDesayuno += amount; else if(serv==='llevar') cat.llevarDesayuno += amount; else if(serv==='domicilio') cat.domiciliosDesayuno += amount;
+      } else {
+        if(serv==='mesa') cat.mesasAlmuerzo += amount; else if(serv==='llevar') cat.llevarAlmuerzo += amount; else if(serv==='domicilio') cat.domiciliosAlmuerzo += amount;
+      }
+    });
+    // desayunos salón específicos (colección breakfastOrders) -> CLASIFICAR por servicio (antes siempre como mesa)
+    breakfastSalonOrders.filter(o=>!isCancelled(o) && sameDay(o)).forEach(o => {
+      const amount = Number(o.total||0); if(amount<=0) return;
+      const serv = normalizeServiceFromOrder(o) || 'mesa';
+      if(serv==='mesa') cat.mesasDesayuno += amount; else if(serv==='llevar') cat.llevarDesayuno += amount; else if(serv==='domicilio') cat.domiciliosDesayuno += amount; else cat.mesasDesayuno += amount;
+    });
+    // desayunos delivery (deliveryBreakfastOrders)
+    breakfastOrders.filter(o=>!isCancelled(o) && sameDay(o)).forEach(o => {
+      const amount = Number(o.total||0); if(amount<=0) return;
+      const serv = normalizeServiceFromOrder(o);
+      const hasAddr = !!(o.address?.address || o.breakfasts?.[0]?.address?.address);
+      if(serv==='mesa') cat.mesasDesayuno += amount; else if(serv==='llevar') cat.llevarDesayuno += amount; else if(serv==='domicilio' || (!serv && hasAddr)) cat.domiciliosDesayuno += amount; else cat.domiciliosDesayuno += amount;
+    });
+    return cat;
+  }, [orders, tableOrders, waiterOrders, breakfastOrders, breakfastSalonOrders]);
+
+  const todayISO = useMemo(()=>{ const d=new Date(); d.setHours(0,0,0,0); return d.toISOString().split('T')[0]; },[]);
+
+  // Día de hoy (histórico si existe; si no realtime)
+  const todayCategories = useMemo(()=>{
+    if(historicIndex[todayISO]) return historicIndex[todayISO];
+    return buildRealtimeDay(todayISO) || { domiciliosAlmuerzo:0, domiciliosDesayuno:0, mesasAlmuerzo:0, llevarAlmuerzo:0, mesasDesayuno:0, llevarDesayuno:0 };
+  }, [historicIndex, todayISO, buildRealtimeDay]);
+
+  // Últimos 7 días (cada día: histórico o realtime si no cerrado)
+  const last7DaysData = useMemo(()=>{
+    const arr = [];
+    for(let i=6;i>=0;i--){
+      const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()-i);
+      const iso = d.toISOString().split('T')[0];
+      const cat = historicIndex[iso] || buildRealtimeDay(iso) || { domiciliosAlmuerzo:0, domiciliosDesayuno:0, mesasAlmuerzo:0, llevarAlmuerzo:0, mesasDesayuno:0, llevarDesayuno:0 };
+      const totalIncome = sumHistCategories(cat);
+      const gastos = expensesByDay[iso]||0;
+      arr.push({ date: iso, categories: cat, totalIncome, gastos });
+    }
+    return arr;
+  }, [historicIndex, buildRealtimeDay, expensesByDay]);
+
+  // Mes actual completo
+  const currentMonthDaily = useMemo(()=>{
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const daysIn = new Date(year, month+1, 0).getDate();
+    const arr = [];
+    for(let day=1; day<=daysIn; day++){
+      const iso = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+      const hasHist = !!historicIndex[iso];
+      // Solo día actual se reconstruye en vivo si no hay histórico; días pasados sin histórico quedan 0 para no repetir hoy.
+      let cat;
+      if (hasHist) {
+        cat = historicIndex[iso];
+      } else if (iso === todayISO) {
+        cat = buildRealtimeDay(iso) || { domiciliosAlmuerzo:0, domiciliosDesayuno:0, mesasAlmuerzo:0, llevarAlmuerzo:0, mesasDesayuno:0, llevarDesayuno:0 };
+      } else {
+        // Pasado o futuro sin histórico: valores en cero para evidenciar que falta cierre.
+        cat = { domiciliosAlmuerzo:0, domiciliosDesayuno:0, mesasAlmuerzo:0, llevarAlmuerzo:0, mesasDesayuno:0, llevarDesayuno:0 };
+      }
+      const totalIncome = sumHistCategories(cat);
+      const gastos = expensesByDay[iso]||0;
+      arr.push({ date: iso, categories: cat, totalIncome, gastos, closed: hasHist });
+    }
+    return arr;
+  }, [historicIndex, buildRealtimeDay, expensesByDay]);
+
+  // Año: agregación mensual usando históricos + realtime de días abiertos del mes actual
+  const currentYearMonthly = useMemo(()=>{
+    const now = new Date();
+    const year = now.getFullYear();
+    const months = [];
+    for(let m=0; m<12; m++){
+      const daysIn = new Date(year, m+1, 0).getDate();
+      let sumCat = { domiciliosAlmuerzo:0, domiciliosDesayuno:0, mesasAlmuerzo:0, llevarAlmuerzo:0, mesasDesayuno:0, llevarDesayuno:0 };
+      let gastosMes = 0;
+      for(let d=1; d<=daysIn; d++){
+        const iso = `${year}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+        const cat = historicIndex[iso] || (m===now.getMonth() ? buildRealtimeDay(iso) : null);
+        if(cat){
+          Object.keys(sumCat).forEach(k => { sumCat[k] += Number(cat[k]||0); });
+          gastosMes += expensesByDay[iso]||0;
+        }
+      }
+      const totalIncome = sumHistCategories(sumCat);
+      months.push({ monthIndex:m, monthKey:`${year}-${String(m+1).padStart(2,'0')}`, categories: sumCat, totalIncome, gastos: gastosMes });
+    }
+    return months;
+  }, [historicIndex, buildRealtimeDay, expensesByDay]);
+
+  // Exposición estructurada para gráficos/drill-down
+  const periodStructures = {
+    today: { date: todayISO, categories: todayCategories, totalIncome: sumHistCategories(todayCategories), gastos: expensesByDay[todayISO]||0 },
+    last7Days: last7DaysData,
+    thisMonth: currentMonthDaily,
+    thisYear: currentYearMonthly,
+  };
+
   const initialLoadRefs = useRef({
     orders: false,
     tableOrders: false,
@@ -279,6 +452,7 @@ export const useDashboardData = (
     ingresos: false,
     pedidosDiariosGuardados: false,
     payments: false,
+  paymentsAll: false,
   });
 
   // Unificar todos los pedidos de salón (excepto desayunos de salón que tratamos aparte para prorrateo)
@@ -308,6 +482,44 @@ export const useDashboardData = (
      Sumas por categoría (usa normalización + detección robusta)
      ========================================================== */
   useEffect(() => {
+    const todayISO = new Date().toISOString().split('T')[0];
+    if(selectedDate && selectedDate !== todayISO){
+      // Buscar registro histórico de ingresos para esa fecha
+      const rec = ingresosData.find(r=> new Date(r.date).toISOString().split('T')[0] === selectedDate);
+      if(rec){
+        const c = rec.categories || {};
+        const effective = {
+          domiciliosAlmuerzo: Number(c.domiciliosAlmuerzo)||0,
+          mesasAlmuerzo: Number(c.mesasAlmuerzo)||0,
+          llevarAlmuerzo: 0, // no almacenado históricamente
+          domiciliosDesayuno: Number(c.domiciliosDesayuno)||0,
+          mesasDesayuno: Number(c.mesasDesayuno)||0,
+          llevarDesayuno: 0 // no almacenado
+        };
+        const ingresosSalon = effective.mesasAlmuerzo + effective.llevarAlmuerzo + effective.mesasDesayuno + effective.llevarDesayuno;
+        const totalDomicilios = effective.domiciliosAlmuerzo + effective.domiciliosDesayuno; // aproximado
+        const gross = ingresosSalon + totalDomicilios;
+        setTotals(prev=>({
+          ...prev,
+          byCategory:{...effective,totalDomicilios, ingresosSalon},
+          grossIncome:gross,
+          net: Math.max(gross - (prev.expenses||0),0)
+        }));
+      } else {
+        // Sin histórico: forzar ceros
+        setTotals(prev=>({
+          ...prev,
+          byCategory:{
+            domiciliosAlmuerzo:0, mesasAlmuerzo:0, llevarAlmuerzo:0,
+            domiciliosDesayuno:0, mesasDesayuno:0, llevarDesayuno:0,
+            totalDomicilios:0, ingresosSalon:0
+          },
+          grossIncome:0,
+          net:0
+        }));
+      }
+      return; // saltar cálculo en vivo
+    }
     const sum = {
       domiciliosAlmuerzo: 0,
       mesasAlmuerzo: 0,
@@ -457,19 +669,42 @@ export const useDashboardData = (
       effective.mesasDesayuno +
       effective.llevarDesayuno;
 
-    // Para domicilios: sólo pedidos no cancelados
-    const activeOrders = orders.filter(isNotCancelled);
-    const { totalDomicilios } = calcMethodTotalsAll(activeOrders);
-
-    // El ingreso bruto es la suma de todo lo liquidado más el total de salón
-    const gross = ingresosSalon + totalDomicilios;
+  // Para domicilios: solo sumar los LIQUIDADOS (almuerzo + desayuno)
+  const isLiquidated = (o) => {
+    if(!o) return false;
+    if(o.settled === true) return true;
+    // soportar estructura paymentSettled { cash: true, nequi: true, daviplata: true }
+    if(o.paymentSettled && typeof o.paymentSettled === 'object') {
+      return Object.values(o.paymentSettled).some(v => v === true);
+    }
+    return false;
+  };
+  // Sumar únicamente montos de pedidos domicilios almuerzo liquidados
+  let domiciliosAlmuerzoLiquidado = 0;
+  orders.forEach(o => {
+    const t = Number(o.total||0); if(t>0 && isLiquidated(o)) domiciliosAlmuerzoLiquidado += t;
+  });
+  // Desayunos delivery (domicilios desayuno) liquidados
+  let domiciliosDesayunoLiquidado = 0;
+  breakfastOrders.forEach(b => {
+    const hasAddr = !!(b.address?.address || b.breakfasts?.[0]?.address?.address);
+    if(!hasAddr) return; // solo domicilio
+    const t = Number(b.total||0); if(t>0 && isLiquidated(b)) domiciliosDesayunoLiquidado += t;
+  });
+  const totalDomiciliosLiquidado = domiciliosAlmuerzoLiquidado + domiciliosDesayunoLiquidado;
+  // El ingreso bruto mostrado ahora respeta liquidación para domicilios
+  const gross = ingresosSalon + totalDomiciliosLiquidado;
 
     setTotals((prev) => ({
       ...prev,
       byCategory: {
         ...effective,
-        totalDomicilios,
-        ingresosSalon
+        // Mantener categorías originales para desglose, pero añadir campos de liquidados
+        totalDomicilios: effective.domiciliosAlmuerzo + effective.domiciliosDesayuno,
+        ingresosSalon,
+        domiciliosAlmuerzoLiquidado,
+        domiciliosDesayunoLiquidado,
+        totalDomiciliosLiquidado,
       },
       grossIncome: gross,
       net: Math.max(gross - (prev.expenses || 0), 0),
@@ -478,7 +713,7 @@ export const useDashboardData = (
     // Desglose adicional (si lo usas en UI)
     const mixed = [...orders, ...salonOrders, ...breakfastOrders, ...breakfastSalonOrders];
     setSaleTypeBreakdown(buildSaleTypeBreakdown(mixed));
-  }, [orders, salonOrders, breakfastOrders, breakfastSalonOrders, waiterOrders, tableOrders, breakfastSalonOrders]);
+  }, [orders, salonOrders, breakfastOrders, breakfastSalonOrders, waiterOrders, tableOrders, selectedDate, ingresosData]);
 
   /* =========================
      Suscripciones a Firestore
@@ -732,17 +967,44 @@ export const useDashboardData = (
     const unsubscribePayments = onSnapshot(
       paymentsQuery,
       (snapshot) => {
-        // Ignorar docs sin timestamp (serverTimestamp pendiente)
-        const items = snapshot.docs
-          .map(d => ({ id: d.id, ...d.data() }))
-          .filter(p => !!p.timestamp);
+        const items = snapshot.docs.map(d => {
+          const data = d.data();
+          // Fallback de fecha: timestamp || createdAt || date (string YYYY-MM-DD)
+          let ts = data.timestamp || data.createdAt;
+          if (!ts && typeof data.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(data.date)) {
+            // Crear Date fijo medio día para evitar corrimientos huso horario
+            ts = new Date(data.date + 'T12:00:00-05:00');
+          }
+          return { id: d.id, ...data, timestamp: ts || data.timestamp }; // normalizamos en timestamp
+        });
+
+        // Guardar lista cruda (incluye ahora registros antiguos sin serverTimestamp original)
+        setPaymentsRaw(items);
 
         let totalExpenses = 0;
         const byProvider = {};
         const counts = {};
 
+        const parseAmount = (val) => {
+          if (typeof val === 'number') return isNaN(val)?0:val;
+          if (typeof val === 'string') {
+            // Eliminar símbolos de moneda, espacios y separadores de miles comunes
+            let cleaned = val.trim()
+              .replace(/COP/gi,'')
+              .replace(/\$/g,'')
+              .replace(/,/g,'')
+              .replace(/\s+/g,'');
+            // Si hay más de un punto, asume que son separadores de miles y quita todos
+            const points = (cleaned.match(/\./g)||[]).length;
+            if(points>1) cleaned = cleaned.replace(/\./g,'');
+            const num = Number(cleaned);
+            return isNaN(num)?0:num;
+          }
+          return 0;
+        };
+
         for (const p of items) {
-          const amount = Number(p.amount || 0);
+          const amount = parseAmount(p.amount || 0);
           const provider = (p.provider || p.store || '—').toString().trim() || '—';
           totalExpenses += amount;
           byProvider[provider] = (byProvider[provider] || 0) + amount;
@@ -774,6 +1036,34 @@ export const useDashboardData = (
     );
     unsubscribes.push(unsubscribePayments);
 
+    // Payments ALL (sin filtro para gráficos de mes/año/7d)
+    const unsubAllPayments = onSnapshot(
+      collection(db, 'payments'),
+      (snapshot) => {
+        const items = snapshot.docs.map(d => {
+          const data = d.data();
+            let ts = data.timestamp || data.createdAt;
+            if (!ts && typeof data.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(data.date)) {
+              ts = new Date(data.date + 'T12:00:00-05:00');
+            }
+            return { id: d.id, ...data, timestamp: ts || data.timestamp };
+          });
+        setPaymentsAllRaw(items);
+        if(!initialLoadRefs.current.paymentsAll){
+          initialLoadRefs.current.paymentsAll = true;
+          checkIfAllLoaded();
+        }
+      },
+      (error) => {
+        setError?.(`Error al cargar todos los pagos: ${error.message}`);
+        if(!initialLoadRefs.current.paymentsAll){
+          initialLoadRefs.current.paymentsAll = true;
+          checkIfAllLoaded();
+        }
+      }
+    );
+    unsubscribes.push(unsubAllPayments);
+
     return () => {
       unsubscribes.forEach((unsubscribe) => unsubscribe());
     };
@@ -791,8 +1081,11 @@ export const useDashboardData = (
       cashPendiente: m.cashClientesPendiente,
       daviplata: m.daviplataTotal,
       nequi: m.nequiTotal,
-      grossIncome: m.totalLiquidado, // Solo incluye pagos liquidados
-      net: Math.max(m.totalLiquidado - (prev.expenses || 0), 0)
+  // Mantener grossIncome basado en categorías (ya incluye pedidos no liquidados)
+  // Exponemos adicionalmente totalLiquidado si se requiere (sin alterar UI actual)
+  totalLiquidado: m.totalLiquidado,
+  grossIncome: prev.byCategory ? (prev.byCategory.totalDomicilios || 0) + (prev.byCategory.ingresosSalon || 0) : prev.grossIncome,
+  net: Math.max(((prev.byCategory ? (prev.byCategory.totalDomicilios || 0) + (prev.byCategory.ingresosSalon || 0) : prev.grossIncome) - (prev.expenses || 0)), 0)
     }));
   }, [orders, salonOrders, breakfastOrders, breakfastSalonOrders]);
 
@@ -1097,8 +1390,12 @@ export const useDashboardData = (
       });
 
       if (today >= ordersStartDate && today <= ordersEndDate) {
-        let currentDayRealtimeDomicilios = 0;
-        let currentDayRealtimeMesas = 0;
+  let currentDayRealtimeDomicilios = 0;
+  let currentDayRealtimeMesas = 0;
+  // Nuevos contadores detallados por (servicio, comida)
+  let c_domiciliosDesayuno = 0, c_domiciliosAlmuerzo = 0;
+  let c_mesasDesayuno = 0, c_mesasAlmuerzo = 0;
+  let c_llevarDesayuno = 0, c_llevarAlmuerzo = 0;
 
         orders.forEach((order) => {
           const orderDate = order.createdAt?.toDate
@@ -1106,6 +1403,17 @@ export const useDashboardData = (
             : null;
           if (orderDate === todayISO) {
             currentDayRealtimeDomicilios++;
+            const esDes = isBreakfastOrder(order);
+            const serv = (normalizeServiceFromOrder(order) || 'domicilio').toLowerCase();
+            if (serv === 'domicilio') {
+              if (esDes) c_domiciliosDesayuno++; else c_domiciliosAlmuerzo++;
+            } else if (serv === 'mesa') {
+              if (esDes) c_mesasDesayuno++; else c_mesasAlmuerzo++;
+            } else if (serv === 'llevar') {
+              if (esDes) c_llevarDesayuno++; else c_llevarAlmuerzo++;
+            } else { // fallback tratar como domicilio
+              if (esDes) c_domiciliosDesayuno++; else c_domiciliosAlmuerzo++;
+            }
           }
         });
 
@@ -1115,15 +1423,54 @@ export const useDashboardData = (
             : null;
           if (tableOrderDate === todayISO) {
             currentDayRealtimeMesas++;
+            const esDes = isBreakfastOrder(tableOrder);
+            const serv = (normalizeServiceFromOrder(tableOrder) || 'mesa').toLowerCase();
+            if (serv === 'mesa') {
+              if (esDes) c_mesasDesayuno++; else c_mesasAlmuerzo++;
+            } else if (serv === 'llevar') {
+              if (esDes) c_llevarDesayuno++; else c_llevarAlmuerzo++;
+            } else if (serv === 'domicilio') {
+              if (esDes) c_domiciliosDesayuno++; else c_domiciliosAlmuerzo++;
+            }
           }
         });
 
-        // ⬇️ incluir desayuno de salón en el conteo de "Mesas"
+        // Desayunos delivery (deliveryBreakfastOrders) deben contar como domicilios desayuno
+        breakfastOrders.forEach((b) => {
+          const dISO = getDocDateISO(b);
+            if (dISO === todayISO) {
+              const esDes = true; // por definición en esta colección
+              const serv = (normalizeServiceFromOrder(b) || 'domicilio').toLowerCase();
+              if (serv === 'domicilio') c_domiciliosDesayuno++;
+              else if (serv === 'llevar') c_llevarDesayuno++; // fallback si llega como llevar
+              else if (serv === 'mesa') c_mesasDesayuno++; // improbable
+              else c_domiciliosDesayuno++;
+              currentDayRealtimeDomicilios++; // contar pedido como domicilio
+            }
+        });
+
+        // ⬇️ incluir desayunos de salón clasificando por servicio (mesa / llevar / domicilio)
         breakfastSalonOrders.forEach((bo) => {
           const dISO = bo.createdAt?.toDate
             ? new Date(bo.createdAt.toDate()).toISOString().split('T')[0]
             : getDocDateISO(bo);
-          if (dISO === todayISO) currentDayRealtimeMesas++;
+          if (dISO === todayISO) {
+            const serv = (normalizeServiceFromOrder(bo) || 'mesa').toLowerCase();
+            if (serv === 'mesa') {
+              currentDayRealtimeMesas++;
+              c_mesasDesayuno++;
+            } else if (serv === 'llevar') {
+              // Llevar desayuno: NO incrementa mesas totales, pero sí conteo granular llevar
+              c_llevarDesayuno++;
+            } else if (serv === 'domicilio') {
+              // Caso raro: desayuno salón marcado domicilio
+              currentDayRealtimeDomicilios++;
+              c_domiciliosDesayuno++;
+            } else {
+              currentDayRealtimeMesas++;
+              c_mesasDesayuno++;
+            }
+          }
         });
 
         if (ordersFilterRange === 'year' && selectedMonth) {
@@ -1132,12 +1479,24 @@ export const useDashboardData = (
             filteredDailyOrders[todayISO] = {
               Domicilios: (filteredDailyOrders[todayISO]?.Domicilios || 0) + currentDayRealtimeDomicilios,
               Mesas: (filteredDailyOrders[todayISO]?.Mesas || 0) + currentDayRealtimeMesas,
+              domiciliosDesayuno: (filteredDailyOrders[todayISO]?.domiciliosDesayuno || 0) + c_domiciliosDesayuno,
+              domiciliosAlmuerzo: (filteredDailyOrders[todayISO]?.domiciliosAlmuerzo || 0) + c_domiciliosAlmuerzo,
+              mesasDesayuno: (filteredDailyOrders[todayISO]?.mesasDesayuno || 0) + c_mesasDesayuno,
+              mesasAlmuerzo: (filteredDailyOrders[todayISO]?.mesasAlmuerzo || 0) + c_mesasAlmuerzo,
+              llevarDesayuno: (filteredDailyOrders[todayISO]?.llevarDesayuno || 0) + c_llevarDesayuno,
+              llevarAlmuerzo: (filteredDailyOrders[todayISO]?.llevarAlmuerzo || 0) + c_llevarAlmuerzo,
             };
           }
         } else {
           filteredDailyOrders[todayISO] = {
             Domicilios: (filteredDailyOrders[todayISO]?.Domicilios || 0) + currentDayRealtimeDomicilios,
             Mesas: (filteredDailyOrders[todayISO]?.Mesas || 0) + currentDayRealtimeMesas,
+            domiciliosDesayuno: (filteredDailyOrders[todayISO]?.domiciliosDesayuno || 0) + c_domiciliosDesayuno,
+            domiciliosAlmuerzo: (filteredDailyOrders[todayISO]?.domiciliosAlmuerzo || 0) + c_domiciliosAlmuerzo,
+            mesasDesayuno: (filteredDailyOrders[todayISO]?.mesasDesayuno || 0) + c_mesasDesayuno,
+            mesasAlmuerzo: (filteredDailyOrders[todayISO]?.mesasAlmuerzo || 0) + c_mesasAlmuerzo,
+            llevarDesayuno: (filteredDailyOrders[todayISO]?.llevarDesayuno || 0) + c_llevarDesayuno,
+            llevarAlmuerzo: (filteredDailyOrders[todayISO]?.llevarAlmuerzo || 0) + c_llevarAlmuerzo,
           };
         }
       }
@@ -1147,6 +1506,12 @@ export const useDashboardData = (
         name: date,
         Domicilios: filteredDailyOrders[date].Domicilios,
         Mesas: filteredDailyOrders[date].Mesas,
+        domiciliosDesayuno: filteredDailyOrders[date].domiciliosDesayuno || 0,
+        domiciliosAlmuerzo: filteredDailyOrders[date].domiciliosAlmuerzo || 0,
+        mesasDesayuno: filteredDailyOrders[date].mesasDesayuno || 0,
+        mesasAlmuerzo: filteredDailyOrders[date].mesasAlmuerzo || 0,
+        llevarDesayuno: filteredDailyOrders[date].llevarDesayuno || 0,
+        llevarAlmuerzo: filteredDailyOrders[date].llevarAlmuerzo || 0,
       }));
     }
 
@@ -1155,7 +1520,8 @@ export const useDashboardData = (
     orders,
     salonOrders,
     breakfastSalonOrders,
-    pedidosDiariosGuardadosData,
+  pedidosDiariosGuardadosData,
+  breakfastOrders,
     ordersFilterRange,
     ordersCustomStartDate,
     ordersCustomEndDate,
@@ -1472,6 +1838,11 @@ export const useDashboardData = (
     totals,
     statusCounts,
     userActivity,
+  // Datos históricos crudos necesarios para nuevos rangos simplificados en gráficos
+  ingresosData,                 // registros diarios guardados de ingresos
+  pedidosDiariosGuardadosData,  // registros diarios guardados de pedidos
+  paymentsRaw,                  // gastos crudos para gráficos avanzados
+  paymentsAllRaw,               // gastos globales para rangos
 
     // ALIAS para DashboardCharts:
     ingresosCategoriasData: dailySalesChartData,
@@ -1479,6 +1850,8 @@ export const useDashboardData = (
       .map(([name, value]) => ({ name, value })),
     pedidosDiariosChartData: dailyOrdersChartData,
     statusPieChartData,
+  // Estructuras para vistas de ingresos (Hoy / 7d / Mes / Año)
+  periodStructures,
 
     // Desglose robusto por Tipo de Venta
     saleTypeBreakdown,
