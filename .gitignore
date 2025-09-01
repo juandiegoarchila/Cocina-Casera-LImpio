@@ -35,7 +35,7 @@ pglite-debug.log
 
 # Mejor: Añade la ruta exacta del archivo para evitar ignorar otros .json importantes
 scripts/serviceAccountKey.json
-scripts/serviceAccountKey.j222son# Logs
+scripts/serviceAccountKey.j222son
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
