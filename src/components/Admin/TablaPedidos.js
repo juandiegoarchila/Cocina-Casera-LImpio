@@ -3,6 +3,8 @@ import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { classNames } from '../../utils/classNames.js';
 import { cleanText, getAddressDisplay } from './utils.js';
 import { calculateMealPrice } from '../../utils/MealCalculations';
+import PaymentSplitEditor from '../common/PaymentSplitEditor';
+import { summarizePayments, sumPaymentsByMethod, defaultPaymentsForOrder } from '../../utils/payments';
 import {
   ArrowDownTrayIcon,
   ChevronLeftIcon,
@@ -13,10 +15,6 @@ import {
   EllipsisVerticalIcon,
   PlusIcon
 } from '@heroicons/react/24/outline';
-
-// NUEVO: pagos
-import PaymentSplitEditor from '../common/PaymentSplitEditor';
-import { summarizePayments, sumPaymentsByMethod, defaultPaymentsForOrder } from '../../utils/payments';
 
 // Firestore para persistir pagos
 import { db } from '../../config/firebase';
@@ -115,12 +113,11 @@ const paymentMethodsOnly = (order) => {
 
 const TablaPedidos = ({
   theme,
-  orders,
+  orders: rawOrders,
   searchTerm,
   setSearchTerm,
   totals, // puede venir del padre; si no, calculamos localmente con split
   isLoading,
-  paginatedOrders,
   currentPage,
   totalPages,
   setCurrentPage,
@@ -155,16 +152,34 @@ const TablaPedidos = ({
   orderTypeFilter,
   setOrderTypeFilter,
   uniqueDeliveryPersons,
+  selectedDate,
+  setSelectedDate,
 }) => {
+  const menuRef = useRef(null);
+  const [deliveryDraft, setDeliveryDraft] = useState('');
+  // El filtro de fecha y su setter ahora vienen del padre
+  const lastAssignedRef = useRef('');
+
+    // Filtrado reactivo de órdenes por fecha y búsqueda
+  // ...existing code...
+
+  // El array de órdenes ya viene filtrado por fecha desde el padre
+  const orders = rawOrders;
+  const paginatedOrders = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return orders.slice(startIndex, endIndex);
+  }, [orders, currentPage, itemsPerPage]);
+
   const currentDate = new Date().toLocaleDateString('es-CO', {
     weekday: 'long',
     month: 'long',
     day: 'numeric',
   });
 
-  const menuRef = useRef(null);
-  const [deliveryDraft, setDeliveryDraft] = useState('');
-  const lastAssignedRef = useRef('');
+  const displayDate = selectedDate
+    ? new Date(selectedDate.replace(/-/g, '/')).toLocaleDateString('es-CO', { weekday: 'long', month: 'long', day: 'numeric' })
+    : currentDate;
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -376,25 +391,23 @@ const TablaPedidos = ({
           const payments = order.payments || [];
           const hasPaymentMethod = (method) => 
             payments.some(p => normalizePaymentMethodKey(p.method) === method);
-          
           // Determinar qué métodos están presentes
           const hasNequi = hasPaymentMethod('nequi');
           const hasDaviplata = hasPaymentMethod('daviplata');
           const hasCash = hasPaymentMethod('cash');
-          
-      // Construir el objeto de actualización
-      const updateData = {
-        settledAt: new Date().toISOString(),
-      };
-
-      // Marcar como settled y actualizar el estado de liquidación de cada método
-      updateData.settled = true;
-      updateData.paymentSettled = {
-        ...(order.paymentSettled || {}),
-        nequi: hasNequi ? true : (order.paymentSettled?.nequi || false),
-        daviplata: hasDaviplata ? true : (order.paymentSettled?.daviplata || false),
-        cash: hasCash ? true : (order.paymentSettled?.cash || false)
-      };          await updateDoc(ref, updateData);
+          // Construir el objeto de actualización
+          const updateData = {
+            settledAt: new Date().toISOString(),
+          };
+          // Marcar como settled y actualizar el estado de liquidación de cada método
+          updateData.settled = true;
+          updateData.paymentSettled = {
+            ...(order.paymentSettled || {}),
+            nequi: hasNequi ? true : (order.paymentSettled?.nequi || false),
+            daviplata: hasDaviplata ? true : (order.paymentSettled?.daviplata || false),
+            cash: hasCash ? true : (order.paymentSettled?.cash || false)
+          };
+          await updateDoc(ref, updateData);
           ok++;
         } catch (e) {
           console.error('[Liquidar] updateDoc error', e);
@@ -412,6 +425,13 @@ const TablaPedidos = ({
       showToast('error', 'Ocurrió un error al liquidar.');
     }
   };
+
+
+
+  // Reiniciar la página al cambiar la fecha seleccionada
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedDate]);
 
   return (
     <>
@@ -458,18 +478,20 @@ const TablaPedidos = ({
           </div>
         </div>
 
-        {/* Search, Proteins, Date, and Menu */}
+        {/* Search, Date Filter, and Menu */}
         <div className="flex flex-wrap justify-center sm:justify-between items-center mb-6 gap-3 sm:gap-4">
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Buscar pedidos..."
-            className={classNames(
-              'p-2 sm:p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:max-w-xs shadow-sm text-sm sm:text-base transition-all duration-200',
-              theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-300 bg-white text-gray-900'
-            )}
-          />
+          <div className="flex flex-wrap gap-4 items-center">
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Buscar pedidos..."
+              className={classNames(
+                'p-2 sm:p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:max-w-xs shadow-sm text-sm sm:text-base transition-all duration-200',
+                theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-300 bg-white text-gray-900'
+              )}
+            />
+          </div>
           <div className="flex flex-wrap items-center justify-center sm:justify-end gap-2">
             <button
               onClick={() => setShowProteinModal(true)}
@@ -481,14 +503,24 @@ const TablaPedidos = ({
               <PlusIcon className="w-4 h-4" />
               <span className="hidden md:inline">Proteínas del Día</span>
             </button>
-            <div
+            <label
               className={classNames(
-                'flex items-center justify-center gap-2 px-3 py-2 sm:px-5 sm:py-3 rounded-lg text-xs sm:text-sm font-semibold shadow-sm border transition-colors duration-200 flex-shrink-0',
+                'relative flex items-center justify-center gap-2 px-3 py-2 sm:px-5 sm:py-3 rounded-lg text-xs sm:text-sm font-semibold shadow-sm border transition-colors duration-200 flex-shrink-0 cursor-pointer',
                 theme === 'dark' ? 'bg-gray-700 text-white border-gray-500' : 'bg-gray-200 text-gray-900 border-gray-400'
               )}
+              onClick={(e) => {
+                const input = e.currentTarget.querySelector('input[type=date]');
+                if (input) input.showPicker();
+              }}
             >
-              {currentDate}
-            </div>
+              {displayDate}
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer bg-transparent"
+              />
+            </label>
             <div className="relative flex-shrink-0" ref={menuRef}>
               <button
                 onClick={() => setIsMenuOpen(!isMenuOpen)}
@@ -548,12 +580,12 @@ const TablaPedidos = ({
                     </tr>
                   </thead>
                   <tbody>
-                    {paginatedOrders.length === 0 ? (
+                    {orders.length === 0 ? (
                       <tr>
                         <td colSpan="10" className="p-6 text-center text-gray-500 dark:text-gray-400">No se encontraron pedidos. Intenta ajustar tu búsqueda o filtros.</td>
                       </tr>
                     ) : (
-                      paginatedOrders.map((order, index) => {
+                      orders.map((order, index) => {
                         const displayNumber =
                           sortOrder === 'asc'
                             ? (currentPage - 1) * itemsPerPage + index + 1
@@ -753,7 +785,7 @@ const TablaPedidos = ({
                     disabled={currentPage === 1}
                     className={classNames(
                       'p-2 rounded-md transition-colors duration-200',
-                      currentPage === 1 ? 'text-gray-400 dark:text-gray-600 cursor-not-allowed' : theme === 'dark' ? 'hover:bg-gray-700 text-gray-200' : 'hover:bg-gray-100 text-gray-700'
+                      currentPage === 1 ? 'text-gray-400 dark:text-gray-600 cursor-not-allowed' : 'hover:bg-gray-700 text-gray-200'
                     )}
                   >
                     <ChevronLeftIcon className="w-5 h-5" />
@@ -764,7 +796,7 @@ const TablaPedidos = ({
                     disabled={currentPage === totalPages}
                     className={classNames(
                       'p-2 rounded-md transition-colors duration-200',
-                      currentPage === totalPages ? 'text-gray-400 dark:text-gray-600 cursor-not-allowed' : theme === 'dark' ? 'hover:bg-gray-700 text-gray-200' : 'hover:bg-gray-100 text-gray-700'
+                      currentPage === totalPages ? 'text-gray-400 dark:text-gray-600 cursor-not-allowed' : 'hover:bg-gray-700 text-gray-200'
                     )}
                   >
                     <ChevronRightIcon className="w-5 h-5" />
@@ -871,46 +903,46 @@ const TablaPedidos = ({
         </div>
       </div>
 
-      {/* Modal de edición de pagos (split) */}
-      {editingPaymentsOrder && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10001]">
-          <div className={classNames('p-4 sm:p-6 rounded-lg max-w-xl w-full max-h-[80vh] overflow-y-auto', theme === 'dark' ? 'bg-gray-800 text-gray-200' : 'bg-white text-gray-900')}>
-            <h3 className="text-lg font-semibold mb-4">
-              Editar pagos — Orden #{editingPaymentsOrder.id.slice(0, 8)}
-            </h3>
+          {/* Modal de edición de pagos (split) */}
+          {editingPaymentsOrder && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10001]">
+              <div className={classNames('p-4 sm:p-6 rounded-lg max-w-xl w-full max-h-[80vh] overflow-y-auto', theme === 'dark' ? 'bg-gray-800 text-gray-200' : 'bg-white text-gray-900')}>
+                <h3 className="text-lg font-semibold mb-4">
+                  Editar pagos — Orden #{editingPaymentsOrder.id.slice(0, 8)}
+                </h3>
 
-            <PaymentSplitEditor
-              theme={theme}
-              total={editingPaymentsOrder.total || 0}
-              value={
-                Array.isArray(editingPaymentsOrder.payments) && editingPaymentsOrder.payments.length
-                  ? editingPaymentsOrder.payments
-                  : defaultPaymentsForOrder(editingPaymentsOrder)
-              }
-              onChange={(rows) => {
-                setEditingPaymentsOrder((prev) => ({ ...prev, payments: rows }));
-              }}
-            />
+                <PaymentSplitEditor
+                  theme={theme}
+                  total={editingPaymentsOrder.total || 0}
+                  value={
+                    Array.isArray(editingPaymentsOrder.payments) && editingPaymentsOrder.payments.length
+                      ? editingPaymentsOrder.payments
+                      : defaultPaymentsForOrder(editingPaymentsOrder)
+                  }
+                  onChange={(rows) => {
+                    setEditingPaymentsOrder((prev) => ({ ...prev, payments: rows }));
+                  }}
+                />
 
-            <div className="mt-4 flex gap-2 justify-end">
-              <button onClick={() => setEditingPaymentsOrder(null)} className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm">
-                Cancelar
-              </button>
-              <button
-                onClick={async () => {
-                  const ok = await savePaymentsForOrder(editingPaymentsOrder, editingPaymentsOrder.payments || []);
-                  if (ok) setEditingPaymentsOrder(null);
-                }}
-                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
-              >
-                Guardar
-              </button>
+                <div className="mt-4 flex gap-2 justify-end">
+                  <button onClick={() => setEditingPaymentsOrder(null)} className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm">
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={async () => {
+                      const ok = await savePaymentsForOrder(editingPaymentsOrder, editingPaymentsOrder.payments || []);
+                      if (ok) setEditingPaymentsOrder(null);
+                    }}
+                    className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
+                  >
+                    Guardar
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
-    </>
-  );
-};
+          )}
+        </>
+      );
+    }
 
 export default TablaPedidos;

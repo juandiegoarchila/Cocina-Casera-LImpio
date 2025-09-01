@@ -20,6 +20,7 @@ import { exportToCSV } from './utilities/exportToCSV.js';
 import { generatePreviewHtml } from './utilities/previewOrders.js';
 import { generateExcelPreviewHtml } from './utilities/previewExcel.js';
 import { cleanText } from './utils.js';
+import { getColombiaLocalDateString } from '../../utils/bogotaDate.js';
 import TablaPedidos from './TablaPedidos.js';
 import InteraccionesPedidos from './InteraccionesPedidos.js';
 
@@ -45,6 +46,8 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showAddOrderModal, setShowAddOrderModal] = useState(false);
   const [orderTypeFilter, setOrderTypeFilter] = useState('all');
+  // Filtro de fecha para domicilios
+  const [selectedDate, setSelectedDate] = useState('');
   const [newOrderForm, setNewOrderForm] = useState({
     meals: [
       {
@@ -263,7 +266,30 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
       const deliveryPerson = (order.deliveryPerson || '').toLowerCase();
       const status = (order.status || '').toLowerCase();
 
+
+      // Filtrado por fecha local si existe, si no, fallback robusto
+      let matchesDate = true;
+      if (selectedDate) {
+        if (order.createdAtLocal) {
+          matchesDate = order.createdAtLocal === selectedDate;
+        } else {
+          // createdAt puede ser Timestamp de Firestore o Date
+          let orderDate;
+          if (order.createdAt && order.createdAt.seconds) {
+            orderDate = new Date(order.createdAt.seconds * 1000).toISOString().split('T')[0];
+          } else if (order.createdAt instanceof Date) {
+            orderDate = order.createdAt.toISOString().split('T')[0];
+          } else if (typeof order.createdAt === 'string') {
+            orderDate = order.createdAt.split('T')[0];
+          } else {
+            orderDate = '';
+          }
+          matchesDate = orderDate === selectedDate;
+        }
+      }
+
       return (
+        matchesDate &&
         (orderTypeFilter === 'all' || order.type === orderTypeFilter) &&
         (address.includes(lowerSearchTerm) ||
           phone.includes(lowerSearchTerm) ||
@@ -273,7 +299,7 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
           status.includes(lowerSearchTerm))
       );
     });
-  }, [orders, searchTerm, orderTypeFilter]);
+  }, [orders, searchTerm, orderTypeFilter, selectedDate]);
 
   // Totales visibles
   const displayedTotals = useMemo(() => {
@@ -941,7 +967,8 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
         payment: newOrderForm.payment || 'Efectivo',
         deliveryPerson: newOrderForm.deliveryPerson || 'Sin asignar',
         paymentSummary,
-        createdAt: serverTimestamp(),
+  createdAt: serverTimestamp(),
+  createdAtLocal: getColombiaLocalDateString(), // YYYY-MM-DD local Colombia
         type: newOrderForm.type || 'lunch'
       };
 
@@ -1043,7 +1070,7 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
 
       <TablaPedidos
         theme={theme}
-        orders={orders}
+        orders={filteredOrders}
         searchTerm={searchTerm}
         setSearchTerm={setSearchTerm}
         totals={displayedTotals}
@@ -1083,6 +1110,8 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
         orderTypeFilter={orderTypeFilter}
         setOrderTypeFilter={setOrderTypeFilter}
         uniqueDeliveryPersons={uniqueDeliveryPersons}
+        selectedDate={selectedDate}
+        setSelectedDate={setSelectedDate}
       />
 
       {/* 🔥 Se eliminó el bloque de "Resumen por Domiciliarios" aquí para evitar duplicados.

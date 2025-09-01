@@ -1,5 +1,10 @@
+// ...existing code...
+
+// DEBUG: Mostrar fechas locales y UTC de los pedidos
+// Este useEffect debe ir después de la declaración de useState de orders
+
 // src/components/Admin/TableOrdersAdmin.jsx
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../Auth/AuthProvider';
 import { db } from '../../config/firebase';
@@ -101,7 +106,28 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
   const navigate = useNavigate();
 
   const [orders, setOrders] = useState([]);
+
+  // DEBUG: Mostrar fechas locales y UTC de los pedidos
+  React.useEffect(() => {
+    if (orders && orders.length) {
+      console.log('Pedidos actuales (fecha local y UTC):');
+      orders.forEach(o => {
+        console.log(`ID: ${o.id} | createdAtLocal: ${o.createdAtLocal} | createdAt:`, o.createdAt);
+      });
+    }
+  }, [orders]);
+
+  // DEBUG: Mostrar fechas locales y UTC de los pedidos
+  React.useEffect(() => {
+    if (orders && orders.length) {
+      console.log('Pedidos actuales (fecha local y UTC):');
+      orders.forEach(o => {
+        console.log(`ID: ${o.id} | createdAtLocal: ${o.createdAtLocal} | createdAt:`, o.createdAt);
+      });
+    }
+  }, [orders]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedDate, setSelectedDate] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -249,37 +275,65 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
     };
   }, [isMenuOpen]);
 
-  // ====== Totales usando split de pagos (con fallback legacy) EXCLUYENDO cancelados ======
-  const totals = sumPaymentsByMethod(orders.filter(o => !/(cancel)/i.test((o.status || '').toLowerCase())));
 
   // ===== Filtro/búsqueda (incluye pago) =====
-  const filteredOrders = orders.filter((order) => {
-    const searchLower = searchTerm.toLowerCase();
+  const filteredOrders = useMemo(() => {
+    return orders.filter((order) => {
+      const searchLower = searchTerm.toLowerCase();
 
-    const matchesSearch =
-      order.id.toLowerCase().includes(searchLower) ||
-      // Almuerzos
-      order.meals?.some((meal) => {
-        const payText = normalizePaymentKey(meal.paymentMethod ?? '');
-        return (
-          meal.tableNumber?.toString().toLowerCase().includes(searchLower) ||
-          payText.includes(searchLower) ||
-          meal.notes?.toLowerCase().includes(searchLower)
-        );
-      }) ||
-      // Desayunos
-      order.breakfasts?.some((breakfast) => {
-        const payText = normalizePaymentKey(breakfast.payment ?? breakfast.paymentMethod ?? '');
-        return (
-          breakfast.tableNumber?.toString().toLowerCase().includes(searchLower) ||
-          payText.includes(searchLower) ||
-          breakfast.notes?.toLowerCase().includes(searchLower)
-        );
-      }) ||
-      // Búsqueda por método en split
-normalizePaymentKey(typeof p.method === 'string' ? p.method : p?.method?.name).includes(searchLower)
-    return matchesSearch && (orderTypeFilter === 'all' || order.type === orderTypeFilter);
-  });
+      const matchesSearch =
+        order.id.toLowerCase().includes(searchLower) ||
+        // Almuerzos
+        order.meals?.some((meal) => {
+          const payText = normalizePaymentKey(meal.paymentMethod ?? '');
+          return (
+            meal.tableNumber?.toString().toLowerCase().includes(searchLower) ||
+            payText.includes(searchLower) ||
+            meal.notes?.toLowerCase().includes(searchLower)
+          );
+        }) ||
+        // Desayunos
+        order.breakfasts?.some((breakfast) => {
+          const payText = normalizePaymentKey(breakfast.payment ?? breakfast.paymentMethod ?? '');
+          return (
+            breakfast.tableNumber?.toString().toLowerCase().includes(searchLower) ||
+            payText.includes(searchLower) ||
+            breakfast.notes?.toLowerCase().includes(searchLower)
+          );
+        });
+
+      // Comparación por fecha local si existe, si no, fallback robusto
+      let matchesDate = true;
+      if (selectedDate) {
+        const selectedIso = new Date(selectedDate).toISOString().split('T')[0];
+        if (order.createdAtLocal) {
+          // Comparar YYYY-MM-DD
+          matchesDate = order.createdAtLocal === selectedIso;
+        } else if (order.createdAt) {
+          // Si no tiene createdAtLocal, usar createdAt como respaldo inmediato
+          let orderDate = null;
+          if (order.createdAt instanceof Date) {
+            orderDate = order.createdAt;
+          } else if (order.createdAt && typeof order.createdAt === 'object' && order.createdAt.seconds) {
+            // Firestore Timestamp
+            orderDate = new Date(order.createdAt.seconds * 1000);
+          } else if (typeof order.createdAt === 'string' || typeof order.createdAt === 'number') {
+            orderDate = new Date(order.createdAt);
+          }
+          if (orderDate && !isNaN(orderDate)) {
+            matchesDate = orderDate.toISOString().split('T')[0] === selectedIso;
+          } else {
+            matchesDate = false;
+          }
+        }
+      }
+
+      return matchesSearch && matchesDate && (orderTypeFilter === 'all' || order.type === orderTypeFilter);
+    });
+  }, [orders, searchTerm, selectedDate, orderTypeFilter]);
+
+  // ====== Totales usando split de pagos (con fallback legacy) EXCLUYENDO cancelados, SOLO sobre órdenes filtradas ======
+  const totals = sumPaymentsByMethod(filteredOrders);
 
   // ===== Ordenamiento simple =====
   const sortedOrders = [...filteredOrders].sort((a, b) => {
@@ -637,6 +691,16 @@ const newTotal = Number(calculateTotal(editingOrder.meals, 3) || 0);      if ((e
     setErrorMessage(null);
   };
 
+  useEffect(() => {
+    if (!selectedDate) return;
+
+    const searchDate = new Date(selectedDate + 'T00:00:00');
+    const filtered = orders.filter(order => {
+      const orderDate = order.createdAt ? new Date(order.createdAt) : null;
+      return orderDate && orderDate.toDateString() === searchDate.toDateString();
+    });
+  }, [selectedDate, orders]);
+
   if (loading) {
     return <div className="min-h-screen bg-gray-50 flex items-center justify-center">Cargando...</div>;
   }
@@ -677,6 +741,31 @@ const newTotal = Number(calculateTotal(editingOrder.meals, 3) || 0);      if ((e
             theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-300 bg-white text-gray-900'
           )}
         />
+        <label
+          className={classNames(
+            'relative flex items-center justify-center gap-2 px-3 py-2 sm:px-5 sm:py-3 rounded-lg text-xs sm:text-sm font-semibold shadow-sm border transition-colors duration-200 flex-shrink-0 cursor-pointer',
+            theme === 'dark' ? 'bg-gray-700 text-white border-gray-500' : 'bg-gray-200 text-gray-900 border-gray-400'
+          )}
+          style={{ position: 'relative', marginLeft: 'auto' }}
+          onClick={(e) => {
+            const input = e.currentTarget.querySelector('input[type=date]');
+            if (input) input.showPicker();
+          }}
+        >
+          {selectedDate
+            ? new Date(selectedDate.replace(/-/g, '/')).toLocaleDateString('es-CO', {
+                weekday: 'long', month: 'long', day: 'numeric'
+              })
+            : new Date().toLocaleDateString('es-CO', {
+                weekday: 'long', month: 'long', day: 'numeric'
+              })}
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer bg-transparent"
+          />
+        </label>
         <div className="relative z-50 flex-shrink-0" ref={menuRef}>
           <button
             onClick={() => setIsMenuOpen(!isMenuOpen)}
@@ -1168,7 +1257,7 @@ const newTotal = Number(calculateTotal(editingOrder.meals, 3) || 0);      if ((e
                           <div>
                             <label className="block text-xs font-medium mb-1">Número de Mesa</label>
                             <input
-                              type="text" value={m.tableNumber || ''} onChange={(e) => setMealField(index, 'tableNumber', e.target.value)}
+                              type="text" value={m.tableNumber || ''} onChange={(e) => setMealField(index, e.target.value)}
                               className={classNames(
                                 "w-full p-2 rounded-md border text-sm",
                                 theme === 'dark'

@@ -1435,7 +1435,7 @@ export const useDashboardData = (
           }
         });
 
-        // Desayunos delivery (deliveryBreakfastOrders) deben contar como domicilios desayuno
+        // Desayunos delivery (domicilios desayuno) deben contar como domicilios desayuno
         breakfastOrders.forEach((b) => {
           const dISO = getDocDateISO(b);
             if (dISO === todayISO) {
