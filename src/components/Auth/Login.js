@@ -76,9 +76,9 @@ const Login = () => {
         {error && <div className="mb-4 p-2 bg-red-700 text-white rounded">{error}</div>}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="email" className="block mb-2">Correo Electrónico:</label>
+            <label htmlFor="admin-email" className="block mb-2">Correo Electrónico:</label>
             <input
-              id="email"
+              id="admin-email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -87,9 +87,9 @@ const Login = () => {
             />
           </div>
           <div className="relative">
-            <label htmlFor="password" className="block mb-2">Contraseña:</label>
+            <label htmlFor="admin-password" className="block mb-2">Contraseña:</label>
             <input
-              id="password"
+              id="admin-password"
               type={showPassword ? 'text' : 'password'}
               value={password}
               onChange={(e) => setPassword(e.target.value)}

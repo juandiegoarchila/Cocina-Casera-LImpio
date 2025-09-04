@@ -57,9 +57,9 @@ const StaffHub = () => {
         {error && <div className="mb-4 p-2 bg-red-700 text-white rounded">{error}</div>}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="email" className="block mb-2">Correo Electrónico:</label>
+            <label htmlFor="staff-email" className="block mb-2">Correo Electrónico:</label>
             <input
-              id="email"
+              id="staff-email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -68,9 +68,9 @@ const StaffHub = () => {
             />
           </div>
           <div className="relative">
-            <label htmlFor="password" className="block mb-2">Contraseña:</label>
+            <label htmlFor="staff-password" className="block mb-2">Contraseña:</label>
             <input
-              id="password"
+              id="staff-password"
               type={showPassword ? 'text' : 'password'}
               value={password}
               onChange={(e) => setPassword(e.target.value)}

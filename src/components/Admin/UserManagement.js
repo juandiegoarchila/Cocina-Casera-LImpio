@@ -2,9 +2,11 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Dialog, Transition, Menu } from '@headlessui/react';
 import { XMarkIcon, PencilIcon, TrashIcon, InformationCircleIcon, EllipsisVerticalIcon, PlusIcon } from '@heroicons/react/24/outline';
 import { ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/20/solid';
-import { db, auth } from '../../config/firebase';
+import { db, auth, app } from '../../config/firebase';
+import { initializeApp } from 'firebase/app';
+import { getAuth } from 'firebase/auth';
 import { collection, onSnapshot, updateDoc, doc, deleteDoc, query, where, orderBy, limit, getDocs, runTransaction, addDoc } from 'firebase/firestore';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { createUserWithEmailAndPassword, signOut, signInWithEmailAndPassword } from 'firebase/auth';
 import { classNames } from '../../utils/classNames';
 
 import * as XLSX from 'xlsx';
@@ -262,8 +264,20 @@ const UserManagement = ({ setError, setSuccess, theme }) => {
         return;
       }
 
-      // Crear usuario en Firebase Authentication
-      const userCredential = await createUserWithEmailAndPassword(auth, createUserForm.email.trim(), createUserForm.password);
+      // Guardar las credenciales del administrador actual
+      const currentUser = auth.currentUser;
+      const currentUserEmail = currentUser?.email;
+      
+      // Crear app secundaria para no afectar la sesión actual
+      const secondaryApp = initializeApp(app.options, 'createUser');
+      const secondaryAuth = getAuth(secondaryApp);
+      
+      // Crear usuario en Firebase Authentication usando la app secundaria
+      const userCredential = await createUserWithEmailAndPassword(
+        secondaryAuth, 
+        createUserForm.email.trim(), 
+        createUserForm.password
+      );
       const userId = userCredential.user.uid;
 
       // Crear usuario en Firestore con el mismo ID
@@ -276,6 +290,11 @@ const UserManagement = ({ setError, setSuccess, theme }) => {
           createdAt: new Date(),
         });
       });
+
+      // Cerrar sesión del nuevo usuario en la app secundaria
+      await signOut(secondaryAuth);
+      
+      // Nota: No necesitamos eliminar la app secundaria ya que se limpia automáticamente
 
       setCreateUserForm({ email: '', password: '', role: 1, totalOrders: 0 });
       setShowCreateUserModal(false);

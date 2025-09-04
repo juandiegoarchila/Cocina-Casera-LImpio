@@ -7,6 +7,51 @@
     <!-- CSP desactivado en desarrollo; activarlo en producción con 'default-src 'self'; style-src 'self'; script-src 'self';' -->
     <title>Cocina Casera</title>
 <link rel="icon" type="image/png" sizes="512x512" href="%PUBLIC_URL%/favicon512.png">
+    <script>
+      // Solución definitiva para suprimir errores de ResizeObserver
+      (function() {
+        // Interceptar console.error
+        const originalConsoleError = console.error;
+        console.error = function(...args) {
+          const message = args[0];
+          if (typeof message === 'string' && message.includes('ResizeObserver loop completed')) {
+            return; // Silenciar completamente
+          }
+          return originalConsoleError.apply(console, args);
+        };
+
+        // Interceptar window.onerror más agresivamente
+        const originalWindowError = window.onerror;
+        window.onerror = function(message, source, lineno, colno, error) {
+          if (typeof message === 'string' && message.includes('ResizeObserver loop completed')) {
+            return true; // Prevenir propagación
+          }
+          if (originalWindowError) {
+            return originalWindowError.call(this, message, source, lineno, colno, error);
+          }
+          return false;
+        };
+
+        // Interceptar errores globales con mayor prioridad
+        window.addEventListener('error', function(event) {
+          if (event.message && event.message.includes('ResizeObserver loop completed')) {
+            event.stopImmediatePropagation();
+            event.stopPropagation();
+            event.preventDefault();
+            return false;
+          }
+        }, true); // Capturar en fase de captura
+
+        // Interceptar promesas rechazadas
+        window.addEventListener('unhandledrejection', function(event) {
+          if (event.reason && event.reason.message && event.reason.message.includes('ResizeObserver')) {
+            event.preventDefault();
+            return false;
+          }
+        });
+
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

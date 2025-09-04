@@ -1,8 +1,23 @@
-//src/components/Admin/Payments.js
-import { useState, useEffect, useMemo } from 'react'; // Agregamos useMemo
+// src/components/Admin/Payments.js
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { db } from '../../config/firebase';
-import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, query, orderBy, serverTimestamp, where } from 'firebase/firestore';
-import { Edit2, Trash2, PlusCircle, XCircle, ChevronLeft, TrashIcon } from 'lucide-react'; // Agregamos TrashIcon para el botón de eliminar todos
+import {
+  collection,
+  onSnapshot,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  doc,
+  query,
+  orderBy,
+  serverTimestamp,
+  where,
+  setDoc
+} from 'firebase/firestore';
+import { Edit2, Trash2, PlusCircle, XCircle, ChevronLeft, TrashIcon } from 'lucide-react';
+
+// 🇨🇴 util para fecha local (YYYY-MM-DD Bogotá)
+import { getColombiaLocalDateString } from '../../utils/bogotaDate';
 
 // Colombian Peso formatter
 const copFormatter = new Intl.NumberFormat('es-CO', {
@@ -11,6 +26,55 @@ const copFormatter = new Intl.NumberFormat('es-CO', {
   minimumFractionDigits: 0,
 });
 
+// =================== Helpers de fecha (Bogotá) y TS ===================
+const toDateFromTS = (ts) => (ts?.toDate ? ts.toDate() : (ts ? new Date(ts) : null));
+
+const ymdBogota = (dateObj) => {
+  try {
+    const parts = new Intl.DateTimeFormat('sv-SE', {
+      timeZone: 'America/Bogota',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).formatToParts(dateObj);
+    const y = parts.find(p => p.type === 'year')?.value ?? '0000';
+    const m = parts.find(p => p.type === 'month')?.value ?? '01';
+    const d = parts.find(p => p.type === 'day')?.value ?? '01';
+    return `${y}-${m}-${d}`;
+  } catch {
+    // Fallback ISO local sin zona
+    return new Date(dateObj.getTime() - dateObj.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  }
+};
+
+const paymentLocalYMD = (p) => {
+  if (p?.createdAtLocal && /^\d{4}-\d{2}-\d{2}$/.test(p.createdAtLocal)) return p.createdAtLocal;
+  const d = toDateFromTS(p?.timestamp);
+  return d ? ymdBogota(d) : getColombiaLocalDateString();
+};
+
+// =================== Snapshot diario: compute & write ===================
+const computeDailyPaymentsSnapshot = (paymentsForDay) => {
+  const byStore = {};
+  let total = 0;
+  let count = 0;
+
+  paymentsForDay.forEach((p) => {
+    const amt = Math.floor(Number(p?.amount || 0)) || 0;
+    const store = p?.store || 'Sin tienda';
+    if (!byStore[store]) byStore[store] = 0;
+    byStore[store] += amt;
+    total += amt;
+    count += 1;
+  });
+
+  return {
+    totals: { general: total },
+    byStore,
+    counts: { payments: count }
+  };
+};
+
 const Payments = ({ setError, setSuccess, theme }) => {
   const [payments, setPayments] = useState([]);
   const [formFields, setFormFields] = useState([{ name: '', units: '', amount: '', store: '' }]);
@@ -18,40 +82,56 @@ const Payments = ({ setError, setSuccess, theme }) => {
   const [showForm, setShowForm] = useState(false);
   const [initialStore, setInitialStore] = useState('');
 
-  // --- Nuevos estados para la funcionalidad de ver pagos por tienda ---
-  const [selectedStore, setSelectedStore] = useState(null); // Guarda el nombre de la tienda seleccionada
-  const [showStoreDetails, setShowStoreDetails] = useState(false); // Controla si se muestran los detalles de la tienda
+  // Ver pagos por tienda
+  const [selectedStore, setSelectedStore] = useState(null);
+  const [showStoreDetails, setShowStoreDetails] = useState(false);
 
-  // Load payments from Firebase, ordered by timestamp in descending order (newest first for the displayed list)
+  // NUEVO: fecha seleccionada + snapshot del día
+  const [selectedDate, setSelectedDate] = useState(''); // YYYY-MM-DD
+  const [selectedDaySnapshot, setSelectedDaySnapshot] = useState(null);
+
+  // Load payments
   useEffect(() => {
     const paymentsQuery = query(collection(db, 'payments'), orderBy('timestamp', 'desc'));
-    const unsubscribe = onSnapshot(paymentsQuery, (snapshot) => {
-      setPayments(
-        snapshot.docs
-          .map(doc => ({ id: doc.id, ...doc.data() }))
-      );
-    }, (error) => setError(`Error al cargar pagos: ${error.message}`));
+    const unsubscribe = onSnapshot(
+      paymentsQuery,
+      (snapshot) => {
+        setPayments(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      },
+      (error) => setError(`Error al cargar pagos: ${error.message}`)
+    );
     return () => unsubscribe();
   }, [setError]);
+
+  // ======== Suscripción al snapshot del día seleccionado ========
+  useEffect(() => {
+    const day = selectedDate && /^\d{4}-\d{2}-\d{2}$/.test(selectedDate)
+      ? selectedDate
+      : getColombiaLocalDateString();
+
+    const unsub = onSnapshot(
+      doc(db, 'paymentsByDay', day),
+      (d) => setSelectedDaySnapshot(d.exists() ? d.data() : null),
+      () => setSelectedDaySnapshot(null)
+    );
+    return () => unsub();
+  }, [selectedDate]);
 
   // Maneja los cambios en los inputs de CUALQUIER formulario dinámico
   const handleFormInputChange = (index, e) => {
     const { name, value } = e.target;
-    // Limpia el valor si es 'amount' para asegurar solo números
     const cleanValue = name === 'amount' ? value.replace(/[^0-9]/g, '') : value;
     const updatedFormFields = [...formFields];
     updatedFormFields[index] = { ...updatedFormFields[index], [name]: cleanValue };
     setFormFields(updatedFormFields);
   };
 
-  // Agrega un nuevo set de campos de formulario
   const handleAddAnotherForm = () => {
     const lastStore = formFields[formFields.length - 1]?.store || '';
     setInitialStore(lastStore);
     setFormFields([...formFields, { name: '', units: '', amount: '', store: lastStore }]);
   };
 
-  // Remueve un set de campos de formulario por índice
   const handleRemoveForm = (index) => {
     const updatedFormFields = formFields.filter((_, i) => i !== index);
     setFormFields(updatedFormFields);
@@ -60,7 +140,34 @@ const Payments = ({ setError, setSuccess, theme }) => {
     }
   };
 
-  // Función para guardar TODOS los pagos de los formularios dinámicos en Firebase
+  // ========= Refresh snapshot para una fecha =========
+  const refreshPaymentsSnapshotForDate = useCallback(async (dateStr) => {
+    try {
+      const dayPayments = payments.filter((p) => paymentLocalYMD(p) === dateStr);
+      const snap = computeDailyPaymentsSnapshot(dayPayments);
+      await setDoc(
+        doc(db, 'paymentsByDay', dateStr),
+        { date: dateStr, ...snap, updatedAt: serverTimestamp() },
+        { merge: true }
+      );
+    } catch (e) {
+      console.error('Error actualizando snapshot paymentsByDay:', e?.message || e);
+    }
+  }, [payments]);
+
+  // Debounce: cuando cambian los pagos, refrescamos snapshot de HOY
+  const debounceRef = useRef(null);
+  useEffect(() => {
+    if (!payments.length) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      const today = getColombiaLocalDateString();
+      refreshPaymentsSnapshotForDate(today);
+    }, 700);
+    return () => debounceRef.current && clearTimeout(debounceRef.current);
+  }, [payments, refreshPaymentsSnapshotForDate]);
+
+  // ========= Guardar TODOS los formularios =========
   const handleSaveAllForms = async () => {
     try {
       const paymentsToSave = [];
@@ -76,17 +183,15 @@ const Payments = ({ setError, setSuccess, theme }) => {
           errors.push(`El monto del pago ${index + 1} debe ser un número válido mayor que 0.`);
           return;
         }
-paymentsToSave.push({
-  name: payment.name,
-  units: parseInt(payment.units) || 0,
-  amount: amount,
-  store: payment.store,
-  // Alias para dashboards que agrupan "por proveedor"
-  provider: payment.store,
-  // Timestamp consistente del lado del servidor (evita problemas de "hoy")
-  timestamp: serverTimestamp()
-});
-
+        paymentsToSave.push({
+          name: payment.name,
+          units: parseInt(payment.units) || 0,
+          amount: amount,
+          store: payment.store,
+          provider: payment.store,
+          timestamp: serverTimestamp(),
+          createdAtLocal: getColombiaLocalDateString(), // 👈 para snapshots por día
+        });
       });
 
       if (errors.length > 0) {
@@ -95,15 +200,27 @@ paymentsToSave.push({
       }
 
       if (editingPaymentId) {
-        const paymentToUpdate = paymentsToSave[0];
-        await updateDoc(doc(db, 'payments', editingPaymentId), paymentToUpdate);
+        // Para edición, usamos el primer formulario
+        const updated = paymentsToSave[0];
+        // Obtener fecha previa para refrescar su snapshot también
+        const prev = payments.find(p => p.id === editingPaymentId);
+        const prevDay = prev ? paymentLocalYMD(prev) : null;
+
+        await updateDoc(doc(db, 'payments', editingPaymentId), updated);
         setSuccess('Pago actualizado exitosamente.');
+
+        // Refrescar snapshots afectadas (previa y la nueva —usualmente el día de hoy—)
+        if (prevDay) await refreshPaymentsSnapshotForDate(prevDay);
+        await refreshPaymentsSnapshotForDate(updated.createdAtLocal);
       } else {
         const promises = paymentsToSave.map(payment =>
           addDoc(collection(db, 'payments'), payment)
         );
         await Promise.all(promises);
         setSuccess('Pagos registrados exitosamente.');
+
+        // Refrescar snapshot del día actual
+        await refreshPaymentsSnapshotForDate(getColombiaLocalDateString());
       }
 
       setFormFields([{ name: '', units: '', amount: '', store: '' }]);
@@ -114,73 +231,133 @@ paymentsToSave.push({
     }
   };
 
-  // Eliminar pago de Firebase
+  // Eliminar pago
   const handleDelete = async (id) => {
     if (window.confirm('¿Estás seguro de eliminar este pago?')) {
       try {
+        const p = payments.find(pp => pp.id === id);
+        const day = p ? paymentLocalYMD(p) : getColombiaLocalDateString();
+
         await deleteDoc(doc(db, 'payments', id));
         setSuccess('Pago eliminado exitosamente.');
+
+        await refreshPaymentsSnapshotForDate(day);
       } catch (error) {
         setError(`Error al eliminar pago: ${error.message}`);
       }
     }
   };
 
-  // Preparar el formulario para editar un pago existente
+  // Editar
   const handleEdit = (payment) => {
     setEditingPaymentId(payment.id);
-    setFormFields([{ ...payment, amount: payment.amount.toString() }]);
+    setFormFields([{ ...payment, amount: String(payment.amount ?? '') }]);
     setShowForm(true);
-    setInitialStore(payment.store);
-    setShowStoreDetails(false); // Asegúrate de ocultar los detalles si se estaba viendo alguno
+    setInitialStore(payment.store || '');
+    setShowStoreDetails(false);
   };
 
-  // --- Lógica para agrupar pagos por tienda y fecha ---
-  const groupedPaymentsByStoreAndDate = useMemo(() => {
-    return payments.reduce((acc, payment) => {
-      const date = payment.timestamp ?
-        new Date(payment.timestamp.toDate()).toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' })
-        : 'Fecha Desconocida';
+  // ======= Pagos del día seleccionado (o hoy por defecto) =======
+  const effectiveDay = selectedDate && /^\d{4}-\d{2}-\d{2}$/.test(selectedDate)
+    ? selectedDate
+    : getColombiaLocalDateString();
 
-      if (!acc[payment.store]) acc[payment.store] = {};
-      if (!acc[payment.store][date]) acc[payment.store][date] = [];
-      acc[payment.store][date].push(payment);
+  const paymentsOfDay = useMemo(() => {
+    return payments.filter((p) => paymentLocalYMD(p) === effectiveDay);
+  }, [payments, effectiveDay]);
+
+  // ======= Agrupar por tienda y fecha (dentro del día elegido) =======
+  const groupedPaymentsByStoreAndDate = useMemo(() => {
+    return paymentsOfDay.reduce((acc, payment) => {
+      const date = effectiveDay; // ya filtrado por día
+      const store = payment.store || 'Sin tienda';
+      if (!acc[store]) acc[store] = {};
+      if (!acc[store][date]) acc[store][date] = [];
+      acc[store][date].push(payment);
       return acc;
     }, {});
-  }, [payments]);
+  }, [paymentsOfDay, effectiveDay]);
 
-  // --- Calcular el total de gastos por tienda para el dashboard ---
+  // Totales por tienda (del día)
   const totalExpensesByStore = useMemo(() => {
     const totals = {};
-    payments.forEach(payment => {
-      totals[payment.store] = (totals[payment.store] || 0) + payment.amount;
+    paymentsOfDay.forEach(payment => {
+      const store = payment.store || 'Sin tienda';
+      totals[store] = (totals[store] || 0) + (Math.floor(Number(payment.amount || 0)) || 0);
     });
     return totals;
-  }, [payments]);
+  }, [paymentsOfDay]);
 
-  // Calcular el gasto total general
+  // Total general del día (prefiere snapshot)
   const totalOverallExpenses = useMemo(() => {
-    return payments.reduce((sum, payment) => sum + payment.amount, 0);
-  }, [payments]);
+    if (selectedDaySnapshot?.totals?.general != null) {
+      return Math.floor(Number(selectedDaySnapshot.totals.general) || 0);
+    }
+    return paymentsOfDay.reduce((sum, p) => sum + (Math.floor(Number(p.amount || 0)) || 0), 0);
+  }, [paymentsOfDay, selectedDaySnapshot]);
 
-  // Función para manejar el clic en "Ver todos los pagos" de una tienda
+  // Ver tienda
   const handleViewStoreDetails = (storeName) => {
     setSelectedStore(storeName);
     setShowStoreDetails(true);
   };
 
-  // Función para volver a la vista principal del dashboard de tiendas
+  // Volver
   const handleBackToDashboard = () => {
     setSelectedStore(null);
     setShowStoreDetails(false);
   };
 
+  // Borrado masivo del día seleccionado
+  const handleDeleteAllForSelectedDay = async () => {
+    const human = new Date(effectiveDay.replace(/-/g, '/')).toLocaleDateString('es-CO', {
+      weekday: 'long', month: 'long', day: 'numeric'
+    });
+    if (!window.confirm(`¿Eliminar TODOS los pagos del ${human}? Esta acción no se puede deshacer.`)) return;
+
+    const dayPayments = paymentsOfDay;
+    if (!dayPayments.length) {
+      setError('No hay pagos registrados en la fecha seleccionada.');
+      return;
+    }
+
+    try {
+      await Promise.all(dayPayments.map(p => deleteDoc(doc(db, 'payments', p.id))));
+      setSuccess(`${dayPayments.length} pagos del ${human} fueron eliminados.`);
+      await refreshPaymentsSnapshotForDate(effectiveDay);
+    } catch (error) {
+      console.error('Error al eliminar pagos del día:', error);
+      setError(`Error al eliminar los pagos: ${error.message}`);
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 py-4 sm:py-8">
-      {/* Encabezado y Total General */}
+      {/* Encabezado / fecha / Total del día */}
       <div className="flex flex-col sm:flex-row items-center justify-between mb-4 sm:mb-8 p-3 sm:p-4 rounded-xl shadow-lg bg-gradient-to-r from-blue-500 to-indigo-600 text-white">
-        <h2 className="text-xl sm:text-3xl font-extrabold tracking-tight mb-1 sm:mb-0 text-center sm:text-left">Gestión de Pagos 💸</h2>
-        <div className="text-lg sm:text-xl font-semibold">
+        <h2 className="text-xl sm:text-3xl font-extrabold tracking-tight mb-2 sm:mb-0 text-center sm:text-left">
+          Gestión de Pagos 💸
+        </h2>
+
+        <label
+          className="relative flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold shadow-sm border border-white/30 cursor-pointer"
+          onClick={(e) => {
+            const input = e.currentTarget.querySelector('input[type=date]');
+            if (input) input.showPicker();
+          }}
+        >
+          {new Date((selectedDate || getColombiaLocalDateString()).replace(/-/g, '/')).toLocaleDateString('es-CO', {
+            weekday: 'long', month: 'long', day: 'numeric'
+          })}
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer bg-transparent"
+          />
+        </label>
+
+        <div className="text-lg sm:text-xl font-semibold mt-2 sm:mt-0">
           <p>Total Gastado: {copFormatter.format(totalOverallExpenses)}</p>
         </div>
       </div>
@@ -192,7 +369,7 @@ paymentsToSave.push({
           setEditingPaymentId(null);
           setFormFields([{ name: '', units: '', amount: '', store: '' }]);
           setInitialStore('');
-          setShowStoreDetails(false); // Oculta detalles de tienda si abres el formulario
+          setShowStoreDetails(false);
         }}
         className={`mb-4 sm:mb-6 px-4 py-2 sm:px-6 sm:py-3 rounded-full flex items-center justify-center space-x-2 transition-all duration-300 ease-in-out w-full sm:w-auto mx-auto
           ${showForm ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'} text-white shadow-lg
@@ -202,7 +379,7 @@ paymentsToSave.push({
         <span>{showForm ? 'Cerrar Formulario' : 'Registrar Nuevo Pago'}</span>
       </button>
 
-      {/* Sección de Formularios Dinámicos */}
+      {/* Formularios Dinámicos */}
       {showForm && (
         <div className={`p-4 sm:p-6 rounded-xl shadow-xl transform transition-all duration-500 ease-in-out ${
           theme === 'dark' ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-200'
@@ -262,7 +439,7 @@ paymentsToSave.push({
                     />
                   </div>
                   <div>
-                    <label htmlFor={`store-${index}`} className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    <label htmlFor={`store-${index}`} className="block text-xs sm:text-sm font-medium text-gray-700.dark:text-gray-300 mb-1">
                       Tienda/Lugar
                     </label>
                     <input
@@ -318,13 +495,13 @@ paymentsToSave.push({
         </div>
       )}
 
-      {/* Vista de Dashboard de Tiendas o Detalles de Tienda */}
-      {!showForm && ( // Solo muestra esta sección si el formulario no está abierto
+      {/* Vista de Dashboard / Detalles (filtrada por día seleccionado) */}
+      {!showForm && (
         <div className={`p-4 sm:p-6 rounded-xl shadow-xl max-h-[70vh] overflow-y-auto custom-scrollbar ${
           theme === 'dark' ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-200'
         } mb-6`}>
           {showStoreDetails ? (
-            // --- Vista de Pagos Detallados por Tienda ---
+            // --- Detalle por tienda (del día seleccionado) ---
             <div>
               <button
                 onClick={handleBackToDashboard}
@@ -337,20 +514,20 @@ paymentsToSave.push({
               <h3 className={`text-xl sm:text-2xl font-bold mb-4 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
                 Pagos en {selectedStore}
                 <span className="ml-2 text-blue-500">
-                    ({copFormatter.format(totalExpensesByStore[selectedStore] || 0)})
+                  ({copFormatter.format(totalExpensesByStore[selectedStore] || 0)})
                 </span>
               </h3>
               {Object.keys(groupedPaymentsByStoreAndDate[selectedStore] || {}).length === 0 ? (
                 <p className="text-center text-gray-500 dark:text-gray-400 py-4 sm:py-8 text-sm sm:text-base">
-                  No hay pagos registrados para {selectedStore}.
+                  No hay pagos registrados para {selectedStore} en la fecha seleccionada.
                 </p>
               ) : (
                 Object.entries(groupedPaymentsByStoreAndDate[selectedStore]).map(([date, dailyPayments]) => (
                   <div key={date} className="mb-6">
                     <h4 className={`text-lg font-semibold mb-3 px-3 py-2 rounded-lg ${
-                        theme === 'dark' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-800'
+                      theme === 'dark' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-800'
                     }`}>
-                        📅 {date}
+                      📅 {new Date(date.replace(/-/g, '/')).toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' })}
                     </h4>
                     <div className="space-y-2">
                       {dailyPayments.map(payment => (
@@ -364,11 +541,9 @@ paymentsToSave.push({
                               <span className="text-blue-400">{payment.name}</span> {payment.units ? `(${payment.units} unidades)` : ''} - <strong>{copFormatter.format(payment.amount)}</strong>
                             </p>
                             <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-Fecha de Registro: {(
-  payment?.timestamp?.toDate
-    ? payment.timestamp.toDate()
-    : (payment?.timestamp ? new Date(payment.timestamp) : null)
-)?.toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' }) || '—'}
+                              Fecha de Registro: {(
+                                toDateFromTS(payment?.timestamp)
+                              )?.toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' }) || '—'}
                             </p>
                           </div>
                           <div className="flex space-x-2 mt-2 sm:mt-0">
@@ -395,69 +570,24 @@ Fecha de Registro: {(
               )}
             </div>
           ) : (
-            // --- Vista de Dashboard con Totales por Tienda ---
+            // --- Dashboard por tienda (del día seleccionado) ---
             <div>
               <div className="flex justify-between items-center mb-4">
                 <h3 className={`text-xl sm:text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
                   Gastos por Tienda 📊
                 </h3>
                 <button
-                  onClick={() => {
-                    if (window.confirm('¿Estás seguro de que deseas eliminar todos los pagos de hoy? Esta acción no se puede deshacer.')) {
-                      const today = new Date();
-                      today.setHours(0, 0, 0, 0);
-                      const tomorrow = new Date(today);
-                      tomorrow.setDate(tomorrow.getDate() + 1);
-                      
-                      const todayPayments = payments.filter(payment => {
-                        if (!payment.timestamp) return false;
-                        
-                        const paymentDate = payment.timestamp.toDate ? 
-                          payment.timestamp.toDate() : 
-                          new Date(payment.timestamp);
-                          
-                        return paymentDate >= today && paymentDate < tomorrow;
-                      });
-
-                      console.log('Pagos encontrados hoy:', todayPayments.length);
-
-                      if (todayPayments.length === 0) {
-                        setError('No hay pagos registrados hoy para eliminar.');
-                        return;
-                      }
-
-                      // Mostrar detalles de los pagos que se van a eliminar
-                      console.log('Pagos a eliminar:', todayPayments.map(p => ({
-                        id: p.id,
-                        fecha: p.timestamp.toDate().toLocaleString(),
-                        monto: p.amount
-                      })));
-
-                      Promise.all(
-                        todayPayments.map(payment => {
-                          console.log('Eliminando pago:', payment.id);
-                          return deleteDoc(doc(db, 'payments', payment.id));
-                        })
-                      )
-                        .then(() => {
-                          setSuccess(`${todayPayments.length} pagos de hoy han sido eliminados exitosamente.`);
-                        })
-                        .catch(error => {
-                          console.error('Error al eliminar pagos:', error);
-                          setError(`Error al eliminar los pagos: ${error.message}`);
-                        });
-                    }
-                  }}
+                  onClick={handleDeleteAllForSelectedDay}
                   className={`p-2 rounded-full hover:bg-red-100 dark:hover:bg-red-900 transition-colors duration-200
                     ${theme === 'dark' ? 'text-red-400 hover:text-red-300' : 'text-red-500 hover:text-red-600'}`}
-                  title="Eliminar todos los pagos de hoy"
+                  title="Eliminar todos los pagos del día seleccionado"
                 >
                   <TrashIcon className="w-6 h-6" />
                 </button>
               </div>
               {Object.keys(totalExpensesByStore).length === 0 ? (
                 <p className="text-center text-gray-500 dark:text-gray-400 py-4 sm:py-8 text-sm sm:text-base">
-                  No hay tiendas con gastos registrados.
+                  No hay tiendas con gastos registrados para esta fecha.
                 </p>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -475,7 +605,7 @@ Fecha de Registro: {(
                         {copFormatter.format(total)}
                       </p>
                       <button
-                        onClick={(e) => { e.stopPropagation(); handleViewStoreDetails(store); }} // Evita que el click en el botón active el div
+                        onClick={(e) => { e.stopPropagation(); handleViewStoreDetails(store); }}
                         className="mt-2 text-blue-600 dark:text-blue-400 hover:underline text-sm"
                       >
                         Ver todos los pagos

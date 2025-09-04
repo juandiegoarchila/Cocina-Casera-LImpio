@@ -30,9 +30,9 @@ const ForgotPassword = () => {
         {error && <div className="mb-4 p-2 bg-red-700 text-white rounded">{error}</div>}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="email" className="block mb-2">Correo Electrónico:</label>
+            <label htmlFor="forgot-email" className="block mb-2">Correo Electrónico:</label>
             <input
-              id="email"
+              id="forgot-email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}

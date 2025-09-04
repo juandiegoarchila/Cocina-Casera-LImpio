@@ -432,7 +432,15 @@ const DashboardCharts = React.memo(({
 
   // Dataset saneado para evitar NaN en YAxis
   const safeDailyExpensesChartData = useMemo(()=>{
-    return dailyExpensesChartData.filter(d=> Number.isFinite(d.Total)).map(d=> ({...d, Total: isNaN(d.Total)?0:d.Total}));
+    if (!Array.isArray(dailyExpensesChartData)) return [];
+    return dailyExpensesChartData
+      .filter(d => d && typeof d === 'object')
+      .map(d => ({
+        ...d, 
+        Total: Number.isFinite(Number(d.Total)) ? Number(d.Total) : 0,
+        value: Number.isFinite(Number(d.value)) ? Number(d.value) : 0
+      }))
+      .filter(d => d.Total >= 0); // Solo incluir valores válidos no negativos
   }, [dailyExpensesChartData]);
 
   // Mapa de proveedores por día para tooltip de gastos
@@ -730,9 +738,18 @@ const DashboardCharts = React.memo(({
     return [{ name:'Total', value: netToday }];
   }, [showIncomeBreakdown, drillDayIncome, breakdownData, netToday, adjustedGross, range, drillMonth, ingresosData, selectedDate, periodStructures]);
 
+  // Validar y sanear datos de ingresos para evitar NaN
+  const safeIncomeChartData = useMemo(() => {
+    if (!Array.isArray(incomeChartData)) return [];
+    return incomeChartData.map(item => ({
+      ...item,
+      value: Number.isFinite(Number(item.value)) ? Number(item.value) : 0
+    }));
+  }, [incomeChartData]);
+
   // Altura dinámica para evitar barras apretadas cuando listamos muchos días / meses
   const incomeChartDynamicHeight = useMemo(()=>{
-    const rows = incomeChartData.length;
+    const rows = safeIncomeChartData.length;
     const isYearRoot = range==='year' && !drillMonth && !showIncomeBreakdown;
     const isDaysList = (
       (range==='year' && drillMonth && !drillDayIncome && !showIncomeBreakdown) ||
@@ -765,7 +782,7 @@ const DashboardCharts = React.memo(({
       return rows * perRow + 40;
     }
     return null;
-  }, [incomeChartData, range, drillMonth, drillDayIncome, showIncomeBreakdown, isMobileDevice]);
+  }, [safeIncomeChartData, range, drillMonth, drillDayIncome, showIncomeBreakdown, isMobileDevice]);
 
   // Etiqueta legible del rango seleccionado (compartida por los tres gráficos mientras usemos un único estado 'range')
   const currentRangeLabel = useMemo(()=>{
@@ -1214,7 +1231,7 @@ const DashboardCharts = React.memo(({
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   layout="vertical"
-                  data={incomeChartData}
+                  data={safeIncomeChartData}
                   margin={{ top: 10, right: 40, left: 0, bottom: 10 }}
                   barCategoryGap={showIncomeBreakdown ? (isMobileDevice ? "25%" : "30%") : "40%"}
                 >
@@ -1241,7 +1258,7 @@ const DashboardCharts = React.memo(({
                     cursor="pointer"
                     barSize={showIncomeBreakdown ? undefined : 38}
                   >
-                    {incomeChartData.map((entry, idx) => {
+                    {safeIncomeChartData.map((entry, idx) => {
                       const isYearRoot = range==='year' && !drillMonth && !showIncomeBreakdown;
                       const baseFill = showIncomeBreakdown ? categoryColor(entry.name) : (netToday>=0 ? '#10B981' : '#EF4444');
                       const fill = isYearRoot && entry.value===0 ? (theme==='dark' ? '#1f2937' : '#e5e7eb') : baseFill;
