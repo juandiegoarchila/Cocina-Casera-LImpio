@@ -475,7 +475,9 @@ const BreakfastOrderSummary = ({ items, onSendOrder, user, breakfastTypes, statu
     areAddressesGloballyCommon, // (no usado, se mantiene para compat)
   } = useBreakfastOrderSummary(items, isWaiterView, selectedPaymentNameFallback);
 
-  const baseClass = isWaiterView && !showSaveButton ? `${statusClass} p-4 rounded-lg shadow-md` : 'bg-white p-3 rounded-lg shadow-lg mt-6 leading-relaxed';
+  // Aplicar el color de estado en la vista de "Ver Órdenes" (cuando isWaiterView=true) 
+  // pero mantener el color blanco en la vista de "Crear Orden" (cuando onSendOrder existe)
+  const baseClass = isWaiterView && !onSendOrder ? `${statusClass} p-4 rounded-lg shadow-md` : 'bg-white p-3 rounded-lg shadow-lg mt-6 leading-relaxed';
 
   return (
     <div className={baseClass}>
@@ -519,7 +521,7 @@ const BreakfastOrderSummary = ({ items, onSendOrder, user, breakfastTypes, statu
           ))}
 
           <hr className="border-t border-gray-300 my-2" />
-          <p className="text-sm text-gray-600">🚚 Estimado: 25-30 min (10-15 si están cerca).</p>
+          {!isWaiterView && <p className="text-sm text-gray-600">🚚 Estimado: 25-30 min (10-15 si están cerca).</p>}
 
           <PaymentSummary paymentSummary={paymentSummary} total={total} isWaiterView={isWaiterView} />
 

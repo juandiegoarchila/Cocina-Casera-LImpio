@@ -131,19 +131,73 @@ const WaiterDashboard = () => {
 
     const breakfastOrdersUnsubscribe = onSnapshot(collection(db, 'breakfastOrders'), (snapshot) => {
       const breakfastOrders = snapshot.docs
-        .map(doc => ({ id: doc.id, ...doc.data(), type: 'breakfast' }))
-        .filter(order => order.userId === user?.uid)
-        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-      setOrders(prev => [...prev.filter(order => order.type !== 'breakfast'), ...breakfastOrders]);
+        .map(doc => ({ 
+          id: doc.id, 
+          ...doc.data(), 
+          type: 'breakfast',
+          // Asegurar que createdAt sea siempre un objeto Date para comparación
+          createdAt: doc.data().createdAt ? 
+            (doc.data().createdAt instanceof Date ? 
+              doc.data().createdAt : 
+              doc.data().createdAt.toDate ? 
+                doc.data().createdAt.toDate() : 
+                new Date(doc.data().createdAt)
+            ) : 
+            new Date()
+        }))
+        .filter(order => order.userId === user?.uid);
+      
+      // Guardamos las órdenes de desayuno y luego ordenamos todas juntas
+      setOrders(prev => {
+        // Mantener órdenes que no son desayuno
+        const nonBreakfastOrders = prev.filter(order => order.type !== 'breakfast');
+        // Combinar todas las órdenes
+        const updatedOrders = [...nonBreakfastOrders, ...breakfastOrders];
+        // Ordenar por fecha de creación (más reciente primero)
+        return updatedOrders.sort((a, b) => {
+          // Convertir a timestamp si es posible, o usar 0 si no existe
+          const timestampA = a.createdAt ? (a.createdAt instanceof Date ? a.createdAt.getTime() : new Date(a.createdAt).getTime()) : 0;
+          const timestampB = b.createdAt ? (b.createdAt instanceof Date ? b.createdAt.getTime() : new Date(b.createdAt).getTime()) : 0;
+          return timestampB - timestampA;
+        });
+      });
+      
       if (process.env.NODE_ENV === 'development') console.log('Updated breakfast orders:', breakfastOrders);
     });
 
     const ordersUnsubscribe = onSnapshot(collection(db, 'tableOrders'), (snapshot) => {
       const orderData = snapshot.docs
-        .map(doc => ({ id: doc.id, ...doc.data(), type: 'lunch' }))
-        .filter(order => order.userId === user?.uid)
-        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-      setOrders(prev => [...prev.filter(order => order.type !== 'lunch'), ...orderData]);
+        .map(doc => ({ 
+          id: doc.id, 
+          ...doc.data(), 
+          type: 'lunch',
+          // Asegurar que createdAt sea siempre un objeto Date para comparación
+          createdAt: doc.data().createdAt ? 
+            (doc.data().createdAt instanceof Date ? 
+              doc.data().createdAt : 
+              doc.data().createdAt.toDate ? 
+                doc.data().createdAt.toDate() : 
+                new Date(doc.data().createdAt)
+            ) : 
+            new Date()
+        }))
+        .filter(order => order.userId === user?.uid);
+      
+      // Guardamos las órdenes de almuerzo y luego ordenamos todas juntas
+      setOrders(prev => {
+        // Mantener órdenes que no son almuerzo
+        const nonLunchOrders = prev.filter(order => order.type !== 'lunch');
+        // Combinar todas las órdenes
+        const updatedOrders = [...nonLunchOrders, ...orderData];
+        // Ordenar por fecha de creación (más reciente primero)
+        return updatedOrders.sort((a, b) => {
+          // Convertir a timestamp si es posible, o usar 0 si no existe
+          const timestampA = a.createdAt ? (a.createdAt instanceof Date ? a.createdAt.getTime() : new Date(a.createdAt).getTime()) : 0;
+          const timestampB = b.createdAt ? (b.createdAt instanceof Date ? b.createdAt.getTime() : new Date(b.createdAt).getTime()) : 0;
+          return timestampB - timestampA;
+        });
+      });
+      
       if (process.env.NODE_ENV === 'development') console.log('Updated waiter orders:', orderData);
     });
 
@@ -838,12 +892,23 @@ const WaiterDashboard = () => {
             {orders.length === 0 ? (
               <p className="text-center text-gray-700">No has registrado órdenes de mesas.</p>
             ) : (
-              orders.map(order => (
-                <div key={order.id} className={`p-4 rounded-lg shadow-md ${statusColors[order.status] || 'bg-white'}`}>
-                  <div className="flex justify-between items-center">
-                    <h2 className="text-sm font-semibold text-gray-800">
-                      {order.type === 'breakfast' ? 'Desayuno' : 'Almuerzo'} - Mesa {formatValue(order.meals?.[0]?.tableNumber || order.breakfasts?.[0]?.tableNumber)} - #{order.id.slice(-4)}
-                    </h2>
+              <>
+                {/* Separador para Desayunos si hay alguno */}
+                {orders.some(order => order.type === 'breakfast') && (
+                  <div className="bg-yellow-100 p-2 rounded-md text-center font-medium text-yellow-800 border-b-2 border-yellow-300">
+                    Órdenes de Desayuno
+                  </div>
+                )}
+                
+                {/* Listar órdenes de desayuno */}
+                {orders
+                  .filter(order => order.type === 'breakfast')
+                  .map((order, index) => (
+                    <div key={order.id} className={`p-4 rounded-lg shadow-md mb-3 ${statusColors[order.status] || 'bg-white'}`}>
+                      <div className="flex justify-between items-center">
+                        <h2 className="text-sm font-semibold text-gray-800">
+                          Desayuno #{index + 1} - Mesa {formatValue(order.breakfasts?.[0]?.tableNumber)} - #{order.id.slice(-4)}
+                        </h2>
                     <div className="relative">
                       <button
                         onClick={() => setShowMenu(showMenu === order.id ? null : order.id)}
@@ -897,6 +962,7 @@ const WaiterDashboard = () => {
                       user={{ role: 3 }}
                       breakfastTypes={breakfastTypes}
                       statusClass={statusColors[order.status] || ''} // Añadir clase de estado
+                      showSaveButton={false} // Indica explícitamente que estamos en "Ver Órdenes"
                     />
                   ) : (
                     <OrderSummary
@@ -909,7 +975,82 @@ const WaiterDashboard = () => {
                     />
                   )}
                 </div>
-              ))
+              ))}
+              
+              {/* Separador para Almuerzos si hay alguno */}
+              {orders.some(order => order.type === 'lunch') && (
+                <div className="bg-green-100 p-2 rounded-md text-center font-medium text-green-800 border-b-2 border-green-300 mt-6 mb-3">
+                  Órdenes de Almuerzo
+                </div>
+              )}
+              
+              {/* Listar órdenes de almuerzo */}
+              {orders
+                .filter(order => order.type === 'lunch')
+                .map((order, index) => (
+                  <div key={order.id} className={`p-4 rounded-lg shadow-md mb-3 ${statusColors[order.status] || 'bg-white'}`}>
+                    <div className="flex justify-between items-center">
+                      <h2 className="text-sm font-semibold text-gray-800">
+                        Almuerzo #{index + 1} - Mesa {formatValue(order.meals?.[0]?.tableNumber)} - #{order.id.slice(-4)}
+                      </h2>
+                      <div className="relative">
+                        <button
+                          onClick={() => setShowMenu(showMenu === order.id ? null : order.id)}
+                          className="text-gray-600 hover:text-gray-800 focus:outline-none"
+                        >
+                          ⋮
+                        </button>
+                        {showMenu === order.id && (
+                          <div className="absolute right-0 mt-2 w-32 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                            <button
+                              onClick={() => handleStatusChange(order.id, 'Pendiente', order.type)}
+                              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:bg-gray-200"
+                              disabled={order.status === 'Pendiente'}
+                            >
+                              Pendiente
+                            </button>
+                            <button
+                              onClick={() => handleStatusChange(order.id, 'Preparando', order.type)}
+                              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:bg-gray-200"
+                              disabled={order.status === 'Preparando'}
+                            >
+                              Preparando
+                            </button>
+                            <button
+                              onClick={() => handleStatusChange(order.id, 'Completada', order.type)}
+                              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:bg-gray-200"
+                              disabled={order.status === 'Completada'}
+                            >
+                              Completada
+                            </button>
+                            <button
+                              onClick={() => handleStatusChange(order.id, 'Cancelada', order.type)}
+                              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:bg-gray-200"
+                              disabled={order.status === 'Cancelada'}
+                            >
+                              Cancelada
+                            </button>
+                            <button
+                              onClick={() => handleEditOrder(order)}
+                              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                            >
+                              Editar
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <OrderSummary
+                      meals={order.meals}
+                      isTableOrder={true}
+                      calculateTotal={() => order.total}
+                      isWaiterView={true}
+                      statusClass={statusColors[order.status] || ''}
+                      userRole={3}
+                    />
+                  </div>
+                ))}
+              </>
             )}
           </div>
         )}
