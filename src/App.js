@@ -740,7 +740,19 @@ await sendToWhatsApp(
                         incompleteSlideIndex={incompleteSlideIndex}
                         isOrderingDisabled={isOrderingDisabled}
                       />
-                      <OrderSummary meals={meals} onSendOrder={() => onSendOrder(false)} calculateTotal={calculateTotal} isTableOrder={false} />
+                      {(() => {
+                        const totalCalculated = calculateTotal(meals);
+                        console.log('🔍 App.js total calculado:', totalCalculated);
+                        return (
+                          <OrderSummary 
+                            meals={meals} 
+                            onSendOrder={() => onSendOrder(false)} 
+                            calculateTotal={calculateTotal} 
+                            preCalculatedTotal={totalCalculated}
+                            isTableOrder={false} 
+                          />
+                        );
+                      })()}
                     </>
                   )}
                 </div>

@@ -75,7 +75,14 @@ const MealItem = ({
 
   const isSidesComplete = isCompleteRice || (Array.isArray(meal?.sides) && meal.sides.length > 0);
 
-  const displayMainItem = isCompleteRice ? selectedRiceName : meal?.protein?.name || 'Selecciona';
+  // Limpiar el nombre de la proteína para evitar duplicar el precio
+  const cleanProteinName = (proteinName) => {
+    if (!proteinName) return 'Selecciona';
+    // Remover el precio del nombre si está incluido (formato "+ $X.XXX")
+    return proteinName.replace(/\s*\+\s*\$[\d,.]+/g, '').trim();
+  };
+
+  const displayMainItem = isCompleteRice ? selectedRiceName : cleanProteinName(meal?.protein?.name) || 'Selecciona';
 
   const totalSteps = isTableOrder ? (isWaitress ? 7 : 6) : 9; // +1 para orderType en mesera
   const completedSteps = [

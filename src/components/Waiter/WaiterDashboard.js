@@ -904,14 +904,21 @@ const WaiterDashboard = () => {
                 incompleteSlideIndex={incompleteSlideIndex}
                 isOrderingDisabled={isOrderingDisabled}
               />
-              <OrderSummary
-                meals={meals}
-                onSendOrder={handleSendOrder}
-                calculateTotal={() => calculateTotal(meals, 3)}
-                isTableOrder={true}
-                isWaiterView={false}
-                userRole={3}
-              />
+              {(() => {
+                const totalCalculated = calculateTotal(meals, 3);
+                console.log('🔍 WaiterDashboard total calculado:', totalCalculated);
+                return (
+                  <OrderSummary
+                    meals={meals}
+                    onSendOrder={handleSendOrder}
+                    calculateTotal={() => calculateTotal(meals, 3)}
+                    preCalculatedTotal={totalCalculated}
+                    isTableOrder={true}
+                    isWaiterView={false}
+                    userRole={3}
+                  />
+                );
+              })()}
             </>
           )
         ) : (

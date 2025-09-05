@@ -70,10 +70,29 @@ export const removeMeal = (setMeals, setSuccessMessage, id, meals) => {
 
 export const calculateMealPrice = (meal) => {
   if (!meal) return 0;
+  
+  // Mojarra tiene precio base fijo - verificación robusta
+  const proteinName = meal?.protein?.name || '';
+  const proteinNameClean = proteinName.toLowerCase().trim();
+  const hasMojarra = proteinNameClean === 'mojarra' || proteinNameClean.includes('mojarra');
+  
+  if (hasMojarra) {
+    console.log('✅ MealLogic: Mojarra detectada, precio: 16000');
+    const additionsPrice = meal?.additions?.reduce((sum, item) => sum + (item.price || 0) * (item.quantity || 1), 0) || 0;
+    return 16000 + additionsPrice;
+  }
+  
   const hasSoupOrReplacement = meal?.soup?.name && meal.soup.name !== 'Sin sopa' && meal.soup.name !== 'Solo bandeja' || meal?.soupReplacement;
-  const hasMojarra = meal?.protein?.name === 'Mojarra';
-  const basePrice = hasMojarra ? 15000 : (hasSoupOrReplacement ? 13000 : 12000);
+  const basePrice = hasSoupOrReplacement ? 13000 : 12000;
   const additionsPrice = meal?.additions?.reduce((sum, item) => sum + (item.price || 0) * (item.quantity || 1), 0) || 0;
+  
+  console.log('⚠️ MealLogic: No mojarra, precio normal:', {
+    hasSoupOrReplacement,
+    basePrice,
+    additionsPrice,
+    total: basePrice + additionsPrice
+  });
+  
   return basePrice + additionsPrice;
 };
 

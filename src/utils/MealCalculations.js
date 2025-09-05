@@ -9,7 +9,7 @@
 // Solo bandeja:
 //   - Mesa:    $11.000
 //   - Llevar:  $12.000
-// Mojarra: $15.000 (fijo, sin importar Mesa/Llevar)
+// Mojarra: $16.000 (fijo, sin importar Mesa/Llevar)
 // Adiciones: se suman (respetando quantity)
 
 const PRICE_MAP = {
@@ -70,28 +70,51 @@ const additionsTotal = (meal) =>
 
 // Precio por almuerzo (usa orderType + solo bandeja + mojarra)
 export const calculateMealPrice = (meal) => {
-  if (!meal) return 0;
+  if (!meal) {
+    console.log('⚠️ calculateMealPrice: meal es null/undefined');
+    return 0;
+  }
 
-  // Mojarra tiene precio base fijo
-  const hasMojarra = (meal?.protein?.name || '').toLowerCase().trim() === 'mojarra';
+  // Debug completo del meal
+  console.log('🔍 DEBUG calculateMealPrice COMPLETO:', {
+    mealId: meal?.id,
+    protein: meal?.protein,
+    proteinName: meal?.protein?.name,
+    fullMeal: JSON.stringify(meal, null, 2)
+  });
+
+  // Mojarra tiene precio base fijo - verificación robusta
+  const proteinName = meal?.protein?.name || '';
+  const proteinNameClean = proteinName.toLowerCase().trim();
+  const hasMojarra = proteinNameClean === 'mojarra' || proteinNameClean.includes('mojarra');
+  
   if (hasMojarra) {
-    return 16000 + additionsTotal(meal);
+    const additions = additionsTotal(meal);
+    const total = 16000 + additions;
+    console.log('✅ Mojarra detectada:', total);
+    return total;
   }
 
   const orderType = normalizeOrderType(meal?.orderType, meal);
   const kind = isSoloBandeja(meal) ? 'bandeja' : 'normal';
   const base = PRICE_MAP[orderType]?.[kind] ?? PRICE_MAP.table.normal;
+  const additions = additionsTotal(meal);
+  const total = base + additions;
 
-  return base + additionsTotal(meal);
+  return total;
 };
 
 // Total de todos los almuerzos
-export const calculateTotal = (meals) => {
+export const calculateTotal = (meals, userRole = null) => {
   if (!Array.isArray(meals)) {
     console.error('Error: meals no es un arreglo:', meals);
     return 0;
   }
-  return meals.reduce((sum, meal) => sum + calculateMealPrice(meal), 0);
+  
+  const result = meals.reduce((sum, meal) => sum + calculateMealPrice(meal), 0);
+  console.log('💰 Total calculado:', result);
+  
+  return result;
 };
 
 // Resumen por método de pago (acepta string u objeto {name})

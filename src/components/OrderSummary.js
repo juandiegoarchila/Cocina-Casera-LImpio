@@ -15,7 +15,7 @@ const cleanText = (text) => {
 };
 
 // Hook personalizado para manejar la lógica de resumen
-const useOrderSummary = (meals, isWaiterView) => {
+const useOrderSummary = (meals, isWaiterView, calculateTotal, preCalculatedTotal) => {
   const getFieldValue = (meal, field) => {
     if (!meal) return '';
     if (field === 'Sopa') {
@@ -162,12 +162,25 @@ const useOrderSummary = (meals, isWaiterView) => {
   }, [meals]);
 
   const total = useMemo(() => {
+    // Priorizar el total pre-calculado si está disponible
+    if (preCalculatedTotal !== undefined && preCalculatedTotal !== null) {
+      console.log('🔍 OrderSummary usando preCalculatedTotal:', preCalculatedTotal);
+      return preCalculatedTotal;
+    }
+    // Siempre usar la función calculateTotal que viene como prop si está disponible
+    if (calculateTotal && typeof calculateTotal === 'function') {
+      console.log('🔍 OrderSummary usando calculateTotal prop');
+      return calculateTotal(meals);
+    }
+    // Fallback a cálculo directo
+    console.log('⚠️ OrderSummary usando calculateMealPrice directo');
     return meals.reduce((sum, meal) => sum + calculateMealPrice(meal), 0);
-  }, [meals]);
+  }, [meals, calculateTotal, preCalculatedTotal]);
 
   const paymentSummary = useMemo(() => {
     if (!meals || meals.length === 0) return {};
     return meals.reduce((acc, meal) => {
+      // Usar calculateMealPrice directo para cálculo individual por meal
       const price = calculateMealPrice(meal);
       const paymentMethod = meal.payment?.name || meal.paymentMethod?.name || 'No especificado';
       acc[paymentMethod] = (acc[paymentMethod] || 0) + price;
@@ -315,8 +328,10 @@ const MealFields = ({ meal, commonFields, isWaiterView }) => {
 const MealGroup = ({ group, globalCommonFields, globalCommonAddressFields, isWaiterView, isTableOrder, calculateTotal }) => {
   const baseMeal = group.meals[0];
   const count = group.meals.length;
-  // Usar calculateTotal para el total del grupo en la vista de mesera con isTableOrder=true
-  const groupTotal = isWaiterView && isTableOrder ? calculateTotal(group.meals) : group.meals.reduce((sum, meal) => sum + calculateMealPrice(meal), 0);
+  // Usar calculateTotal para el total del grupo de manera consistente
+  const groupTotal = calculateTotal && typeof calculateTotal === 'function' 
+    ? calculateTotal(group.meals) 
+    : group.meals.reduce((sum, meal) => sum + calculateMealPrice(meal), 0);
   // Forzar 'No especificado' si no hay método de pago válido, según el ejemplo
   const paymentNames = Array.from(group.payments).filter(name => name && name !== 'No especificado').length > 0
     ? Array.from(group.payments).filter(name => name && name !== 'No especificado')
@@ -491,7 +506,7 @@ const PaymentSummary = ({ paymentSummary, total, isWaiterView, isTableOrder }) =
 };
 
 // Componente principal
-const OrderSummary = ({ meals, onSendOrder, calculateTotal, isTableOrder = false, isWaiterView = false, statusClass = '' }) => {
+const OrderSummary = ({ meals, onSendOrder, calculateTotal, preCalculatedTotal, isTableOrder = false, isWaiterView = false, statusClass = '' }) => {
   const {
     groupedMeals,
     total,
@@ -499,9 +514,7 @@ const OrderSummary = ({ meals, onSendOrder, calculateTotal, isTableOrder = false
     commonDeliveryTime,
     commonAddressFields,
     globalCommonFields,
-  } = useOrderSummary(meals, isWaiterView);
-
-  const effectiveTotal = isTableOrder ? calculateTotal(meals) : total;
+  } = useOrderSummary(meals, isWaiterView, calculateTotal, preCalculatedTotal);
 
   const baseClass = isWaiterView ? `${statusClass} p-4 rounded-lg shadow-md` : 'bg-white p-3 rounded-lg shadow-lg mt-6 leading-relaxed';
 
@@ -530,7 +543,7 @@ const OrderSummary = ({ meals, onSendOrder, calculateTotal, isTableOrder = false
             ))}
           {!isWaiterView && (
             <p className="text-sm text-gray-700">
-              <span className="font-medium text-gray-800">💰 Total: ${effectiveTotal.toLocaleString('es-CO')}</span>
+              <span className="font-medium text-gray-800">💰 Total: ${total.toLocaleString('es-CO')}</span>
             </p>
           )}
           <hr className="border-t border-gray-300 my-2" />
@@ -562,7 +575,7 @@ const OrderSummary = ({ meals, onSendOrder, calculateTotal, isTableOrder = false
               )}
             </div>
           )}
-          <PaymentSummary paymentSummary={paymentSummary} total={effectiveTotal} isWaiterView={isWaiterView} isTableOrder={isTableOrder} />
+          <PaymentSummary paymentSummary={paymentSummary} total={total} isWaiterView={isWaiterView} isTableOrder={isTableOrder} />
           {onSendOrder && (
             <button
               onClick={onSendOrder}
