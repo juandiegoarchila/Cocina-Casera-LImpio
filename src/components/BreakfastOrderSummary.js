@@ -164,7 +164,17 @@ const useBreakfastOrderSummary = (items, isWaiterView, selectedPaymentNameFallba
   }, [items, selectedPaymentNameFallback]);
 
   const total = useMemo(() => {
-    return items.reduce((sum, item) => sum + calculateBreakfastPrice(item, 3), 0);
+    const calculatedTotal = items.reduce((sum, item) => {
+      const itemPrice = calculateBreakfastPrice(item, 3);
+      console.log('Total calculation - Item:', { 
+        item, 
+        itemPrice, 
+        additions: item.additions 
+      });
+      return sum + itemPrice;
+    }, 0);
+    console.log('Total calculation - Final total:', calculatedTotal);
+    return calculatedTotal;
   }, [items]);
 
   const paymentSummary = useMemo(() => {
@@ -237,7 +247,7 @@ const AddressSummary = ({ commonAddressFields = {}, breakfastAddress, isCommon =
   );
 };
 
-const BreakfastFields = ({ breakfast, commonFields, isWaiterView }) => {
+const BreakfastFields = ({ breakfast, commonFields, isWaiterView, isAdminView = false }) => {
   const fields = [];
 
   if (commonFields.has('Tipo') || commonFields.has('all')) {
@@ -268,7 +278,7 @@ const BreakfastFields = ({ breakfast, commonFields, isWaiterView }) => {
       fields.push(<p key="protein" className="text-xs sm:text-sm text-gray-600">Proteína: {cleanText(breakfast.protein.name) || 'Sin proteína'}</p>);
     }
   }
-  if ((commonFields.has('Cubiertos') || commonFields.has('all')) && !isWaiterView) {
+  if ((commonFields.has('Cubiertos') || commonFields.has('all')) && !isWaiterView && !isAdminView) {
     fields.push(<p key="cutlery" className="text-xs sm:text-sm text-gray-600">Cubiertos: {breakfast.cutlery ? 'Sí' : 'No'}</p>);
   }
   if (commonFields.has('Adiciones') || commonFields.has('all')) {
@@ -283,17 +293,23 @@ const BreakfastFields = ({ breakfast, commonFields, isWaiterView }) => {
       });
     }
   }
-  if (commonFields.has('all')) {
+  
+  // En vista admin, mostrar tipo de orden en lugar de notas
+  if (isAdminView && breakfast.orderType) {
+    const tipoPedido = breakfast.orderType === 'table' ? 'Para mesa' : breakfast.orderType === 'takeaway' ? 'Para llevar' : breakfast.orderType;
+    fields.push(<p key="orderType" className="text-xs sm:text-sm text-gray-600">Tipo: {tipoPedido}</p>);
+  } else if (commonFields.has('all') && !isAdminView) {
     fields.push(<p key="notes" className="text-xs sm:text-sm text-gray-600">Notas: {breakfast.notes || 'Ninguna'}</p>);
   }
+  
   if ((commonFields.has('Mesa') || commonFields.has('all')) && isWaiterView && breakfast.tableNumber) {
     fields.push(<p key="table" className="text-xs sm:text-sm text-gray-600">Mesa: {breakfast.tableNumber}</p>);
   }
-  if ((commonFields.has('all') || commonFields.has('TipoPedido')) && isWaiterView && breakfast.orderType) {
+  if ((commonFields.has('all') || commonFields.has('TipoPedido')) && isWaiterView && breakfast.orderType && !isAdminView) {
     const tipoPedido = breakfast.orderType === 'table' ? 'Para mesa' : breakfast.orderType === 'takeaway' ? 'Para llevar' : breakfast.orderType;
     fields.push(<p key="orderType" className="text-xs sm:text-sm text-gray-600">Tipo: {tipoPedido}</p>);
   }
-  if ((commonFields.has('Dirección') || commonFields.has('all')) && !isWaiterView && breakfast.address) {
+  if ((commonFields.has('Dirección') || commonFields.has('all')) && !isWaiterView && !isAdminView && breakfast.address) {
     fields.push(
       <AddressSummary
         key="address"
@@ -303,13 +319,36 @@ const BreakfastFields = ({ breakfast, commonFields, isWaiterView }) => {
       />
     );
   }
+  
+  // Mostrar el total en la vista de administrador
+  if (isAdminView) {
+    const price = calculateBreakfastPrice(breakfast, 3); // userRole 3 para mesera
+    console.log('BreakfastFields - Admin view price calculation:', { 
+      breakfast, 
+      calculatedPrice: price,
+      additions: breakfast.additions 
+    });
+    fields.push(<p key="total" className="text-xs sm:text-sm font-medium text-gray-800 mt-2">Total: ${price.toLocaleString('es-CO')}</p>);
+  }
+  
   return fields;
 };
 
-const BreakfastGroup = ({ group, globalCommonFields, isWaiterView }) => {
+const BreakfastGroup = ({ group, globalCommonFields, isWaiterView, isAdminView = false }) => {
   const baseBreakfast = group.items[0];
   const count = group.items.length;
-  const groupTotal = group.items.reduce((sum, item) => sum + calculateBreakfastPrice(item, 3), 0);
+  const groupTotal = group.items.reduce((sum, item) => {
+    // Usar la función calculateBreakfastPrice para calcular el precio correctamente
+    const itemPrice = calculateBreakfastPrice(item, 3); // userRole 3 para mesera
+    console.log('BreakfastGroup - Price calculation:', { 
+      item, 
+      itemPrice, 
+      isWaiterView, 
+      isAdminView,
+      additions: item.additions 
+    });
+    return sum + itemPrice;
+  }, 0);
 
   const paymentNames = Array.from(group.payments).filter(Boolean);
   const paymentText = `(${(paymentNames.length ? paymentNames : ['No especificado']).join(' y ')})`;
@@ -353,15 +392,15 @@ const BreakfastGroup = ({ group, globalCommonFields, isWaiterView }) => {
       <h3 className="font-medium text-gray-800 text-xs sm:text-sm">
         🍽 {count > 1 ? `${count} Desayunos iguales – $${groupTotal.toLocaleString('es-CO')} ${paymentText}` : `${count} Desayuno – $${groupTotal.toLocaleString('es-CO')} ${paymentText}`}
       </h3>
-      <BreakfastFields breakfast={baseBreakfast} commonFields={count > 1 ? group.commonFieldsInGroup : new Set(['all'])} isWaiterView={isWaiterView} />
-      {count === 1 && !globalCommonFields.has('Dirección') && baseBreakfast.address && !isWaiterView && (
+      <BreakfastFields breakfast={baseBreakfast} commonFields={count > 1 ? group.commonFieldsInGroup : new Set(['all'])} isWaiterView={isWaiterView} isAdminView={isAdminView} />
+      {count === 1 && !globalCommonFields.has('Dirección') && baseBreakfast.address && !isWaiterView && !isAdminView && (
         <AddressSummary
           breakfastAddress={baseBreakfast.address}
           isCommon={false}
           globalCommonAddressFields={{}}
         />
       )}
-      {count > 1 && group.commonFieldsInGroup.has('Dirección') && !globalCommonFields.has('Dirección') && baseBreakfast.address && !isWaiterView && (
+      {count > 1 && group.commonFieldsInGroup.has('Dirección') && !globalCommonFields.has('Dirección') && baseBreakfast.address && !isWaiterView && !isAdminView && (
         <AddressSummary
           breakfastAddress={baseBreakfast.address}
           isCommon={true}
@@ -466,8 +505,8 @@ const PaymentSummary = ({ paymentSummary, total, isWaiterView }) => {
   );
 };
 
-const BreakfastOrderSummary = ({ items, onSendOrder, user, breakfastTypes, statusClass = '', showSaveButton = true, selectedPayment }) => {
-  const isWaiterView = user?.role === 3;
+const BreakfastOrderSummary = ({ items, onSendOrder, user, breakfastTypes, statusClass = '', showSaveButton = true, selectedPayment, isAdminView = false, isWaiterView: propIsWaiterView }) => {
+  const isWaiterView = propIsWaiterView !== undefined ? propIsWaiterView : user?.role === 3;
   const selectedPaymentNameFallback = selectedPayment?.name; // si el padre lo envía, lo usamos como fallback
 
   const {
@@ -521,13 +560,20 @@ const BreakfastOrderSummary = ({ items, onSendOrder, user, breakfastTypes, statu
               group={group}
               globalCommonFields={new Set()} // no necesitamos globales aquí
               isWaiterView={isWaiterView}
+              isAdminView={isAdminView}
             />
           ))}
 
           <hr className="border-t border-gray-300 my-2" />
-          {!isWaiterView && <p className="text-sm text-gray-600">🚚 Estimado: 25-30 min (10-15 si están cerca).</p>}
+          
+          {/* Siempre mostrar el total en vista Admin */}
+          {isAdminView && (
+            <p className="text-sm text-gray-800 font-medium mt-2">Total: ${total.toLocaleString('es-CO')}</p>
+          )}
+          
+          {!isWaiterView && !isAdminView && <p className="text-sm text-gray-600">🚚 Estimado: 25-30 min (10-15 si están cerca).</p>}
 
-          <PaymentSummary paymentSummary={paymentSummary} total={total} isWaiterView={isWaiterView} />
+          {!isAdminView && <PaymentSummary paymentSummary={paymentSummary} total={total} isWaiterView={isWaiterView} />}
 
           {onSendOrder && showSaveButton && (
             <button

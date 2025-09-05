@@ -114,8 +114,19 @@ export const calculateBreakfastPrice = (breakfast, userRole, breakfastTypes = []
   }
 
   const additionsPrice = breakfast.additions?.reduce((sum, item) => {
+    console.log('Addition in calculation:', item, 'price:', item.price, 'quantity:', item.quantity);
     return sum + (item.price || 0) * (item.quantity || 1);
   }, 0) || 0;
+
+  console.log('Price calculation:', {
+    type: typeName,
+    broth: brothName,
+    orderType,
+    basePrice,
+    additionsPrice,
+    totalPrice: basePrice + additionsPrice,
+    additions: breakfast.additions
+  });
 
   const totalPrice = basePrice + additionsPrice;
 

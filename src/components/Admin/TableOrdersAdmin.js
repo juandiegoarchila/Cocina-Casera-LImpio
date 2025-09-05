@@ -22,6 +22,7 @@ import {
 import LoadingIndicator from '../LoadingIndicator';
 import ErrorMessage from '../ErrorMessage';
 import OrderSummary from '../OrderSummary';
+import BreakfastOrderSummary from '../BreakfastOrderSummary';
 import OptionSelector from '../OptionSelector';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -275,6 +276,28 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
     };
   }, [isMenuOpen]);
 
+  // Manejar clics fuera de los modales
+  useEffect(() => {
+    function handleModalClickOutside(event) {
+      // Cerrar modal de detalles si se hace clic fuera
+      if (showMealDetails && event.target.classList.contains('modal-backdrop')) {
+        setShowMealDetails(null);
+      }
+      // Cerrar modal de edición si se hace clic fuera
+      if (editingOrder && event.target.classList.contains('modal-backdrop')) {
+        setEditingOrder(null);
+      }
+    }
+    
+    if (showMealDetails || editingOrder) {
+      document.addEventListener('mousedown', handleModalClickOutside);
+    }
+    
+    return () => {
+      document.removeEventListener('mousedown', handleModalClickOutside);
+    };
+  }, [showMealDetails, editingOrder]);
+
 
   // ===== Filtro/búsqueda (incluye pago) =====
   const filteredOrders = useMemo(() => {
@@ -426,7 +449,9 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
           ? b.additions
               .map((a) => {
                 const full = byName(breakfastAdditions, a);
-                return full ? { ...full, quantity: a.quantity || 1, price: full.price ?? a.price ?? 0 } : null;
+                const result = full ? { ...full, quantity: a.quantity || 1, price: full.price ?? a.price ?? 0 } : null;
+                console.log('Addition mapping:', { original: a, found: full, result });
+                return result;
               })
               .filter(Boolean)
           : [],
@@ -899,7 +924,59 @@ const newTotal = Number(calculateTotal(editingOrder.meals, 3) || 0);      if ((e
                           <td className="p-2 sm:p-3 text-gray-300">{displayNumber}</td>
                           <td className="p-2 sm:p-3 text-gray-300">
                             <button
-                              onClick={() => setShowMealDetails(order)}
+                              onClick={() => {
+                                // Hidratar la orden para mostrar en el modal
+                                const hydratedOrder = { ...order };
+                                
+                                if (Array.isArray(order.breakfasts)) {
+                                  hydratedOrder.breakfasts = order.breakfasts.map((b) => ({
+                                    ...b,
+                                    type: byName(breakfastTypes, b.type),
+                                    broth: byName(breakfastBroths, b.broth),
+                                    eggs: byName(breakfastEggs, b.eggs),
+                                    riceBread: byName(breakfastRiceBread, b.riceBread),
+                                    drink: byName(breakfastDrinks, b.drink),
+                                    protein: byName(breakfastProteins, b.protein),
+                                    additions: Array.isArray(b.additions)
+                                      ? b.additions
+                                          .map((a) => {
+                                            const full = byName(breakfastAdditions, a);
+                                            const result = full ? { ...full, quantity: a.quantity || 1, price: full.price ?? a.price ?? 0 } : null;
+                                            console.log('Modal Addition mapping:', { original: a, found: full, result });
+                                            return result;
+                                          })
+                                          .filter(Boolean)
+                                      : [],
+                                    time: typeof b.time === 'string' ? b.time : b.time?.name || '',
+                                    paymentMethod: byName(paymentMethods, b.payment || b.paymentMethod),
+                                  }));
+                                  hydratedOrder.type = 'breakfast';
+                                } else if (Array.isArray(order.meals)) {
+                                  hydratedOrder.meals = order.meals.map((m) => ({
+                                    ...m,
+                                    soup: byName(soups, m.soup),
+                                    soupReplacement: byName(soupReplacements, m.soupReplacement),
+                                    principle: manyByName(principles, m.principle),
+                                    protein: byName(menuProteins, m.protein),
+                                    drink: byName(drinks, m.drink),
+                                    sides: manyByName(sides, m.sides),
+                                    additions: Array.isArray(m.additions)
+                                      ? m.additions
+                                          .map((a) => {
+                                            const full = byName(additions, a);
+                                            return full ? { ...full, quantity: a.quantity || 1, price: a.price ?? full.price ?? 0 } : null;
+                                          })
+                                          .filter(Boolean)
+                                      : [],
+                                    time: typeof m.time === 'string' ? m.time : m.time?.name || '',
+                                    paymentMethod: byName(paymentMethods, m.payment || m.paymentMethod),
+                                  }));
+                                  hydratedOrder.type = 'meal';
+                                }
+                                
+                                console.log('Showing hydrated order in modal:', hydratedOrder);
+                                setShowMealDetails(hydratedOrder);
+                              }}
                               className="text-blue-400 hover:text-blue-300 text-xs sm:text-sm flex items-center"
                               title="Ver detalles de la orden"
                             >
@@ -1006,22 +1083,48 @@ const newTotal = Number(calculateTotal(editingOrder.meals, 3) || 0);      if ((e
 
             {/* Meal Details Modal */}
             {showMealDetails && (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10001]">
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10001] modal-backdrop">
                 <div className={classNames(
-                    "p-4 sm:p-6 rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto",
+                    "p-4 sm:p-6 rounded-lg max-w-4xl w-full max-h-[80vh] overflow-y-auto",
                     theme === 'dark' ? 'bg-gray-800 text-gray-200' : 'bg-white text-gray-900'
                   )}>
-                  <h3 className="text-lg font-semibold mb-4">Detalles de la Orden #{showMealDetails.id.slice(0, 8)}</h3>
-                  <p className="text-sm mb-2">
-                    Mesa: {showMealDetails.meals?.[0]?.tableNumber || showMealDetails.breakfasts?.[0]?.tableNumber || 'N/A'}
-                  </p>
-                  <p className="text-sm mb-2">Estado: {showMealDetails.status}</p>
-                  <p className="text-sm mb-4">Total: ${showMealDetails.total?.toLocaleString('es-CO') || 'N/A'}</p>
-                  <OrderSummary
-                    meals={showMealDetails.meals || showMealDetails.breakfasts}
-                    isTableOrder={true}
-                    calculateTotal={() => showMealDetails.total}
-                  />
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-semibold">
+                      {showMealDetails.type === 'breakfast' ? 'Desayuno' : 'Almuerzo'} #{
+                        // Calcular el número secuencial basado en el tipo de orden
+                        showMealDetails.type === 'breakfast' 
+                          ? orders.filter(o => o.type === 'breakfast').findIndex(o => o.id === showMealDetails.id) + 1
+                          : orders.filter(o => o.type === 'lunch').findIndex(o => o.id === showMealDetails.id) + 1
+                      } - Mesa {formatValue(showMealDetails.meals?.[0]?.tableNumber || showMealDetails.breakfasts?.[0]?.tableNumber)} - #{showMealDetails.id.slice(-4)}
+                    </h3>
+                    <div className="relative">
+                      <span className="text-gray-600">⋮</span>
+                    </div>
+                  </div>
+                  
+                  {/* Usar los mismos componentes que el WaiterDashboard */}
+                  <div className="bg-white rounded-lg p-4">
+                    {showMealDetails.type === 'breakfast' ? (
+                      <BreakfastOrderSummary
+                        items={showMealDetails.breakfasts}
+                        user={{ role: 3 }}
+                        breakfastTypes={breakfastTypes}
+                        isWaiterView={true}
+                        statusClass={''} 
+                        showSaveButton={false}
+                      />
+                    ) : (
+                      <OrderSummary
+                        meals={showMealDetails.meals}
+                        isTableOrder={true}
+                        calculateTotal={() => showMealDetails.total}
+                        isWaiterView={true}
+                        statusClass={''}
+                        userRole={3}
+                      />
+                    )}
+                  </div>
+                  
                   <button
                     onClick={() => setShowMealDetails(null)}
                     className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
@@ -1034,7 +1137,7 @@ const newTotal = Number(calculateTotal(editingOrder.meals, 3) || 0);      if ((e
 
             {/* Edit Order Modal con OptionSelector y Split de Pagos */}
             {editingOrder && (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10001]">
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10001] modal-backdrop">
                 <div className={classNames(
                     "p-4 sm:p-6 rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto",
                     theme === 'dark' ? 'bg-gray-800 text-gray-200' : 'bg-white text-gray-900'

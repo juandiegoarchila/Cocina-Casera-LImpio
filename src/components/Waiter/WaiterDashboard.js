@@ -133,20 +133,44 @@ const WaiterDashboard = () => {
 
     const breakfastOrdersUnsubscribe = onSnapshot(collection(db, 'breakfastOrders'), (snapshot) => {
       const breakfastOrders = snapshot.docs
-        .map(doc => ({ 
-          id: doc.id, 
-          ...doc.data(), 
-          type: 'breakfast',
-          // Asegurar que createdAt sea siempre un objeto Date para comparación
-          createdAt: doc.data().createdAt ? 
-            (doc.data().createdAt instanceof Date ? 
-              doc.data().createdAt : 
-              doc.data().createdAt.toDate ? 
-                doc.data().createdAt.toDate() : 
-                new Date(doc.data().createdAt)
-            ) : 
-            new Date()
-        }))
+        .map(doc => {
+          const data = doc.data();
+          return { 
+            id: doc.id, 
+            ...data, 
+            type: 'breakfast',
+            // Hidratar las adiciones con precios desde el catálogo
+            breakfasts: Array.isArray(data.breakfasts) ? data.breakfasts.map(b => ({
+              ...b,
+              additions: Array.isArray(b.additions) ? b.additions.map(a => {
+                // Solo hidratar si tenemos el catálogo cargado
+                if (breakfastAdditions && breakfastAdditions.length > 0) {
+                  const fullAddition = breakfastAdditions.find(ba => ba.name === a.name);
+                  if (fullAddition) {
+                    console.log('Hydrating addition in WaiterDashboard:', a.name, 'with price:', fullAddition.price);
+                    return { 
+                      ...fullAddition, 
+                      quantity: a.quantity || 1, 
+                      price: fullAddition.price ?? a.price ?? 0 
+                    };
+                  }
+                }
+                // Si no encontramos la adición en el catálogo, conservamos la original
+                console.log('Could not hydrate addition in WaiterDashboard:', a.name, 'additions available:', breakfastAdditions.length);
+                return a;
+              }) : []
+            })) : [],
+            // Asegurar que createdAt sea siempre un objeto Date para comparación
+            createdAt: data.createdAt ? 
+              (data.createdAt instanceof Date ? 
+                data.createdAt : 
+                data.createdAt.toDate ? 
+                  data.createdAt.toDate() : 
+                  new Date(data.createdAt)
+              ) : 
+              new Date()
+          };
+        })
         .filter(order => order.userId === user?.uid);
       
       // Guardamos las órdenes de desayuno y luego ordenamos todas juntas
@@ -851,6 +875,7 @@ const WaiterDashboard = () => {
                 onSendOrder={handleSendBreakfastOrder}
                 user={{ role: 3 }}
                 breakfastTypes={breakfastTypes}
+                isWaiterView={true}
               />
             </>
           ) : (
@@ -969,6 +994,7 @@ const WaiterDashboard = () => {
                       items={order.breakfasts}
                       user={{ role: 3 }}
                       breakfastTypes={breakfastTypes}
+                      isWaiterView={true}
                       statusClass={statusColors[order.status] || ''} // Añadir clase de estado
                       showSaveButton={false} // Indica explícitamente que estamos en "Ver Órdenes"
                     />
@@ -1417,6 +1443,7 @@ const WaiterDashboard = () => {
                             handleFormChange(index, 'additions', selection.map(add => ({
                               name: add.name,
                               quantity: add.quantity || 1,
+                              price: add.price || 0,
                             })));
                           }}
                           onAdd={(addition) => {
@@ -1424,7 +1451,7 @@ const WaiterDashboard = () => {
                             const existingAddition = breakfast?.additions?.find(a => a.name === addition.name);
                             const updatedAdditions = existingAddition
                               ? breakfast.additions.map(a => a.name === addition.name ? { ...a, quantity: (a.quantity || 1) + 1 } : a)
-                              : [...(breakfast.additions || []), { name: addition.name, quantity: 1 }];
+                              : [...(breakfast.additions || []), { name: addition.name, quantity: 1, price: addition.price || 0 }];
                             handleFormChange(index, 'additions', updatedAdditions);
                           }}
                           onRemove={(additionName) => {
@@ -1446,8 +1473,9 @@ const WaiterDashboard = () => {
                           <div className="mt-2 text-sm font-semibold text-gray-700">
                             Total Adiciones de este desayuno: $
                             {breakfast.additions.reduce((sum, item) => {
-                              const addition = breakfastAdditions.find(a => a.name === item.name);
-                              return sum + (addition?.price || 0) * (item?.quantity || 1);
+                              // Intentar obtener el precio del item directamente, si no está disponible buscar en el catálogo
+                              const price = item.price || breakfastAdditions.find(a => a.name === item.name)?.price || 0;
+                              return sum + price * (item?.quantity || 1);
                             }, 0).toLocaleString('es-CO')}
                           </div>
                         )}
