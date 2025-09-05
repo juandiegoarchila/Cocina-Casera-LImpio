@@ -75,7 +75,7 @@ export const calculateMealPrice = (meal) => {
   // Mojarra tiene precio base fijo
   const hasMojarra = (meal?.protein?.name || '').toLowerCase().trim() === 'mojarra';
   if (hasMojarra) {
-    return 15000 + additionsTotal(meal);
+    return 16000 + additionsTotal(meal);
   }
 
   const orderType = normalizeOrderType(meal?.orderType, meal);

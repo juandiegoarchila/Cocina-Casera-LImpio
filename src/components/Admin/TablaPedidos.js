@@ -41,21 +41,34 @@ const normalizePaymentMethodKey = (method) => {
 const paymentsRowsFromOrder = (order, fallbackBuilder) => {
   const total = Math.floor(Number(order?.total || 0)) || 0;
 
+  console.log('🔍 DEBUG paymentsRowsFromOrder:', {
+    orderId: order?.id?.slice(-4),
+    hasPayments: Array.isArray(order?.payments),
+    paymentsLength: order?.payments?.length,
+    payments: order?.payments,
+    total: total
+  });
+
   if (Array.isArray(order?.payments) && order.payments.length) {
-    return order.payments.map((p) => ({
+    const result = order.payments.map((p) => ({
       methodKey: normalizePaymentMethodKey(p.method),
       amount: Math.floor(Number(p.amount || 0)) || 0,
     }));
+    console.log('✅ Using order.payments:', result);
+    return result;
   }
 
   const fb = typeof fallbackBuilder === 'function' ? (fallbackBuilder(order) || []) : [];
   if (fb.length) {
-    return fb.map((p) => ({
+    const result = fb.map((p) => ({
       methodKey: normalizePaymentMethodKey(p.method),
       amount: Math.floor(Number(p.amount || 0)) || 0,
     }));
+    console.log('⚠️ Using fallback:', result);
+    return result;
   }
 
+  console.log('❌ Using default other:', [{ methodKey: 'other', amount: total }]);
   return [{ methodKey: 'other', amount: total }];
 };
 
@@ -95,6 +108,19 @@ const methodLabel = (k) =>
 
 const paymentMethodsOnly = (order) => {
   const rows = paymentsRowsFromOrder(order, defaultPaymentsForOrder);
+  console.log('🔍 DEBUG paymentMethodsOnly:', {
+    orderId: order?.id?.slice(-4),
+    order: order,
+    payments: order?.payments,
+    rows: rows,
+    legacy: {
+      payment: order?.payment,
+      paymentMethod: order?.paymentMethod,
+      mealPayment: order?.meals?.[0]?.payment,
+      mealPaymentMethod: order?.meals?.[0]?.paymentMethod,
+    }
+  });
+  
   const names = [...new Set(rows.map((r) => methodLabel(r.methodKey)).filter(Boolean))];
   if (names.length) return names.join(' + ');
 
@@ -136,6 +162,7 @@ const TablaPedidos = ({
   setEditForm,
   handleDeliveryChange,
   sortOrder,
+  totalOrders,
   showProteinModal,
   setShowProteinModal,
   isMenuOpen,
@@ -589,7 +616,7 @@ const TablaPedidos = ({
                         const displayNumber =
                           sortOrder === 'asc'
                             ? (currentPage - 1) * itemsPerPage + index + 1
-                            : paginatedOrders.length - ((currentPage - 1) * itemsPerPage + index);
+                            : totalOrders - ((currentPage - 1) * itemsPerPage + index);
 
                         const addressDisplay = getAddressDisplay(order.meals?.[0]?.address || order.breakfasts?.[0]?.address);
 
@@ -687,12 +714,35 @@ const TablaPedidos = ({
                               ) : (
                                 <span
                                   onClick={() => {
-                                    const initial = order.deliveryPerson || lastAssignedRef.current || '';
-                                    setDeliveryDraft(initial);
-                                    setEditingDeliveryId(order.id);
+                                    // Si no hay domiciliario asignado (Sin asignar), usar automáticamente el último
+                                    const currentDeliveryPerson = order.deliveryPerson?.trim();
+                                    const isUnassigned = !currentDeliveryPerson || currentDeliveryPerson === 'Sin asignar';
+                                    
+                                    if (isUnassigned && lastAssignedRef.current) {
+                                      // Auto-asignar el último domiciliario directamente
+                                      setDeliveryDraft(lastAssignedRef.current);
+                                      setEditingDeliveryId(order.id);
+                                      
+                                      // Guardar automáticamente con el último domiciliario
+                                      setTimeout(() => {
+                                        const valueToSave = lastAssignedRef.current.trim();
+                                        handleDeliveryChange(order.id, valueToSave);
+                                        setEditingDeliveryId(null);
+                                        setDeliveryDraft('');
+                                      }, 100);
+                                    } else {
+                                      // Comportamiento normal para editar
+                                      const initial = currentDeliveryPerson || lastAssignedRef.current || '';
+                                      setDeliveryDraft(initial);
+                                      setEditingDeliveryId(order.id);
+                                    }
                                   }}
                                   className="cursor-pointer hover:text-blue-400"
-                                  title="Click para editar; Enter para guardar"
+                                  title={
+                                    (!order.deliveryPerson?.trim() || order.deliveryPerson === 'Sin asignar') && lastAssignedRef.current
+                                      ? `Click para auto-asignar: ${lastAssignedRef.current}`
+                                      : "Click para editar; Enter para guardar"
+                                  }
                                 >
                                   {order.deliveryPerson || 'Sin asignar'}
                                 </span>

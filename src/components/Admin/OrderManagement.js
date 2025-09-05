@@ -19,7 +19,7 @@ import { exportToPDF } from './utilities/exportToPDF.js';
 import { exportToCSV } from './utilities/exportToCSV.js';
 import { generatePreviewHtml } from './utilities/previewOrders.js';
 import { generateExcelPreviewHtml } from './utilities/previewExcel.js';
-import { cleanText } from './utils.js';
+import { cleanText, getAddressDisplay } from './utils.js';
 import { getColombiaLocalDateString } from '../../utils/bogotaDate.js';
 import TablaPedidos from './TablaPedidos.js';
 import InteraccionesPedidos from './InteraccionesPedidos.js';
@@ -249,11 +249,15 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
   }, [fetchOrders, fetchProteins]);
 
   const filteredOrders = useMemo(() => {
-    return orders.filter((order) => {
+    const result = orders.filter((order) => {
       const lowerSearchTerm = (searchTerm || '').toLowerCase();
 
       const addrObj = order.meals?.[0]?.address || order.breakfasts?.[0]?.address || {};
       const address = (addrObj.address || '').toLowerCase();
+      
+      // Incluir dirección completa para búsqueda (con información adicional)
+      const fullAddressDisplay = getAddressDisplay(addrObj).toLowerCase();
+      
       const phone = (addrObj.phoneNumber || '').toLowerCase();
 
       const timeObj = order.meals?.[0]?.time || order.breakfasts?.[0]?.time;
@@ -266,6 +270,15 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
       const deliveryPerson = (order.deliveryPerson || '').toLowerCase();
       const status = (order.status || '').toLowerCase();
 
+      // Debug temporal
+      if (lowerSearchTerm.includes('plaza')) {
+        console.log('🔍 Debug búsqueda Plaza:', {
+          searchTerm: lowerSearchTerm,
+          address,
+          fullAddressDisplay,
+          addrObj
+        });
+      }
 
       // Filtrado por fecha local si existe, si no, fallback robusto
       let matchesDate = true;
@@ -292,6 +305,7 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
         matchesDate &&
         (orderTypeFilter === 'all' || order.type === orderTypeFilter) &&
         (address.includes(lowerSearchTerm) ||
+          fullAddressDisplay.includes(lowerSearchTerm) ||
           phone.includes(lowerSearchTerm) ||
           time.includes(lowerSearchTerm) ||
           payment.includes(lowerSearchTerm) ||
@@ -299,6 +313,13 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
           status.includes(lowerSearchTerm))
       );
     });
+    
+    // Debug temporal
+    if (searchTerm && searchTerm.toLowerCase().includes('plaza')) {
+      console.log('🔍 Filtered orders result:', result.length, 'from', orders.length, 'for search:', searchTerm);
+    }
+    
+    return result;
   }, [orders, searchTerm, orderTypeFilter, selectedDate]);
 
   // Totales visibles
@@ -606,16 +627,25 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
           }
         : {};
 
+      // Usar el nuevo formato de payments (array) en lugar del formato legacy
+      const totalAmount = Number(editForm.total) || 0;
+      const payments = [{
+        method: editForm.payment || 'Efectivo',
+        amount: totalAmount,
+        note: ''
+      }];
+
       const paymentSummary = {
-        Efectivo: editForm.payment === 'Efectivo' ? Number(editForm.total) || 0 : 0,
-        Daviplata: editForm.payment === 'Daviplata' ? Number(editForm.total) || 0 : 0,
-        Nequi: editForm.payment === 'Nequi' ? Number(editForm.total) || 0 : 0
+        Efectivo: editForm.payment === 'Efectivo' ? totalAmount : 0,
+        Daviplata: editForm.payment === 'Daviplata' ? totalAmount : 0,
+        Nequi: editForm.payment === 'Nequi' ? totalAmount : 0
       };
 
       let updateDataBase = {
-        total: Number(editForm.total) || 0,
+        total: totalAmount,
         status: editForm.status || 'Pendiente',
-        payment: editForm.payment || 'Efectivo',
+        payment: editForm.payment || 'Efectivo', // Mantener para compatibilidad
+        payments: payments, // Nuevo formato
         deliveryPerson: editForm.deliveryPerson || 'Sin asignar',
         paymentSummary,
         updatedAt: new Date(),
@@ -1070,7 +1100,7 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
 
       <TablaPedidos
         theme={theme}
-        orders={filteredOrders}
+        orders={paginatedOrders}
         searchTerm={searchTerm}
         setSearchTerm={setSearchTerm}
         totals={displayedTotals}
@@ -1094,6 +1124,7 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
         setEditForm={setEditForm}
         handleDeliveryChange={handleDeliveryChange}
         sortOrder={sortOrder}
+        totalOrders={filteredOrders.length}
         showProteinModal={showProteinModal}
         setShowProteinModal={setShowProteinModal}
         isMenuOpen={isMenuOpen}
