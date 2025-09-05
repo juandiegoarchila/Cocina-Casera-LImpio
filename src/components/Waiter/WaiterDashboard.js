@@ -57,6 +57,8 @@ const WaiterDashboard = () => {
     lunchEnd: 950,       // 15:50
   });
   const [timeRemaining, setTimeRemaining] = useState('');
+  const [expandedBreakfast, setExpandedBreakfast] = useState(true);
+  const [expandedLunch, setExpandedLunch] = useState(true);
 
   // Helper: normaliza el nombre del método de pago (acepta string u objeto {name/label/value})
   const getMethodName = (opt) => {
@@ -895,13 +897,19 @@ const WaiterDashboard = () => {
               <>
                 {/* Separador para Desayunos si hay alguno */}
                 {orders.some(order => order.type === 'breakfast') && (
-                  <div className="bg-yellow-100 p-2 rounded-md text-center font-medium text-yellow-800 border-b-2 border-yellow-300">
-                    Órdenes de Desayuno
+                  <div 
+                    className="bg-yellow-100 p-2 rounded-md text-center font-medium text-yellow-800 border-b-2 border-yellow-300 cursor-pointer hover:bg-yellow-200 transition-colors"
+                    onClick={() => setExpandedBreakfast(!expandedBreakfast)}
+                  >
+                    <div className="flex justify-center items-center">
+                      <span>Órdenes de Desayuno</span>
+                      <span className="ml-2 text-lg">{expandedBreakfast ? '▼' : '▶'}</span>
+                    </div>
                   </div>
                 )}
                 
                 {/* Listar órdenes de desayuno */}
-                {orders
+                {expandedBreakfast && orders
                   .filter(order => order.type === 'breakfast')
                   .map((order, index) => (
                     <div key={order.id} className={`p-4 rounded-lg shadow-md mb-3 ${statusColors[order.status] || 'bg-white'}`}>
@@ -979,13 +987,19 @@ const WaiterDashboard = () => {
               
               {/* Separador para Almuerzos si hay alguno */}
               {orders.some(order => order.type === 'lunch') && (
-                <div className="bg-green-100 p-2 rounded-md text-center font-medium text-green-800 border-b-2 border-green-300 mt-6 mb-3">
-                  Órdenes de Almuerzo
+                <div 
+                  className="bg-green-100 p-2 rounded-md text-center font-medium text-green-800 border-b-2 border-green-300 mt-6 mb-3 cursor-pointer hover:bg-green-200 transition-colors"
+                  onClick={() => setExpandedLunch(!expandedLunch)}
+                >
+                  <div className="flex justify-center items-center">
+                    <span>Órdenes de Almuerzo</span>
+                    <span className="ml-2 text-lg">{expandedLunch ? '▼' : '▶'}</span>
+                  </div>
                 </div>
               )}
               
               {/* Listar órdenes de almuerzo */}
-              {orders
+              {expandedLunch && orders
                 .filter(order => order.type === 'lunch')
                 .map((order, index) => (
                   <div key={order.id} className={`p-4 rounded-lg shadow-md mb-3 ${statusColors[order.status] || 'bg-white'}`}>

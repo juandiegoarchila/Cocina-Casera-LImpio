@@ -304,6 +304,10 @@ const MealFields = ({ meal, commonFields, isWaiterView }) => {
   if ((commonFields.has('Mesa') || commonFields.has('all')) && isWaiterView && meal.tableNumber) {
     fields.push(<p key="table" className="text-xs sm:text-sm text-gray-600">Mesa: {meal.tableNumber}</p>);
   }
+  if ((commonFields.has('all') || commonFields.has('TipoPedido')) && isWaiterView && meal.orderType) {
+    const tipoPedido = meal.orderType === 'table' ? 'Para mesa' : meal.orderType === 'takeaway' ? 'Para llevar' : meal.orderType;
+    fields.push(<p key="orderType" className="text-xs sm:text-sm text-gray-600">Tipo: {tipoPedido}</p>);
+  }
   return fields;
 };
 
