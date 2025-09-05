@@ -140,6 +140,8 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
   const [editingOrder, setEditingOrder] = useState(null);
   const [orderTypeFilter, setOrderTypeFilter] = useState('all'); // 'all', 'breakfast', 'lunch'
   const [breakfastTypes, setBreakfastTypes] = useState([]);
+  const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const menuRef = useRef(null);
 
   // Catálogos almuerzo
@@ -287,16 +289,32 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
       if (editingOrder && event.target.classList.contains('modal-backdrop')) {
         setEditingOrder(null);
       }
+      // Cerrar modal de eliminar todos si se hace clic fuera
+      if (showDeleteAllModal && event.target.classList.contains('modal-backdrop')) {
+        setShowDeleteAllModal(false);
+        setDeleteConfirmText('');
+      }
     }
     
-    if (showMealDetails || editingOrder) {
+    if (showMealDetails || editingOrder || showDeleteAllModal) {
       document.addEventListener('mousedown', handleModalClickOutside);
     }
     
     return () => {
       document.removeEventListener('mousedown', handleModalClickOutside);
     };
-  }, [showMealDetails, editingOrder]);
+  }, [showMealDetails, editingOrder, showDeleteAllModal]);
+
+  // Auto-cerrar mensajes después de 10 segundos
+  useEffect(() => {
+    if (errorMessage) {
+      const timer = setTimeout(() => {
+        setErrorMessage(null);
+      }, 10000); // 10 segundos
+
+      return () => clearTimeout(timer);
+    }
+  }, [errorMessage]);
 
 
   // ===== Filtro/búsqueda (incluye pago) =====
@@ -414,6 +432,58 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
     } catch (error) {
       console.error('Error al eliminar orden:', error);
       setErrorMessage('Error al eliminar la orden. Intenta de nuevo.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDeleteAllOrders = async () => {
+    const totalOrders = filteredOrders.length;
+    if (totalOrders === 0) {
+      setErrorMessage('No hay órdenes para eliminar.');
+      return;
+    }
+
+    // Mostrar modal de confirmación en lugar de confirm nativo
+    setShowDeleteAllModal(true);
+  };
+
+  const executeDeleteAllOrders = async () => {
+    if (deleteConfirmText.toLowerCase() !== 'confirmar') {
+      setErrorMessage('Debes escribir "confirmar" para proceder con la eliminación.');
+      return;
+    }
+
+    const totalOrders = filteredOrders.length;
+    
+    try {
+      setIsLoading(true);
+      setShowDeleteAllModal(false);
+      setDeleteConfirmText('');
+      
+      let deletedCount = 0;
+      let errorCount = 0;
+
+      // Eliminar cada orden individualmente
+      for (const order of filteredOrders) {
+        try {
+          const collectionName = order.type === 'breakfast' ? 'breakfastOrders' : 'tableOrders';
+          await deleteDoc(doc(db, collectionName, order.id));
+          deletedCount++;
+        } catch (error) {
+          console.error(`Error al eliminar orden ${order.id}:`, error);
+          errorCount++;
+        }
+      }
+
+      if (errorCount === 0) {
+        setErrorMessage(`Se eliminaron exitosamente ${deletedCount} órdenes.`);
+      } else {
+        setErrorMessage(`Se eliminaron ${deletedCount} órdenes. ${errorCount} órdenes no se pudieron eliminar.`);
+      }
+    } catch (error) {
+      console.error('Error al eliminar órdenes:', error);
+      setErrorMessage('Error al eliminar las órdenes. Intenta de nuevo.');
     } finally {
       setIsLoading(false);
     }
@@ -843,6 +913,11 @@ const newTotal = Number(calculateTotal(editingOrder.meals, 3) || 0);      if ((e
                   className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 flex items-center">
                   <ArrowDownTrayIcon className="w-4 h-4 mr-2" />
                   Exportar CSV
+                </button>
+                <button onClick={() => { handleDeleteAllOrders(); setIsMenuOpen(false); }}
+                  className="block w-full text-left px-4 py-2 text-sm hover:bg-red-100 dark:hover:bg-red-600 transition-all duration-200 flex items-center text-red-600 dark:text-red-400">
+                  <TrashIcon className="w-4 h-4 mr-2" />
+                  Eliminar Todos
                 </button>
               </div>
             </div>
@@ -1453,6 +1528,65 @@ const newTotal = Number(calculateTotal(editingOrder.meals, 3) || 0);      if ((e
           </>
         )}
       </div>
+
+      {/* Modal de confirmación para eliminar todos */}
+      {showDeleteAllModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10003] modal-backdrop">
+          <div className={classNames(
+            "p-6 rounded-lg max-w-md w-full mx-4",
+            theme === 'dark' ? 'bg-gray-800 text-gray-200' : 'bg-white text-gray-900'
+          )}>
+            <div className="mb-4">
+              <h3 className="text-lg font-semibold text-red-600 dark:text-red-400 mb-2">
+                Confirmar Eliminación Masiva
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+                Estás a punto de eliminar <strong>TODOS los {filteredOrders.length} pedidos</strong> mostrados. 
+                Esta acción es irreversible. Para confirmar, escribe <strong>"confirmar"</strong> a continuación:
+              </p>
+              
+              <input
+                type="text"
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                placeholder="escribe 'confirmar'"
+                className={classNames(
+                  "w-full p-3 rounded-md border text-sm",
+                  theme === 'dark'
+                    ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400'
+                    : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500',
+                  "focus:outline-none focus:ring-2 focus:ring-red-500"
+                )}
+                autoFocus
+              />
+            </div>
+
+            <div className="flex space-x-3">
+              <button
+                onClick={() => {
+                  setShowDeleteAllModal(false);
+                  setDeleteConfirmText('');
+                }}
+                className="flex-1 px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 text-sm transition-colors duration-200"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={executeDeleteAllOrders}
+                disabled={deleteConfirmText.toLowerCase() !== 'confirmar'}
+                className={classNames(
+                  "flex-1 px-4 py-2 rounded text-sm transition-colors duration-200",
+                  deleteConfirmText.toLowerCase() === 'confirmar'
+                    ? "bg-red-600 text-white hover:bg-red-700"
+                    : "bg-gray-300 text-gray-500 cursor-not-allowed"
+                )}
+              >
+                Eliminar Todos
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="fixed top-16 right-4 z-[10002] space-y-2 w-80 max-w-xs">
         {isLoading && <LoadingIndicator />}
