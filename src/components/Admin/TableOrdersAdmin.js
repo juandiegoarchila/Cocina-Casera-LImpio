@@ -356,7 +356,9 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
   }, [orders, searchTerm, selectedDate, orderTypeFilter]);
 
   // ====== Totales usando split de pagos (con fallback legacy) EXCLUYENDO cancelados, SOLO sobre órdenes filtradas ======
-  const totals = sumPaymentsByMethod(filteredOrders);
+  const totals = sumPaymentsByMethod(
+    filteredOrders.filter(order => order.status !== 'Cancelada')
+  );
 
   // ===== Ordenamiento simple =====
   const sortedOrders = [...filteredOrders].sort((a, b) => {
