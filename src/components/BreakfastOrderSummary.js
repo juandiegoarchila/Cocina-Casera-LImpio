@@ -38,7 +38,7 @@ const getPaymentName = (item, fallbackSelectedPaymentName) => {
   return normalized; // por si agregas otros métodos en el futuro
 };
 
-const useBreakfastOrderSummary = (items, isWaiterView, selectedPaymentNameFallback) => {
+const useBreakfastOrderSummary = (items, isWaiterView, selectedPaymentNameFallback, breakfastTypes = []) => {
   const getFieldValue = (breakfast, field) => {
     if (field === 'Tipo') return cleanText(breakfast.type?.name) || 'Sin tipo';
     if (field === 'Caldo') return cleanText(breakfast.broth?.name) || 'Sin caldo';
@@ -164,28 +164,35 @@ const useBreakfastOrderSummary = (items, isWaiterView, selectedPaymentNameFallba
   }, [items, selectedPaymentNameFallback]);
 
   const total = useMemo(() => {
+    console.log('🔍 BreakfastOrderSummary calculando total para items:', items);
     const calculatedTotal = items.reduce((sum, item) => {
-      const itemPrice = calculateBreakfastPrice(item, 3);
-      console.log('Total calculation - Item:', { 
-        item, 
+      const itemPrice = calculateBreakfastPrice(item, 3, breakfastTypes);
+      console.log('🔍 Item individual:', { 
+        item: {
+          type: item.type?.name,
+          broth: item.broth?.name,
+          orderType: item.orderType,
+          additions: item.additions
+        }, 
         itemPrice, 
-        additions: item.additions 
+        additions: item.additions,
+        breakfastTypesLength: breakfastTypes?.length || 0
       });
       return sum + itemPrice;
     }, 0);
-    console.log('Total calculation - Final total:', calculatedTotal);
+    console.log('🔍 Total final calculado:', calculatedTotal);
     return calculatedTotal;
-  }, [items]);
+  }, [items, breakfastTypes]);
 
   const paymentSummary = useMemo(() => {
     if (!items || items.length === 0) return {};
     return items.reduce((acc, item) => {
-      const price = calculateBreakfastPrice(item, 3);
+      const price = calculateBreakfastPrice(item, 3, breakfastTypes);
       const pName = getPaymentName(item, selectedPaymentNameFallback);
       acc[pName] = (acc[pName] || 0) + price;
       return acc;
     }, {});
-  }, [items, selectedPaymentNameFallback]);
+  }, [items, selectedPaymentNameFallback, breakfastTypes]);
 
   return {
     groupedItems: groupedItems.groupedItems,
@@ -247,7 +254,7 @@ const AddressSummary = ({ commonAddressFields = {}, breakfastAddress, isCommon =
   );
 };
 
-const BreakfastFields = ({ breakfast, commonFields, isWaiterView, isAdminView = false }) => {
+const BreakfastFields = ({ breakfast, commonFields, isWaiterView, isAdminView = false, breakfastTypes = [] }) => {
   const fields = [];
 
   if (commonFields.has('Tipo') || commonFields.has('all')) {
@@ -322,7 +329,7 @@ const BreakfastFields = ({ breakfast, commonFields, isWaiterView, isAdminView = 
   
   // Mostrar el total en la vista de administrador
   if (isAdminView) {
-    const price = calculateBreakfastPrice(breakfast, 3); // userRole 3 para mesera
+    const price = calculateBreakfastPrice(breakfast, 3, breakfastTypes); // userRole 3 para mesera
     console.log('BreakfastFields - Admin view price calculation:', { 
       breakfast, 
       calculatedPrice: price,
@@ -334,12 +341,12 @@ const BreakfastFields = ({ breakfast, commonFields, isWaiterView, isAdminView = 
   return fields;
 };
 
-const BreakfastGroup = ({ group, globalCommonFields, isWaiterView, isAdminView = false }) => {
+const BreakfastGroup = ({ group, globalCommonFields, isWaiterView, isAdminView = false, breakfastTypes = [] }) => {
   const baseBreakfast = group.items[0];
   const count = group.items.length;
   const groupTotal = group.items.reduce((sum, item) => {
     // Usar la función calculateBreakfastPrice para calcular el precio correctamente
-    const itemPrice = calculateBreakfastPrice(item, 3); // userRole 3 para mesera
+    const itemPrice = calculateBreakfastPrice(item, 3, breakfastTypes); // userRole 3 para mesera
     console.log('BreakfastGroup - Price calculation:', { 
       item, 
       itemPrice, 
@@ -392,7 +399,7 @@ const BreakfastGroup = ({ group, globalCommonFields, isWaiterView, isAdminView =
       <h3 className="font-medium text-gray-800 text-xs sm:text-sm">
         🍽 {count > 1 ? `${count} Desayunos iguales – $${groupTotal.toLocaleString('es-CO')} ${paymentText}` : `${count} Desayuno – $${groupTotal.toLocaleString('es-CO')} ${paymentText}`}
       </h3>
-      <BreakfastFields breakfast={baseBreakfast} commonFields={count > 1 ? group.commonFieldsInGroup : new Set(['all'])} isWaiterView={isWaiterView} isAdminView={isAdminView} />
+      <BreakfastFields breakfast={baseBreakfast} commonFields={count > 1 ? group.commonFieldsInGroup : new Set(['all'])} isWaiterView={isWaiterView} isAdminView={isAdminView} breakfastTypes={breakfastTypes} />
       {count === 1 && !globalCommonFields.has('Dirección') && baseBreakfast.address && !isWaiterView && !isAdminView && (
         <AddressSummary
           breakfastAddress={baseBreakfast.address}
@@ -516,7 +523,7 @@ const BreakfastOrderSummary = ({ items, onSendOrder, user, breakfastTypes, statu
     globalCommonFields,
     commonAddressFields,
     areAddressesGloballyCommon, // (no usado, se mantiene para compat)
-  } = useBreakfastOrderSummary(items, isWaiterView, selectedPaymentNameFallback);
+  } = useBreakfastOrderSummary(items, isWaiterView, selectedPaymentNameFallback, breakfastTypes);
 
   // Aplicar el color de estado en la vista de "Ver Órdenes" (cuando isWaiterView=true) 
   // pero mantener el color blanco en la vista de "Crear Orden" (cuando onSendOrder existe)
@@ -561,6 +568,7 @@ const BreakfastOrderSummary = ({ items, onSendOrder, user, breakfastTypes, statu
               globalCommonFields={new Set()} // no necesitamos globales aquí
               isWaiterView={isWaiterView}
               isAdminView={isAdminView}
+              breakfastTypes={breakfastTypes}
             />
           ))}
 

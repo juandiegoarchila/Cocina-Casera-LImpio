@@ -64,6 +64,17 @@ export const removeBreakfast = (setBreakfasts, setSuccessMessage, id, breakfasts
 };
 
 export const calculateBreakfastPrice = (breakfast, userRole, breakfastTypes = []) => {
+  console.log('🔍 calculateBreakfastPrice llamado con:', { 
+    breakfast: {
+      type: breakfast?.type?.name,
+      broth: breakfast?.broth?.name,
+      orderType: breakfast?.orderType,
+      additions: breakfast?.additions
+    }, 
+    userRole, 
+    breakfastTypesLength: breakfastTypes?.length || 0 
+  });
+
   if (!breakfast || !breakfast.type || !breakfast.type.name) {
     if (process.env.NODE_ENV === 'development') {
       console.log('[BreakfastCalculations] No breakfast or type defined:', breakfast);
@@ -113,22 +124,32 @@ export const calculateBreakfastPrice = (breakfast, userRole, breakfastTypes = []
     basePrice = orderType === 'table' ? 7000 : 8000; // Default price if type not found
   }
 
+  console.log('🔍 Precio base calculado:', { typeName, brothName, orderType, basePrice });
+
   const additionsPrice = breakfast.additions?.reduce((sum, item) => {
-    console.log('Addition in calculation:', item, 'price:', item.price, 'quantity:', item.quantity);
-    return sum + (item.price || 0) * (item.quantity || 1);
+    const itemPrice = (item.price || 0) * (item.quantity || 1);
+    console.log('🔍 Adición individual:', { 
+      name: item.name, 
+      price: item.price, 
+      quantity: item.quantity, 
+      itemPrice 
+    });
+    return sum + itemPrice;
   }, 0) || 0;
 
-  console.log('Price calculation:', {
+  console.log('🔍 Precio total adiciones:', additionsPrice);
+
+  const totalPrice = basePrice + additionsPrice;
+
+  console.log('🔍 Cálculo final:', {
     type: typeName,
     broth: brothName,
     orderType,
     basePrice,
     additionsPrice,
-    totalPrice: basePrice + additionsPrice,
+    totalPrice,
     additions: breakfast.additions
   });
-
-  const totalPrice = basePrice + additionsPrice;
 
   if (process.env.NODE_ENV === 'development') {
     console.log(`[BreakfastCalculations] Price for ${typeName}, broth: ${brothName}, orderType: ${orderType}, basePrice: ${basePrice}, totalPrice: ${totalPrice}`);

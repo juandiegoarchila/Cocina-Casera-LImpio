@@ -514,7 +514,7 @@ useEffect(() => {
                 {showMealDetails && (
                   <>
                     {showMealDetails?.type === 'breakfast' ? (
-                      <BreakfastOrderSummary items={showMealDetails.breakfasts || mealsForDetails} user={{ role: 3 }} statusClass="bg-white" showSaveButton={false} />
+                      <BreakfastOrderSummary items={showMealDetails.breakfasts || mealsForDetails} user={{ role: 3 }} breakfastTypes={breakfastTypes} statusClass="bg-white" showSaveButton={false} />
                     ) : (
                       <OrderSummary meals={mealsForDetails} isTableOrder={false} isWaiterView={true} statusClass="bg-white" />
                     )}
