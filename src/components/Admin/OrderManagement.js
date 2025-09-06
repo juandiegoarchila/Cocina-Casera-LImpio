@@ -46,8 +46,11 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showAddOrderModal, setShowAddOrderModal] = useState(false);
   const [orderTypeFilter, setOrderTypeFilter] = useState('all');
-  // Filtro de fecha para domicilios
-  const [selectedDate, setSelectedDate] = useState('');
+  // Filtro de fecha para domicilios - inicializar con fecha actual
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const today = new Date();
+    return today.toISOString().split('T')[0]; // Formato YYYY-MM-DD
+  });
   const [newOrderForm, setNewOrderForm] = useState({
     meals: [
       {

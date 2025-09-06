@@ -128,7 +128,11 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
     }
   }, [orders]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedDate, setSelectedDate] = useState('');
+  // Filtro de fecha para mesas - inicializar con fecha actual
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const today = new Date();
+    return today.toISOString().split('T')[0]; // Formato YYYY-MM-DD
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
