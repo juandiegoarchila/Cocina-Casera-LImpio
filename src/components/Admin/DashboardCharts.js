@@ -336,15 +336,16 @@ const DashboardCharts = React.memo(({
   // (dailyExpensesChartData se define más abajo tras declarar estados de drill de gastos)
 
   const totalExpenses = useMemo(() => {
-    // Preferir total de expensesByProvider si viene calculado
+    // Preferir total de expensesByProvider si viene calculado (ya está filtrado por fecha)
     if(typeof expensesByProvider?.total === 'number' && expensesByProvider.total>0) return expensesByProvider.total;
-    const src = paymentsAllRaw?.length ? paymentsAllRaw : paymentsRaw;
-    return src.reduce((s,p)=> s + Number(p.amount||0), 0);
-  }, [expensesByProvider, paymentsAllRaw, paymentsRaw]);
+    // Para rangos de fecha usar paymentsRaw que está filtrado por la fecha seleccionada
+    return paymentsRaw.reduce((s,p)=> s + Number(p.amount||0), 0);
+  }, [expensesByProvider, paymentsRaw]);
   const totalOrders = useMemo(() => statusPieChartData.reduce((sum, entry) => sum + entry.value, 0), [statusPieChartData]);
 
   const aggregatedPaymentsByRecipient = useMemo(() => {
-    const src = paymentsAllRaw?.length ? paymentsAllRaw : paymentsRaw;
+    // Usar paymentsRaw que está filtrado por fecha seleccionada
+    const src = paymentsRaw;
     const map = expensesByProvider?.byProvider;
     const counts = expensesByProvider?.counts || {};
     if(map && Object.keys(map).length){
@@ -360,13 +361,14 @@ const DashboardCharts = React.memo(({
     // fallback si no viene estructura agregada
     const grouped = src.reduce((acc,p)=>{ const storeName = p.provider||p.store||'Desconocido'; if(!acc[storeName]) acc[storeName]={ totalAmount:0, payments:[] }; acc[storeName].totalAmount+=Number(p.amount||0); acc[storeName].payments.push(p); return acc; },{});
     return Object.entries(grouped).map(([store,data])=>({store, ...data, count: data.payments.length})).sort((a,b)=>b.totalAmount-a.totalAmount);
-  }, [expensesByProvider, paymentsAllRaw, paymentsRaw]);
+  }, [expensesByProvider, paymentsRaw]);
 
   const paymentsForSelectedRecipient = useMemo(() => {
     if (!selectedRecipient) return [];
-    const src = paymentsAllRaw?.length ? paymentsAllRaw : paymentsRaw;
+    // Usar paymentsRaw que está filtrado por fecha seleccionada
+    const src = paymentsRaw;
     return src.filter(p=> (p.provider||p.store)===(selectedRecipient)).sort((a,b)=> b.timestamp.toDate() - a.timestamp.toDate());
-  }, [paymentsAllRaw, paymentsRaw, selectedRecipient]);
+  }, [paymentsRaw, selectedRecipient]);
 
   const chartVariants = {
     hidden: { opacity: 0, scale: 0.98, y: 10 },

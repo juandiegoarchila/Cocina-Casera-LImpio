@@ -757,28 +757,13 @@ export const useDashboardData = (
         setOrders(ordersData);
 
         const newTotals = { cash: 0, daviplata: 0, nequi: 0 };
-        const newStatusCounts = { Pending: 0, Delivered: 0, Cancelled: 0 };
 
         ordersData.forEach((order) => {
           const paymentSummary = order.paymentSummary || {};
           newTotals.cash += Number(paymentSummary['Efectivo'] || 0);
           newTotals.daviplata += Number(paymentSummary['Daviplata'] || 0);
           newTotals.nequi += Number(paymentSummary['Nequi'] || 0);
-
-          const orderStatus = order.status?.toLowerCase() || '';
-          if (orderStatus === ORDER_STATUS.PENDING) newStatusCounts.Pending += 1;
-          else if (orderStatus === ORDER_STATUS.DELIVERED) newStatusCounts.Delivered += 1;
-          else if (orderStatus === ORDER_STATUS.CANCELLED) newStatusCounts.Cancelled += 1;
         });
-
-        setStatusCounts(newStatusCounts);
-
-        const pieChartData = [
-          { name: ORDER_STATUS_DISPLAY[ORDER_STATUS.PENDING], value: newStatusCounts.Pending, color: PIE_COLORS[0] },
-          { name: ORDER_STATUS_DISPLAY[ORDER_STATUS.DELIVERED], value: newStatusCounts.Delivered, color: PIE_COLORS[1] },
-          { name: ORDER_STATUS_DISPLAY[ORDER_STATUS.CANCELLED], value: newStatusCounts.Cancelled, color: PIE_COLORS[2] },
-        ];
-        setStatusPieChartData(pieChartData);
 
         if (!initialLoadRefs.current.orders) {
           initialLoadRefs.current.orders = true;
@@ -1144,6 +1129,37 @@ export const useDashboardData = (
   net: Math.max(((prev.byCategory ? (prev.byCategory.totalDomicilios || 0) + (prev.byCategory.ingresosSalon || 0) : prev.grossIncome) - (prev.expenses || 0)), 0)
     }));
   }, [orders, salonOrders, breakfastOrders, breakfastSalonOrders]);
+
+  /* ===========================================
+     Recalcular conteos de estado incluyendo todas las colecciones
+     =========================================== */
+  useEffect(() => {
+    const allOrders = [
+      ...(orders || []),
+      ...(tableOrders || []),
+      ...(waiterOrders || []),
+      ...(breakfastOrders || []),
+      ...(breakfastSalonOrders || [])
+    ];
+
+    const newStatusCounts = { Pending: 0, Delivered: 0, Cancelled: 0 };
+
+    allOrders.forEach((order) => {
+      const orderStatus = order.status?.toLowerCase() || '';
+      if (orderStatus === ORDER_STATUS.PENDING) newStatusCounts.Pending += 1;
+      else if (orderStatus === ORDER_STATUS.DELIVERED) newStatusCounts.Delivered += 1;
+      else if (orderStatus === ORDER_STATUS.CANCELLED) newStatusCounts.Cancelled += 1;
+    });
+
+    setStatusCounts(newStatusCounts);
+
+    const pieChartData = [
+      { name: ORDER_STATUS_DISPLAY[ORDER_STATUS.PENDING], value: newStatusCounts.Pending, color: PIE_COLORS[0] },
+      { name: ORDER_STATUS_DISPLAY[ORDER_STATUS.DELIVERED], value: newStatusCounts.Delivered, color: PIE_COLORS[1] },
+      { name: ORDER_STATUS_DISPLAY[ORDER_STATUS.CANCELLED], value: newStatusCounts.Cancelled, color: PIE_COLORS[2] },
+    ];
+    setStatusPieChartData(pieChartData);
+  }, [orders, tableOrders, waiterOrders, breakfastOrders, breakfastSalonOrders]);
 
   /* ==========================
      Daily Sales Chart (categorías)
