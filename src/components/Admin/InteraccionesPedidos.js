@@ -280,17 +280,52 @@ const InteraccionesPedidos = ({
     : [];
 
     // Recalcular total en edición cuando cambian breakfasts (solo desayunos)
-useEffect(() => {
-  if (!editingOrder || editingOrder.type !== 'breakfast') return;
-  const list = editForm.breakfasts || [];
-  const computed = list.reduce(
-    (sum, b) => sum + Number(calculateBreakfastPrice(b, 3, breakfastTypes) || 0),
-    0
-  );
-  if (computed !== (editForm.total || 0)) {
-    handleEditFormFieldChange('total', computed);
-  }
-}, [editingOrder, editForm.breakfasts, breakfastTypes, handleEditFormFieldChange]);
+  useEffect(() => {
+    if (!editingOrder || editingOrder.type !== 'breakfast') return;
+    
+    console.log('🔍 [InteraccionesPedidos] === RECALCULANDO TOTAL ADMIN ===');
+    const list = editForm.breakfasts || [];
+    console.log('🔍 [InteraccionesPedidos] Lista de desayunos para recalcular:', {
+      listLength: list.length,
+      breakfasts: list.map(b => ({
+        type: b.type?.name,
+        broth: b.broth?.name,
+        orderType: b.orderType,
+        additions: b.additions
+      }))
+    });
+
+    const computed = list.reduce((sum, b, index) => {
+      console.log(`🔍 [InteraccionesPedidos] Calculando precio para desayuno ${index + 1}:`, {
+        breakfast: {
+          type: b.type?.name,
+          broth: b.broth?.name,
+          orderType: b.orderType,
+          additions: b.additions
+        }
+      });
+      
+      const itemPrice = Number(calculateBreakfastPrice(b, 3, breakfastTypes) || 0);
+      console.log(`🔍 [InteraccionesPedidos] Precio calculado:`, {
+        itemPrice,
+        sumAnterior: sum,
+        sumNuevo: sum + itemPrice,
+        source: 'InteraccionesPedidos.js (Admin)'
+      });
+      
+      return sum + itemPrice;
+    }, 0);
+
+    console.log('🔍 [InteraccionesPedidos] === TOTAL ADMIN FINAL ===', {
+      computed,
+      currentTotal: editForm.total || 0,
+      willUpdate: computed !== (editForm.total || 0)
+    });
+
+    if (computed !== (editForm.total || 0)) {
+      handleEditFormFieldChange('total', computed);
+    }
+  }, [editingOrder, editForm.breakfasts, breakfastTypes, handleEditFormFieldChange]);
 
 
   const handleDeleteProtein = async (proteinId) => {
@@ -522,15 +557,48 @@ useEffect(() => {
                       <p className="font-medium">Estado: {showMealDetails.status || 'Pendiente'}</p>
                       <p className="font-medium">Domiciliario: {showMealDetails.deliveryPerson || 'Sin asignar'}</p>
                  {showMealDetails?.type === 'breakfast' ? (
-  <p className="font-medium">
-    Total del pedido: ${
-      ((showMealDetails.breakfasts || []).reduce(
-        (sum, b) => sum + Number(calculateBreakfastPrice(b, 3, breakfastTypes) || 0),
-        0
-      )).toLocaleString('es-CO')
-    }
-  </p>
-) : (
+                  <p className="font-medium">
+                    Total del pedido: ${
+                      (() => {
+                        console.log('🔍 [InteraccionesPedidos] === CALCULANDO TOTAL PARA MOSTRAR EN DETALLES ===');
+                        const breakfasts = showMealDetails.breakfasts || [];
+                        console.log('🔍 [InteraccionesPedidos] Desayunos para mostrar:', {
+                          breakfastsLength: breakfasts.length,
+                          breakfasts: breakfasts.map(b => ({
+                            type: b.type?.name,
+                            broth: b.broth?.name,
+                            orderType: b.orderType,
+                            additions: b.additions
+                          }))
+                        });
+
+                        const total = breakfasts.reduce((sum, b, index) => {
+                          console.log(`🔍 [InteraccionesPedidos] Calculando para mostrar desayuno ${index + 1}:`, {
+                            breakfast: {
+                              type: b.type?.name,
+                              broth: b.broth?.name,
+                              orderType: b.orderType,
+                              additions: b.additions
+                            }
+                          });
+                          
+                          const itemPrice = Number(calculateBreakfastPrice(b, 3, breakfastTypes) || 0);
+                          console.log(`🔍 [InteraccionesPedidos] Precio para mostrar:`, {
+                            itemPrice,
+                            sumAnterior: sum,
+                            sumNuevo: sum + itemPrice,
+                            source: 'InteraccionesPedidos.js (Show Details)'
+                          });
+                          
+                          return sum + itemPrice;
+                        }, 0);
+
+                        console.log('🔍 [InteraccionesPedidos] === TOTAL PARA MOSTRAR ===', total);
+                        return total;
+                      })().toLocaleString('es-CO')
+                    }
+                  </p>
+                ) : (
   typeof showMealDetails.total === 'number' && (
  <p className="font-medium">
   Total del pedido: ${

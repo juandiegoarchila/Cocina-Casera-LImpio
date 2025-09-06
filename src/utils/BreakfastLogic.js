@@ -64,7 +64,7 @@ export const removeBreakfast = (setBreakfasts, setSuccessMessage, id, breakfasts
 };
 
 export const calculateBreakfastPrice = (breakfast, userRole, breakfastTypes = []) => {
-  console.log('🔍 calculateBreakfastPrice llamado con:', { 
+  console.log('🔍 [BreakfastLogic] calculateBreakfastPrice llamado con:', { 
     breakfast: {
       type: breakfast?.type?.name,
       broth: breakfast?.broth?.name,
@@ -72,13 +72,12 @@ export const calculateBreakfastPrice = (breakfast, userRole, breakfastTypes = []
       additions: breakfast?.additions
     }, 
     userRole, 
-    breakfastTypesLength: breakfastTypes?.length || 0 
+    breakfastTypesLength: breakfastTypes?.length || 0,
+    source: 'BreakfastLogic.js'
   });
 
   if (!breakfast || !breakfast.type || !breakfast.type.name) {
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[BreakfastCalculations] No breakfast or type defined:', breakfast);
-    }
+    console.log('[BreakfastLogic] ❌ No breakfast or type defined:', breakfast);
     return 0;
   }
 
@@ -124,31 +123,39 @@ export const calculateBreakfastPrice = (breakfast, userRole, breakfastTypes = []
     basePrice = orderType === 'table' ? 7000 : 8000; // Default price if type not found
   }
 
-  console.log('🔍 Precio base calculado:', { typeName, brothName, orderType, basePrice });
+  console.log('🔍 [BreakfastLogic] Precio base calculado:', { 
+    typeName, 
+    brothName, 
+    orderType, 
+    basePrice,
+    source: 'BreakfastLogic.js'
+  });
 
   const additionsPrice = breakfast.additions?.reduce((sum, item) => {
     const itemPrice = (item.price || 0) * (item.quantity || 1);
-    console.log('🔍 Adición individual:', { 
+    console.log('🔍 [BreakfastLogic] Adición individual:', { 
       name: item.name, 
       price: item.price, 
       quantity: item.quantity, 
-      itemPrice 
+      itemPrice,
+      source: 'BreakfastLogic.js'
     });
     return sum + itemPrice;
   }, 0) || 0;
 
-  console.log('🔍 Precio total adiciones:', additionsPrice);
+  console.log('🔍 [BreakfastLogic] Precio total adiciones:', additionsPrice);
 
   const totalPrice = basePrice + additionsPrice;
 
-  console.log('🔍 Cálculo final:', {
+  console.log('🔍 [BreakfastLogic] Cálculo final:', {
     type: typeName,
     broth: brothName,
     orderType,
     basePrice,
     additionsPrice,
     totalPrice,
-    additions: breakfast.additions
+    additions: breakfast.additions,
+    source: 'BreakfastLogic.js'
   });
 
   if (process.env.NODE_ENV === 'development') {
@@ -159,7 +166,43 @@ export const calculateBreakfastPrice = (breakfast, userRole, breakfastTypes = []
 };
 
 export const calculateTotalBreakfastPrice = (breakfasts, userRole, breakfastTypes = []) => {
-  return breakfasts.reduce((sum, breakfast) => sum + calculateBreakfastPrice(breakfast, userRole, breakfastTypes), 0);
+  console.log('🔍 [BreakfastLogic] === calculateTotalBreakfastPrice llamado ===');
+  console.log('🔍 [BreakfastLogic] Parámetros:', {
+    breakfastsLength: breakfasts?.length || 0,
+    userRole,
+    breakfastTypesLength: breakfastTypes?.length || 0,
+    breakfasts: breakfasts?.map(b => ({
+      type: b.type?.name,
+      broth: b.broth?.name,
+      orderType: b.orderType,
+      additions: b.additions
+    }))
+  });
+
+  const total = breakfasts.reduce((sum, breakfast, index) => {
+    console.log(`🔍 [BreakfastLogic] Calculando total para desayuno ${index + 1}:`, {
+      breakfast: {
+        type: breakfast.type?.name,
+        broth: breakfast.broth?.name,
+        orderType: breakfast.orderType,
+        additions: breakfast.additions
+      }
+    });
+
+    const itemPrice = calculateBreakfastPrice(breakfast, userRole, breakfastTypes);
+    
+    console.log(`🔍 [BreakfastLogic] Resultado total individual:`, {
+      itemPrice,
+      sumAnterior: sum,
+      sumNuevo: sum + itemPrice,
+      source: 'calculateTotalBreakfastPrice'
+    });
+
+    return sum + itemPrice;
+  }, 0);
+
+  console.log('🔍 [BreakfastLogic] === TOTAL FINAL calculateTotalBreakfastPrice ===', total);
+  return total;
 };
 
 export const paymentSummaryBreakfast = (breakfasts, isWaitress = false) => {

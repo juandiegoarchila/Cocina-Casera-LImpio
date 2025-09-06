@@ -164,23 +164,44 @@ const useBreakfastOrderSummary = (items, isWaiterView, selectedPaymentNameFallba
   }, [items, selectedPaymentNameFallback]);
 
   const total = useMemo(() => {
-    console.log('🔍 BreakfastOrderSummary calculando total para items:', items);
-    const calculatedTotal = items.reduce((sum, item) => {
-      const itemPrice = calculateBreakfastPrice(item, 3, breakfastTypes);
-      console.log('🔍 Item individual:', { 
+    console.log('🔍 [BreakfastOrderSummary] === INICIO CÁLCULO TOTAL ===');
+    console.log('🔍 [BreakfastOrderSummary] calculando total para items:', {
+      itemsLength: items?.length || 0,
+      items: items?.map(item => ({
+        type: item.type?.name,
+        broth: item.broth?.name,
+        orderType: item.orderType,
+        additions: item.additions?.map(a => ({ name: a.name, price: a.price, quantity: a.quantity }))
+      }))
+    });
+
+    const calculatedTotal = items.reduce((sum, item, index) => {
+      console.log(`🔍 [BreakfastOrderSummary] Procesando item ${index + 1}/${items.length}:`, {
         item: {
           type: item.type?.name,
           broth: item.broth?.name,
           orderType: item.orderType,
           additions: item.additions
-        }, 
+        }
+      });
+
+      const itemPrice = calculateBreakfastPrice(item, 3, breakfastTypes);
+      
+      console.log(`🔍 [BreakfastOrderSummary] Item ${index + 1} resultado:`, { 
         itemPrice, 
+        sumAnterior: sum,
+        sumNuevo: sum + itemPrice,
         additions: item.additions,
         breakfastTypesLength: breakfastTypes?.length || 0
       });
+      
       return sum + itemPrice;
     }, 0);
-    console.log('🔍 Total final calculado:', calculatedTotal);
+    
+    console.log('🔍 [BreakfastOrderSummary] === TOTAL FINAL CALCULADO ===', {
+      calculatedTotal,
+      itemsCount: items?.length || 0
+    });
     return calculatedTotal;
   }, [items, breakfastTypes]);
 
@@ -330,11 +351,20 @@ const BreakfastFields = ({ breakfast, commonFields, isWaiterView, isAdminView = 
   // Mostrar el total en la vista de administrador
   if (isAdminView) {
     const price = calculateBreakfastPrice(breakfast, 3, breakfastTypes); // userRole 3 para mesera
-    console.log('BreakfastFields - Admin view price calculation:', { 
-      breakfast, 
+    
+    console.log('🔍 [BreakfastFields] Admin view price calculation:', { 
+      breakfast: {
+        type: breakfast?.type?.name,
+        broth: breakfast?.broth?.name,
+        orderType: breakfast?.orderType,
+        additions: breakfast?.additions
+      }, 
       calculatedPrice: price,
-      additions: breakfast.additions 
+      additions: breakfast.additions,
+      isAdminView: true,
+      source: 'BreakfastFields'
     });
+    
     fields.push(<p key="total" className="text-xs sm:text-sm font-medium text-gray-800 mt-2">Total: ${price.toLocaleString('es-CO')}</p>);
   }
   
@@ -344,18 +374,54 @@ const BreakfastFields = ({ breakfast, commonFields, isWaiterView, isAdminView = 
 const BreakfastGroup = ({ group, globalCommonFields, isWaiterView, isAdminView = false, breakfastTypes = [] }) => {
   const baseBreakfast = group.items[0];
   const count = group.items.length;
-  const groupTotal = group.items.reduce((sum, item) => {
+  
+  console.log('🔍 [BreakfastGroup] === INICIO CÁLCULO GRUPO ===');
+  console.log('🔍 [BreakfastGroup] Procesando grupo con:', {
+    itemsCount: group.items.length,
+    isWaiterView,
+    isAdminView,
+    baseBreakfast: {
+      type: baseBreakfast?.type?.name,
+      broth: baseBreakfast?.broth?.name,
+      orderType: baseBreakfast?.orderType,
+      additions: baseBreakfast?.additions
+    }
+  });
+
+  const groupTotal = group.items.reduce((sum, item, index) => {
+    console.log(`🔍 [BreakfastGroup] Procesando item ${index + 1}/${group.items.length} del grupo:`, {
+      item: {
+        type: item.type?.name,
+        broth: item.broth?.name,
+        orderType: item.orderType,
+        additions: item.additions
+      }
+    });
+
     // Usar la función calculateBreakfastPrice para calcular el precio correctamente
     const itemPrice = calculateBreakfastPrice(item, 3, breakfastTypes); // userRole 3 para mesera
-    console.log('BreakfastGroup - Price calculation:', { 
-      item, 
+    
+    console.log('🔍 [BreakfastGroup] Resultado del cálculo:', { 
+      item: {
+        type: item.type?.name,
+        broth: item.broth?.name,
+        orderType: item.orderType
+      },
       itemPrice, 
       isWaiterView, 
       isAdminView,
-      additions: item.additions 
+      additions: item.additions,
+      sumAnterior: sum,
+      sumNuevo: sum + itemPrice
     });
+    
     return sum + itemPrice;
   }, 0);
+
+  console.log('🔍 [BreakfastGroup] === TOTAL GRUPO CALCULADO ===', {
+    groupTotal,
+    itemsCount: group.items.length
+  });
 
   const paymentNames = Array.from(group.payments).filter(Boolean);
   const paymentText = `(${(paymentNames.length ? paymentNames : ['No especificado']).join(' y ')})`;

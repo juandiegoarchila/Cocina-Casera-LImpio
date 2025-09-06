@@ -444,14 +444,35 @@ const WaiterDashboard = () => {
     setIsLoading(true);
 
     try {
+      console.log('🔍 [WaiterDashboard] === GUARDANDO PEDIDO DESAYUNO ===');
       // Construir desglose de pagos por método para totales
       const paymentsByMethodBreakfast = {};
-      breakfasts.forEach((b) => {
+      breakfasts.forEach((b, index) => {
+        console.log(`🔍 [WaiterDashboard] Procesando desayuno ${index + 1} para pago:`, {
+          breakfast: {
+            type: b.type?.name,
+            broth: b.broth?.name,
+            orderType: b.orderType,
+            additions: b.additions,
+            paymentMethod: b.paymentMethod
+          }
+        });
+
         const method = getMethodName(b.paymentMethod || b.payment);
         if (!method) return;
+        
         const amount = Number(calculateBreakfastPrice(b, 3) || 0);
+        console.log(`🔍 [WaiterDashboard] Cálculo de precio para pago:`, {
+          method,
+          amount,
+          source: 'WaiterDashboard.js'
+        });
+        
         paymentsByMethodBreakfast[method] = (paymentsByMethodBreakfast[method] || 0) + amount;
       });
+
+      console.log('🔍 [WaiterDashboard] === RESUMEN DE PAGOS ===', paymentsByMethodBreakfast);
+
       const paymentsBreakfast = Object.entries(paymentsByMethodBreakfast).map(([method, amount]) => ({
         method,
         amount: Math.floor(amount),
@@ -482,12 +503,31 @@ const WaiterDashboard = () => {
           orderType: breakfast.orderType || '',
           notes: breakfast.notes || '',
         })),
-        total: calculateTotalBreakfastPrice(breakfasts, 3, breakfastTypes),
+        total: (() => {
+          const total = calculateTotalBreakfastPrice(breakfasts, 3, breakfastTypes);
+          console.log('🔍 [WaiterDashboard] === TOTAL FINAL PARA GUARDAR ===', {
+            total,
+            breakfastsLength: breakfasts.length,
+            source: 'WaiterDashboard save order'
+          });
+          return total;
+        })(),
         payments: paymentsBreakfast,
         status: 'Pendiente',
         createdAt: new Date(),
         updatedAt: new Date(),
       };
+      console.log('[WaiterDashboard] === ORDEN COMPLETA A GUARDAR ===', {
+        order: {
+          ...order,
+          breakfasts: order.breakfasts.map(b => ({
+            type: b.type?.name,
+            broth: b.broth?.name,
+            orderType: b.orderType,
+            additions: b.additions
+          }))
+        }
+      });
       if (process.env.NODE_ENV === 'development') console.log('[WaiterDashboard] Saving breakfast order:', order);
       await addDoc(collection(db, 'breakfastOrders'), order);
       setSuccessMessage('¡Orden de desayuno guardada con éxito!');

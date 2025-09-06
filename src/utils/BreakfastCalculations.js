@@ -1,10 +1,20 @@
 // src/utils/BreakfastCalculations.js
 
 export const calculateBreakfastPrice = (breakfast, userRole, breakfastTypes = []) => {
+  console.log('🔍 [BreakfastCalculations] calculateBreakfastPrice llamado con:', { 
+    breakfast: {
+      type: breakfast?.type?.name,
+      broth: breakfast?.broth?.name,
+      orderType: breakfast?.orderType,
+      additions: breakfast?.additions
+    }, 
+    userRole, 
+    breakfastTypesLength: breakfastTypes?.length || 0,
+    source: 'BreakfastCalculations.js'
+  });
+
   if (!breakfast || !breakfast.type || !breakfast.type.name) {
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[BreakfastCalculations] No breakfast or type defined:', breakfast);
-    }
+    console.log('[BreakfastCalculations] ❌ No breakfast or type defined:', breakfast);
     return 0;
   }
 
@@ -45,11 +55,40 @@ export const calculateBreakfastPrice = (breakfast, userRole, breakfastTypes = []
     basePrice = orderType === 'table' ? 7000 : 8000;
   }
 
+  console.log('🔍 [BreakfastCalculations] Precio base calculado:', { 
+    typeName, 
+    brothName, 
+    orderType, 
+    basePrice,
+    source: 'BreakfastCalculations.js'
+  });
+
   const additionsPrice = breakfast.additions?.reduce((sum, item) => {
-    return sum + (item.price || 0) * (item.quantity || 1);
+    const itemPrice = (item.price || 0) * (item.quantity || 1);
+    console.log('🔍 [BreakfastCalculations] Adición individual:', { 
+      name: item.name, 
+      price: item.price, 
+      quantity: item.quantity, 
+      itemPrice,
+      source: 'BreakfastCalculations.js'
+    });
+    return sum + itemPrice;
   }, 0) || 0;
 
+  console.log('🔍 [BreakfastCalculations] Precio total adiciones:', additionsPrice);
+
   const totalPrice = basePrice + additionsPrice;
+
+  console.log('🔍 [BreakfastCalculations] Cálculo final:', {
+    type: typeName,
+    broth: brothName,
+    orderType,
+    basePrice,
+    additionsPrice,
+    totalPrice,
+    additions: breakfast.additions,
+    source: 'BreakfastCalculations.js'
+  });
 
   if (process.env.NODE_ENV === 'development') {
     console.log(`[BreakfastCalculations] Price for ${typeName}, broth: ${brothName}, orderType: ${orderType}, basePrice: ${basePrice}, totalPrice: ${totalPrice}`);
@@ -60,8 +99,48 @@ export const calculateBreakfastPrice = (breakfast, userRole, breakfastTypes = []
 
 // 🔹 NUEVO: totalizador que faltaba (usado por WaiterDashboard)
 export const calculateTotalBreakfastPrice = (breakfasts, userRole, breakfastTypes = []) => {
-  if (!Array.isArray(breakfasts)) return 0;
-  return breakfasts.reduce((sum, b) => sum + calculateBreakfastPrice(b, userRole, breakfastTypes), 0);
+  console.log('🔍 [BreakfastCalculations] === calculateTotalBreakfastPrice llamado ===');
+  console.log('🔍 [BreakfastCalculations] Parámetros:', {
+    breakfastsLength: breakfasts?.length || 0,
+    userRole,
+    breakfastTypesLength: breakfastTypes?.length || 0,
+    breakfasts: breakfasts?.map(b => ({
+      type: b.type?.name,
+      broth: b.broth?.name,
+      orderType: b.orderType,
+      additions: b.additions
+    }))
+  });
+
+  if (!Array.isArray(breakfasts)) {
+    console.log('🔍 [BreakfastCalculations] ❌ breakfasts no es array:', breakfasts);
+    return 0;
+  }
+
+  const total = breakfasts.reduce((sum, breakfast, index) => {
+    console.log(`🔍 [BreakfastCalculations] Calculando total para desayuno ${index + 1}:`, {
+      breakfast: {
+        type: breakfast.type?.name,
+        broth: breakfast.broth?.name,
+        orderType: breakfast.orderType,
+        additions: breakfast.additions
+      }
+    });
+
+    const itemPrice = calculateBreakfastPrice(breakfast, userRole, breakfastTypes);
+    
+    console.log(`🔍 [BreakfastCalculations] Resultado total individual:`, {
+      itemPrice,
+      sumAnterior: sum,
+      sumNuevo: sum + itemPrice,
+      source: 'calculateTotalBreakfastPrice (BreakfastCalculations)'
+    });
+
+    return sum + itemPrice;
+  }, 0);
+
+  console.log('🔍 [BreakfastCalculations] === TOTAL FINAL calculateTotalBreakfastPrice ===', total);
+  return total;
 };
 
 export const calculateBreakfastProgress = (breakfast, isTableOrder, isWaitress, breakfastTypes = []) => {
