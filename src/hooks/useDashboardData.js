@@ -722,12 +722,36 @@ export const useDashboardData = (
     if (!db || !userId || !isAuthReady) return;
 
     setLoadingData(true);
+    
+    // Reset all loading flags when date changes
+    initialLoadRefs.current = {
+      orders: false,
+      tableOrders: false,
+      waiterOrders: false,
+      breakfastOrders: false,
+      breakfastSalonOrders: false,
+      users: false,
+      activity: false,
+      ingresos: false,
+      pedidosDiariosGuardados: false,
+      payments: false,
+      paymentsAll: false,
+    };
+    
     const unsubscribes = [];
 
     // Orders (domicilios almuerzo)
     const ordersCollectionRef = collection(db, 'orders');
+    const ordersQuery = (startOfDay && endOfDay)
+      ? query(
+          ordersCollectionRef,
+          where('createdAt', '>=', startOfDay),
+          where('createdAt', '<=', endOfDay),
+        )
+      : ordersCollectionRef;
+      
     const unsubscribeOrders = onSnapshot(
-      ordersCollectionRef,
+      ordersQuery,
       (snapshot) => {
         const ordersData = snapshot.docs.map((doc) => ({ id: doc.id, __collection: 'orders', ...doc.data() }));
         setOrders(ordersData);
@@ -773,8 +797,16 @@ export const useDashboardData = (
 
     // Table orders (salón)
     const tableOrdersCollectionRef = collection(db, 'tableOrders');
+    const tableOrdersQuery = (startOfDay && endOfDay)
+      ? query(
+          tableOrdersCollectionRef,
+          where('createdAt', '>=', startOfDay),
+          where('createdAt', '<=', endOfDay),
+        )
+      : tableOrdersCollectionRef;
+        
     const unsubscribeTableOrders = onSnapshot(
-      tableOrdersCollectionRef,
+      tableOrdersQuery,
       (snapshot) => {
         const tableOrdersData = snapshot.docs.map((doc) => ({ id: doc.id, __collection: 'tableOrders', ...doc.data() }));
         setTableOrders(tableOrdersData);
@@ -796,8 +828,16 @@ export const useDashboardData = (
 
     // Waiter orders (salón creados en alguna vista de mesero)
     const waiterOrdersCollectionRef = collection(db, 'waiterOrders');
+    const waiterOrdersQuery = (startOfDay && endOfDay)
+      ? query(
+          waiterOrdersCollectionRef,
+          where('createdAt', '>=', startOfDay),
+          where('createdAt', '<=', endOfDay),
+        )
+      : waiterOrdersCollectionRef;
+        
     const unsubscribeWaiterOrders = onSnapshot(
-      waiterOrdersCollectionRef,
+      waiterOrdersQuery,
       (snapshot) => {
         const data = snapshot.docs.map((doc) => ({ id: doc.id, __collection: 'waiterOrders', ...doc.data() }));
         setWaiterOrders(data);
@@ -818,8 +858,16 @@ export const useDashboardData = (
 
     // Breakfast orders DELIVERY (deliveryBreakfastOrders)
     const deliveryBreakfastOrdersRef = collection(db, 'deliveryBreakfastOrders');
+    const deliveryBreakfastOrdersQuery = (startOfDay && endOfDay)
+      ? query(
+          deliveryBreakfastOrdersRef,
+          where('createdAt', '>=', startOfDay),
+          where('createdAt', '<=', endOfDay),
+        )
+      : deliveryBreakfastOrdersRef;
+        
     const unsubscribeBreakfastOrders = onSnapshot(
-      deliveryBreakfastOrdersRef,
+      deliveryBreakfastOrdersQuery,
       (snapshot) => {
         const breakfastOrdersData = snapshot.docs.map((doc) => ({ id: doc.id, __collection: 'deliveryBreakfastOrders', ...doc.data() }));
         setBreakfastOrders(breakfastOrdersData);
@@ -840,8 +888,16 @@ export const useDashboardData = (
 
     // Breakfast orders de SALÓN (colección 'breakfastOrders' creada en WaiterDashboard)
     const breakfastSalonOrdersRef = collection(db, 'breakfastOrders');
+    const breakfastSalonOrdersQuery = (startOfDay && endOfDay)
+      ? query(
+          breakfastSalonOrdersRef,
+          where('createdAt', '>=', startOfDay),
+          where('createdAt', '<=', endOfDay),
+        )
+      : breakfastSalonOrdersRef;
+        
     const unsubscribeBreakfastSalonOrders = onSnapshot(
-      breakfastSalonOrdersRef,
+      breakfastSalonOrdersQuery,
       (snapshot) => {
         const data = snapshot.docs.map((doc) => ({ id: doc.id, __collection: 'breakfastOrders', ...doc.data() }));
         setBreakfastSalonOrders(data);
@@ -1067,7 +1123,7 @@ export const useDashboardData = (
     return () => {
       unsubscribes.forEach((unsubscribe) => unsubscribe());
     };
-  }, [db, userId, isAuthReady]); // evita bucles
+  }, [db, userId, isAuthReady, startOfDay, endOfDay]); // evita bucles
 
   /* ===========================================
      Recalcular métodos de pago (orders + salón + desayunos)
