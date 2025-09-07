@@ -1,7 +1,7 @@
 //src/components/BreakfastTimeSelector.js
 import { isMobile, encodeMessage } from '../utils/Helpers';
 
-export const initializeBreakfastData = ({ isWaitress = false }) => ({
+export const initializeBreakfastData = ({ address, phoneNumber, addressType, recipientName, unitDetails, localName, details, isWaitress = false }) => ({
   id: 0,
   type: null,
   eggs: null,
@@ -17,12 +17,13 @@ export const initializeBreakfastData = ({ isWaitress = false }) => ({
   ...(isWaitress ? {} : {
     time: null,
     address: {
-      address: '',
-      phoneNumber: '',
-      addressType: 'house',
-      recipientName: '',
-      unitDetails: '',
-      localName: '',
+      address: address || '',
+      phoneNumber: phoneNumber || '',
+      addressType: addressType || 'house',
+      recipientName: recipientName || '',
+      unitDetails: unitDetails || '',
+      localName: localName || '',
+      details: details || '',
     },
     cutlery: null,
   })
@@ -352,7 +353,7 @@ const formatNotes = (notes) => {
 const isValidTime = (time) => time && time.name && time.name !== 'Lo antes posible';
 
 const fieldsToCheck = ['type', 'eggs', 'broth', 'riceBread', 'drink', 'Cubiertos', 'Hora', 'Dirección', 'Pago', 'Adiciones'];
-const addressFields = ['address', 'addressType', 'recipientName', 'phoneNumber', 'unitDetails', 'localName'];
+const addressFields = ['address', 'addressType', 'recipientName', 'phoneNumber', 'unitDetails', 'localName', 'details'];
 
 export const generateMessageFromBreakfasts = (breakfasts, calculateBreakfastPrice, total, breakfastTypes, isWaitress = false) => {
   let message = `👋 ¡Hola Cocina Casera! 🍴\nQuiero hacer mi pedido de desayunos:\n\n`;
@@ -460,7 +461,7 @@ export const generateMessageFromBreakfasts = (breakfasts, calculateBreakfastPric
     const isCommon = breakfasts.every(breakfast => breakfast.address?.[field] === firstBreakfast?.address?.[field]);
     commonAddressFields[field] = isCommon ? firstBreakfast?.address?.[field] : null;
   });
-  const relevantAddressFields = ['address', 'addressType', 'phoneNumber'];
+  const relevantAddressFields = ['address', 'addressType', 'phoneNumber', 'details'];
   if (commonAddressFields.addressType === 'school') {
     relevantAddressFields.push('recipientName');
   } else if (commonAddressFields.addressType === 'complex') {
@@ -528,6 +529,8 @@ export const generateMessageFromBreakfasts = (breakfasts, calculateBreakfastPric
             addressLines.push(`👤 Nombre del destinatario: ${value}`);
           } else if (addrField === 'phoneNumber' && value) {
             addressLines.push(`📞 Teléfono: ${value}`);
+          } else if (addrField === 'details' && value) {
+            addressLines.push(`📝 Instrucciones de entrega: ${value}`);
           } else if (addrField === 'unitDetails' && addrType === 'complex' && value) {
             addressLines.push(`🏢 Detalles: ${value}`);
           } else if (addrField === 'localName' && addrType === 'shop' && value) {
@@ -627,6 +630,8 @@ export const generateMessageFromBreakfasts = (breakfasts, calculateBreakfastPric
                 addressLines.push(`👤 Nombre del destinatario: ${value}`);
               } else if (addrField === 'phoneNumber' && value) {
                 addressLines.push(`📞 Teléfono: ${value}`);
+              } else if (addrField === 'details' && value) {
+                addressLines.push(`📝 Instrucciones de entrega: ${value}`);
               } else if (addrField === 'unitDetails' && addrType === 'complex' && value) {
                 addressLines.push(`🏢 Detalles: ${value}`);
               } else if (addrField === 'localName' && addrType === 'shop' && value) {
@@ -649,7 +654,7 @@ export const generateMessageFromBreakfasts = (breakfasts, calculateBreakfastPric
       addressFields.forEach(field => {
         groupAddressFields[field] = group.breakfasts.every(breakfast => breakfast.address?.[field] === baseBreakfast.address?.[field]) ? baseBreakfast.address?.[field] : null;
       });
-      const relevantGroupAddressFields = ['address', 'addressType', 'phoneNumber'];
+      const relevantGroupAddressFields = ['address', 'addressType', 'phoneNumber', 'details'];
       if (groupAddressFields.addressType === 'school') {
         relevantGroupAddressFields.push('recipientName');
       } else if (groupAddressFields.addressType === 'complex') {
@@ -680,6 +685,8 @@ export const generateMessageFromBreakfasts = (breakfasts, calculateBreakfastPric
               message += `👤 Nombre del destinatario: ${value}\n`;
             } else if (addrField === 'phoneNumber' && value) {
               message += `📞 Teléfono: ${value}\n`;
+            } else if (addrField === 'details' && value) {
+              message += `📝 Instrucciones de entrega: ${value}\n`;
             } else if (addrField === 'unitDetails' && addrType === 'complex' && value) {
               message += `🏢 Detalles: ${value}\n`;
             } else if (addrField === 'localName' && addrType === 'shop' && value) {
@@ -715,6 +722,8 @@ export const generateMessageFromBreakfasts = (breakfasts, calculateBreakfastPric
           message += `👤 Nombre del destinatario: ${value}\n`;
         } else if (addrField === 'phoneNumber' && value) {
           message += `📞 Teléfono: ${value}\n`;
+        } else if (addrField === 'details' && value) {
+          message += `📝 Instrucciones de entrega: ${value}\n`;
         } else if (addrField === 'unitDetails' && addrType === 'complex' && value) {
           message += `🏢 Detalles: ${value}\n`;
         } else if (addrField === 'localName' && addrType === 'shop' && value) {

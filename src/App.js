@@ -39,6 +39,7 @@ const App = () => {
   const [recipientName, setRecipientName] = useLocalStorage('userRecipientName', '');
   const [unitDetails, setUnitDetails] = useLocalStorage('userUnitDetails', '');
   const [localName, setLocalName] = useLocalStorage('userLocalName', '');
+  const [details, setDetails] = useLocalStorage('userAddressDetails', '');
   const [errorMessage, setErrorMessage] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -75,7 +76,7 @@ const App = () => {
     lunchEnd: 950,
   });
 
-  const savedAddress = { address, phoneNumber, addressType, recipientName, unitDetails, localName };
+  const savedAddress = { address, phoneNumber, addressType, recipientName, unitDetails, localName, details };
 
   const formatTime = (minutes) => {
     const hours = Math.floor(minutes / 60);
@@ -330,7 +331,7 @@ const order = {
         recipientName: item.address?.recipientName || '',
         unitDetails: item.address?.unitDetails || '',
         localName: item.address?.localName || '',
-        details: item.address?.details || '',  // Añadir instrucciones de entrega
+        details: item.address?.details || '',
       },
       payment: { name: item.payment?.name || 'Efectivo' },
       notes: item.notes || '',
@@ -356,7 +357,7 @@ const order = {
           recipientName: item.address?.recipientName || '',
           unitDetails: item.address?.unitDetails || '',
           localName: item.address?.localName || '',
-          details: item.address?.details || '',  // Añadir instrucciones de entrega
+          details: item.address?.details || '',
         },
         payment: { name: item.payment?.name || 'Efectivo' },
         time: item.time?.name || '',
@@ -387,7 +388,7 @@ const order = {
     }
   };
 
-  const initialMeal = initializeMealData(savedAddress, false, paymentMethods);
+  const initialMeal = initializeMealData(savedAddress);
 
   const initialBreakfast = {
     id: Date.now(),

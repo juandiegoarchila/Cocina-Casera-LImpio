@@ -1,7 +1,7 @@
 //src/utils/MealLogic.js
 import { isMobile, encodeMessage } from './Helpers';
 
-export const initializeMealData = ({ address, phoneNumber, addressType, recipientName, unitDetails, localName, isWaitress = false }) => ({
+export const initializeMealData = ({ address, phoneNumber, addressType, recipientName, unitDetails, localName, details, isWaitress = false }) => ({
   id: 0,
   soup: null,
   soupReplacement: null,
@@ -23,6 +23,7 @@ export const initializeMealData = ({ address, phoneNumber, addressType, recipien
       recipientName: recipientName || '',
       unitDetails: unitDetails || '',
       localName: localName || '',
+      details: details || '',
     },
     payment: null,
     cutlery: null,
@@ -246,7 +247,7 @@ export const formatNotes = (notes) => {
 export const isValidTime = (time) => time && time.name && time.name !== 'Lo antes posible';
 
 const fieldsToCheck = ['Sopa', 'Principio', 'Proteína', 'Bebida', 'Cubiertos', 'Acompañamientos', 'Hora', 'Dirección', 'Pago', 'Adiciones', 'Mesa'];
-const addressFields = ['address', 'addressType', 'phoneNumber', 'recipientName', 'unitDetails', 'localName'];
+const addressFields = ['address', 'addressType', 'phoneNumber', 'recipientName', 'unitDetails', 'localName', 'details'];
 const specialRiceOptions = ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'];
 
 export const generateMessageFromMeals = (meals, calculateMealPrice, total, isWaitress = false) => {
@@ -366,7 +367,7 @@ export const generateMessageFromMeals = (meals, calculateMealPrice, total, isWai
     const isCommon = safeMeals.every(meal => meal.address?.[field] === firstMeal?.address?.[field]);
     commonAddressFields[field] = isCommon ? firstMeal?.address?.[field] : null;
   });
-  const relevantAddressFields = ['address', 'addressType', 'phoneNumber'];
+  const relevantAddressFields = ['address', 'addressType', 'phoneNumber', 'details'];
   if (commonAddressFields.addressType === 'school') {
     relevantAddressFields.push('recipientName');
   } else if (commonAddressFields.addressType === 'complex') {
@@ -455,6 +456,8 @@ message += `───────────────\n`;
             addressLines.push(`👤 Nombre del destinatario: ${value}`);
           } else if (addrField === 'phoneNumber' && value) {
             addressLines.push(`📞 Teléfono: ${value}`);
+          } else if (addrField === 'details' && value) {
+            addressLines.push(`📝 Instrucciones de entrega: ${value}`);
           } else if (addrField === 'unitDetails' && addrType === 'complex' && value) {
             addressLines.push(`🏢 Detalles: ${value}`);
           } else if (addrField === 'localName' && addrType === 'shop' && value) {
@@ -572,6 +575,8 @@ message += `───────────────\n`;
                 addressLines.push(`👤 Nombre del destinatario: ${value}`);
               } else if (addrField === 'phoneNumber' && value) {
                 addressLines.push(`📞 Teléfono: ${value}`);
+              } else if (addrField === 'details' && value) {
+                addressLines.push(`📝 Instrucciones de entrega: ${value}`);
               } else if (addrField === 'unitDetails' && addrType === 'complex' && value) {
                 addressLines.push(`🏢 Detalles: ${value}`);
               } else if (addrField === 'localName' && addrType === 'shop' && value) {
@@ -613,6 +618,8 @@ message += `───────────────\n`;
           message += `👤 Nombre del destinatario: ${value}\n`;
         } else if (addrField === 'phoneNumber' && value) {
           message += `📞 Teléfono: ${value}\n`;
+        } else if (addrField === 'details' && value) {
+          message += `📝 Instrucciones de entrega: ${value}\n`;
         } else if (addrField === 'unitDetails' && addrType === 'complex' && value) {
           message += `🏢 Detalles: ${value}\n`;
         } else if (addrField === 'localName' && addrType === 'shop' && value) {

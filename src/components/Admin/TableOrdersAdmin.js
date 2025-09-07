@@ -54,7 +54,7 @@ const ensureAddress = (addr = {}, fallback = {}) => ({
   localName: addr.localName ?? fallback.localName ?? '',
   unitDetails: addr.unitDetails ?? fallback.unitDetails ?? '',
   recipientName: addr.recipientName ?? fallback.recipientName ?? '',
-  details: addr.details ?? fallback.details ?? '',  // Asegurar que las instrucciones de entrega se incluyan
+  details: addr.details ?? fallback.details ?? '',
 });
 
 // ===== Helpers NUEVOS / ROBUSTOS para pago =====
@@ -719,7 +719,7 @@ const newTotal = Number(calculateTotal(editingOrder.meals, 3) || 0);      if ((e
     const docx = new jsPDF();
     docx.text('Órdenes', 14, 10);
     docx.autoTable({
-      head: [['Nº Orden', 'Tipo', 'Mesa', 'Estado', 'Total', 'Método de Pago', 'Detalles']],
+      head: [['Nº Orden', 'Tipo', 'Dirección', 'Teléfono', 'Mesa', 'Estado', 'Total', 'Método de Pago', 'Detalles']],
       body: filteredOrders.map((order) => {
         const paymentText = (Array.isArray(order.payments) && order.payments.length)
           ? summarizePayments(order.payments)
@@ -751,7 +751,7 @@ const newTotal = Number(calculateTotal(editingOrder.meals, 3) || 0);      if ((e
 
   const exportToCSV = () => {
     const rows = [
-      ['Nº Orden', 'Tipo', 'Mesa', 'Estado', 'Total', 'Método de Pago', 'Detalles'],
+      ['Nº Orden', 'Tipo', 'Dirección', 'Teléfono', 'Mesa', 'Estado', 'Total', 'Método de Pago', 'Detalles'],
       ...filteredOrders.map((order) => {
         const paymentText = (Array.isArray(order.payments) && order.payments.length)
           ? summarizePayments(order.payments)
@@ -952,6 +952,8 @@ const newTotal = Number(calculateTotal(editingOrder.meals, 3) || 0);      if ((e
                       Nº {getSortIcon('orderNumber')}
                     </th>
                     <th className="p-2 sm:p-3 border-b whitespace-nowrap">Detalles</th>
+                    <th className="p-2 sm:p-3 border-b whitespace-nowrap">Dirección</th>
+                    <th className="p-2 sm:p-3 border-b whitespace-nowrap">Teléfono</th>
                     <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('meals.0.tableNumber')}>
                       Mesa {getSortIcon('meals.0.tableNumber')}
                     </th>
@@ -970,7 +972,7 @@ const newTotal = Number(calculateTotal(editingOrder.meals, 3) || 0);      if ((e
                 <tbody>
                   {paginatedOrders.length === 0 ? (
                     <tr>
-                      <td colSpan="7" className="p-6 text-center text-gray-500 dark:text-gray-400">
+                      <td colSpan="9" className="p-6 text-center text-gray-500 dark:text-gray-400">
                         No se encontraron órdenes de mesas. Intenta ajustar tu búsqueda.
                       </td>
                     </tr>
@@ -1065,6 +1067,16 @@ const newTotal = Number(calculateTotal(editingOrder.meals, 3) || 0);      if ((e
                               <InformationCircleIcon className="w-4 h-4 mr-1" />
                               Ver
                             </button>
+                          </td>
+                          <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">
+                            {order.meals?.[0]?.address?.address || order.breakfasts?.[0]?.address?.address || 'N/A'}
+                            {order.meals?.[0]?.address?.details || order.breakfasts?.[0]?.address?.details ? 
+                              <span className="text-gray-400 ml-1">
+                                ({order.meals?.[0]?.address?.details || order.breakfasts?.[0]?.address?.details})
+                              </span> : null}
+                          </td>
+                          <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">
+                            {order.meals?.[0]?.address?.phoneNumber || order.breakfasts?.[0]?.address?.phoneNumber || 'N/A'}
                           </td>
                           <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">
                             {formatValue(order.meals?.[0]?.tableNumber || order.breakfasts?.[0]?.tableNumber)}

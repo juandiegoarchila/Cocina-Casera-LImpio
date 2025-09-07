@@ -343,6 +343,39 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
     return [...filteredOrders].sort((a, b) => {
       const getValue = (obj, path, currentFilteredOrdersArray) => {
         if (path === 'orderNumber') return obj ? currentFilteredOrdersArray.indexOf(obj) : -1;
+        
+        if (path === 'address') {
+          const address = obj?.meals?.[0]?.address?.address || obj?.breakfasts?.[0]?.address?.address || '';
+          return cleanText(address);
+        }
+        
+        if (path === 'phone') {
+          const phone = obj?.meals?.[0]?.address?.phoneNumber || obj?.breakfasts?.[0]?.address?.phoneNumber || '';
+          return cleanText(phone);
+        }
+        
+        if (path === 'time') {
+          const time = obj?.meals?.[0]?.time?.name || obj?.breakfasts?.[0]?.time?.name || '';
+          return cleanText(time);
+        }
+        
+        if (path === 'payment') {
+          const payment = obj?.payment || obj?.meals?.[0]?.payment?.name || obj?.breakfasts?.[0]?.payment?.name || '';
+          return cleanText(payment);
+        }
+        
+        if (path === 'total') {
+          return Number(obj?.total || 0);
+        }
+        
+        if (path === 'deliveryPerson') {
+          const deliveryPerson = obj?.deliveryPerson || obj?.assignedTo || '';
+          return cleanText(deliveryPerson);
+        }
+        
+        if (path === 'status') {
+          return cleanText(obj?.status || '');
+        }
 
         if (path.startsWith('createdAt')) {
           const ts = obj.createdAt;

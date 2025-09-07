@@ -13,7 +13,8 @@ import {
   PencilIcon,
   TrashIcon,
   EllipsisVerticalIcon,
-  PlusIcon
+  PlusIcon,
+  MagnifyingGlassIcon
 } from '@heroicons/react/24/outline';
 
 // Firestore para persistir pagos
@@ -105,6 +106,20 @@ const money = (n) => `$${Math.floor(n || 0).toLocaleString('es-CO')}`;
 // === NUEVO: mostrar solo método(s) sin montos ===
 const methodLabel = (k) =>
   k === 'cash' ? 'Efectivo' : k === 'nequi' ? 'Nequi' : k === 'daviplata' ? 'Daviplata' : '';
+
+// Función para obtener las clases de color según el método de pago
+const getPaymentMethodColorClass = (method) => {
+  switch (method) {
+    case 'cash':
+      return 'text-green-600 dark:text-green-400'; // Verde para Efectivo
+    case 'daviplata':
+      return 'text-red-600 dark:text-red-400'; // Rojo para Daviplata
+    case 'nequi':
+      return 'text-blue-600 dark:text-blue-400'; // Azul para Nequi
+    default:
+      return 'text-gray-600 dark:text-gray-400'; // Color por defecto
+  }
+};
 
 const paymentMethodsOnly = (order) => {
   const rows = paymentsRowsFromOrder(order, defaultPaymentsForOrder);
@@ -507,17 +522,20 @@ const TablaPedidos = ({
 
         {/* Search, Date Filter, and Menu */}
         <div className="flex flex-wrap justify-center sm:justify-between items-center mb-6 gap-3 sm:gap-4">
-          <div className="flex flex-wrap gap-4 items-center">
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Buscar pedidos..."
-              className={classNames(
-                'p-2 sm:p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:max-w-xs shadow-sm text-sm sm:text-base transition-all duration-200',
-                theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-300 bg-white text-gray-900'
-              )}
-            />
+          <div className="flex flex-wrap gap-4 items-center flex-1 max-w-3xl">
+            <div className="relative w-full">
+              <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Buscar pedidos..."
+                className={classNames(
+                  'pl-10 pr-4 py-2 sm:py-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 w-full shadow-sm text-sm sm:text-base transition-all duration-200',
+                  theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400' : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500'
+                )}
+              />
+            </div>
           </div>
           <div className="flex flex-wrap items-center justify-center sm:justify-end gap-2">
             <button
@@ -661,8 +679,15 @@ const TablaPedidos = ({
                               </button>
                             </td>
                             <td className="p-2 sm:p-3 text-gray-300 max-w-[250px] sm:max-w-xs">
-                              <div className="text-xs sm:text-sm break-words whitespace-pre-wrap">
-                                {addressDisplay}
+                              <div className="text-xs sm:text-sm">
+                                <div className="whitespace-nowrap overflow-hidden text-ellipsis">
+                                  {(order.meals?.[0]?.address?.address || order.breakfasts?.[0]?.address?.address || 'Sin dirección')}
+                                </div>
+                                {(order.meals?.[0]?.address?.details || order.breakfasts?.[0]?.address?.details) && (
+                                  <div className="whitespace-nowrap overflow-hidden text-ellipsis text-gray-400 text-xs">
+                                    ({order.meals?.[0]?.address?.details || order.breakfasts?.[0]?.address?.details})
+                                  </div>
+                                )}
                               </div>
                             </td>
                             <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">
@@ -901,9 +926,9 @@ const TablaPedidos = ({
                           "rounded-lg p-3 sm:p-4 border",
                           theme === 'dark' ? 'bg-gray-800/60 border-gray-700' : 'bg-gray-50 border-gray-200'
                         )}>
-                          <div className="flex justify-between text-sm my-0.5"><span>Efectivo</span><span className="font-semibold">{money(lunch.cash)}</span></div>
-                          <div className="flex justify-between text-sm my-0.5"><span>Daviplata</span><span className="font-semibold">{money(lunch.daviplata)}</span></div>
-                          <div className="flex justify-between text-sm my-0.5"><span>Nequi</span><span className="font-semibold">{money(lunch.nequi)}</span></div>
+                          <div className="flex justify-between text-sm my-0.5"><span>Efectivo</span><span className={`font-semibold ${getPaymentMethodColorClass('cash')}`}>{money(lunch.cash)}</span></div>
+                          <div className="flex justify-between text-sm my-0.5"><span>Daviplata</span><span className={`font-semibold ${getPaymentMethodColorClass('daviplata')}`}>{money(lunch.daviplata)}</span></div>
+                          <div className="flex justify-between text-sm my-0.5"><span>Nequi</span><span className={`font-semibold ${getPaymentMethodColorClass('nequi')}`}>{money(lunch.nequi)}</span></div>
                           {lunch.other > 0 && (
                             <div className="flex justify-between text-sm my-0.5"><span>Otros</span><span className="font-semibold">{money(lunch.other)}</span></div>
                           )}
@@ -919,9 +944,9 @@ const TablaPedidos = ({
                           "rounded-lg p-3 sm:p-4 border",
                           theme === 'dark' ? 'bg-gray-800/60 border-gray-700' : 'bg-gray-50 border-gray-200'
                         )}>
-                          <div className="flex justify-between text-sm my-0.5"><span>Efectivo</span><span className="font-semibold">{money(breakfast.cash)}</span></div>
-                          <div className="flex justify-between text-sm my-0.5"><span>Daviplata</span><span className="font-semibold">{money(breakfast.daviplata)}</span></div>
-                          <div className="flex justify-between text-sm my-0.5"><span>Nequi</span><span className="font-semibold">{money(breakfast.nequi)}</span></div>
+                          <div className="flex justify-between text-sm my-0.5"><span>Efectivo</span><span className={`font-semibold ${getPaymentMethodColorClass('cash')}`}>{money(breakfast.cash)}</span></div>
+                          <div className="flex justify-between text-sm my-0.5"><span>Daviplata</span><span className={`font-semibold ${getPaymentMethodColorClass('daviplata')}`}>{money(breakfast.daviplata)}</span></div>
+                          <div className="flex justify-between text-sm my-0.5"><span>Nequi</span><span className={`font-semibold ${getPaymentMethodColorClass('nequi')}`}>{money(breakfast.nequi)}</span></div>
                           {breakfast.other > 0 && (
                             <div className="flex justify-between text-sm my-0.5"><span>Otros</span><span className="font-semibold">{money(breakfast.other)}</span></div>
                           )}
@@ -937,9 +962,9 @@ const TablaPedidos = ({
                         "rounded-lg p-3 sm:p-4 border",
                         theme === 'dark' ? 'bg-gray-800/60 border-gray-700' : 'bg-gray-50 border-gray-200'
                       )}>
-                        <div className="flex justify-between text-sm my-0.5"><span>Efectivo</span><span className="font-semibold">{money(overall.cash)}</span></div>
-                        <div className="flex justify-between text-sm my-0.5"><span>Daviplata</span><span className="font-semibold">{money(overall.daviplata)}</span></div>
-                        <div className="flex justify-between text-sm my-0.5"><span>Nequi</span><span className="font-semibold">{money(overall.nequi)}</span></div>
+                        <div className="flex justify-between text-sm my-0.5"><span>Efectivo</span><span className={`font-semibold ${getPaymentMethodColorClass('cash')}`}>{money(overall.cash)}</span></div>
+                        <div className="flex justify-between text-sm my-0.5"><span>Daviplata</span><span className={`font-semibold ${getPaymentMethodColorClass('daviplata')}`}>{money(overall.daviplata)}</span></div>
+                        <div className="flex justify-between text-sm my-0.5"><span>Nequi</span><span className={`font-semibold ${getPaymentMethodColorClass('nequi')}`}>{money(overall.nequi)}</span></div>
                         {overall.other > 0 && (
                           <div className="flex justify-between text-sm my-0.5"><span>Otros</span><span className="font-semibold">{money(overall.other)}</span></div>
                         )}

@@ -202,18 +202,14 @@ const useOrderSummary = (meals, isWaiterView, calculateTotal, preCalculatedTotal
 
 // Componente para renderizar direcciones
 const AddressSummary = ({ commonAddressFields = {}, mealAddress, isCommon = false, globalCommonAddressFields = {} }) => {
-  const effectiveAddress = mealAddress || commonAddressFields;
-  const effectiveAddressType = effectiveAddress?.addressType || '';
-
   const renderAddressField = (field, value, addrType) => {
     if ((field === 'address' || field === 'addressType' || field === 'phoneNumber') && globalCommonAddressFields[field] && !isCommon) {
       return null;
     }
     if (field === 'address' && value) {
-      // Agregar instrucciones de entrega a la dirección si existen
       return (
         <p key={field} className="text-xs sm:text-sm text-gray-600">
-          📍 Dirección: {value}{effectiveAddress?.details ? ` (${effectiveAddress.details})` : ''}
+          📍 Dirección: {value}
         </p>
       );
     } else if (field === 'addressType' && value) {
@@ -235,7 +231,7 @@ const AddressSummary = ({ commonAddressFields = {}, mealAddress, isCommon = fals
       );
     } else if (field === 'details' && value) {
       return (
-        <p key={field} className="text-xs sm:text-sm text-gray-600 font-medium">
+        <p key={field} className="text-xs sm:text-sm text-gray-600">
           📝 Instrucciones de entrega: {value}
         </p>
       );
@@ -246,6 +242,9 @@ const AddressSummary = ({ commonAddressFields = {}, mealAddress, isCommon = fals
     }
     return null;
   };
+
+  const effectiveAddress = mealAddress || commonAddressFields;
+  const effectiveAddressType = effectiveAddress?.addressType || '';
 
   return (
     <div className="relative">
@@ -449,6 +448,8 @@ const MealGroup = ({ group, globalCommonFields, globalCommonAddressFields, isWai
                           return <p key={addrIdx}>👤 Nombre: {value}</p>;
                         } else if (addrField === 'phoneNumber' && value) {
                           return <p key={addrIdx}>📞 Teléfono: {value}</p>;
+                        } else if (addrField === 'details' && value) {
+                          return <p key={addrIdx}>📝 Instrucciones de entrega: {value}</p>;
                         } else if (addrField === 'unitDetails' && addrType === 'complex' && value) {
                           return <p key={addrIdx}>🏢 Detalles: {value}</p>;
                         } else if (addrField === 'localName' && addrType === 'shop' && value) {

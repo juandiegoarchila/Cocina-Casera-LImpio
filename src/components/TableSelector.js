@@ -1,81 +1,44 @@
-// src/components/TableSelector.js
-import React, { useState, useEffect } from 'react';
-import { db } from '../config/firebase';
-import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
+//src/components/TableSelector.js
+import React from 'react';
 
-const TableSelector = ({ selectedTable, onSelectTable }) => {
-  const [tables, setTables] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    // Cargar las mesas desde Firestore
-    const tablesQuery = query(collection(db, 'tables'), orderBy('createdAt', 'asc'));
-    
-    const unsubscribe = onSnapshot(tablesQuery, 
-      (snapshot) => {
-        const tablesList = snapshot.docs.map(doc => ({ 
-          id: doc.id, 
-          ...doc.data() 
-        }));
-        setTables(tablesList);
-        setLoading(false);
-      },
-      (err) => {
-        console.error("Error cargando mesas:", err);
-        setError("Error al cargar las mesas. Por favor, intenta de nuevo.");
-        setLoading(false);
-      }
-    );
-    
-    return () => unsubscribe();
-  }, []);
-
-  if (loading) {
-    return <div className="text-center p-4">Cargando mesas...</div>;
-  }
-
-  if (error) {
-    return <div className="text-red-500 p-2 text-center">{error}</div>;
-  }
-
-  // Si no hay mesas configuradas, mostrar un mensaje y un campo de entrada tradicional
-  if (tables.length === 0) {
-    return (
-      <div>
-        <p className="text-sm text-yellow-600 mb-2">
-          No hay mesas configuradas. Por favor, ingresa manualmente el número de mesa.
-        </p>
-        <input
-          type="text"
-          value={selectedTable || ''}
-          onChange={(e) => onSelectTable(e.target.value)}
-          placeholder="Ej. Mesa 1, Mesa 1 y 7"
-          className="w-full p-2 text-sm border rounded-md"
-        />
-      </div>
-    );
-  }
-
+const TableSelector = ({ 
+  selectedTable, 
+  onTableSelect, 
+  availableTables = Array.from({ length: 10 }, (_, i) => ({ id: i + 1, name: `Mesa ${i + 1}` })),
+  isButtonStyle = false
+}) => {
   return (
-    <div>
-      <p className="text-sm text-gray-600 mb-2">
-        Selecciona una mesa:
-      </p>
-      <div className="grid grid-cols-3 gap-2 mt-2">
-        {tables.map((table) => (
-          <button
-            key={table.id}
-            onClick={() => onSelectTable(table.name)}
-            className={`p-2 rounded-lg text-center text-sm transition-all duration-200 ${
-              selectedTable === table.name
-                ? 'bg-green-200 text-green-800 border border-green-300 font-medium shadow-md'
-                : 'bg-gray-100 hover:bg-green-50 hover:border hover:border-green-200 text-gray-800'
-            }`}
-          >
-            {table.name}
-          </button>
-        ))}
+    <div className="w-full">
+      <h2 className="text-sm sm:text-base font-medium mb-2 text-gray-700">
+        <span className="mr-1">🍽️</span> Selecciona una mesa
+      </h2>
+      <div className={`grid ${isButtonStyle ? 'grid-cols-3 sm:grid-cols-5 gap-1' : 'grid-cols-1 gap-2'}`}>
+        {availableTables.map((table) => {
+          const isActive = selectedTable?.id === table.id;
+          return (
+            <button
+              key={table.id}
+              type="button"
+              onClick={() => onTableSelect(table)}
+              className={`p-2 rounded text-xs sm:text-sm font-medium transition-all duration-200
+                ${isButtonStyle
+                  ? `flex items-center justify-center ${
+                      isActive
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
+                    }`
+                  : `text-left px-3 py-2 ${
+                      isActive
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
+                    }`
+                }`}
+              aria-label={`Seleccionar ${table.name}`}
+            >
+              {table.name}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
