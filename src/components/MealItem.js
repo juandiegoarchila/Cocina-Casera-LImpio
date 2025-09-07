@@ -8,6 +8,7 @@ import CutlerySelector from './CutlerySelector';
 import ProgressBar from './ProgressBar';
 import OnboardingTutorial from './OnboardingTutorial';
 import ErrorMessage from './ErrorMessage';
+import TableSelector from './TableSelector';
 import { calculateMealPrice } from '../utils/MealCalculations';
 
 const MealItem = ({
@@ -381,16 +382,13 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
             component: (
               <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
                 <h4 className="text-sm font-semibold text-green-700 mb-2">Número de Mesa</h4>
-                <input
-                  type="text"
-                  value={meal?.tableNumber || ''}
-                  onChange={(e) => handleImmediateChange('tableNumber', e.target.value)}
-                  placeholder="Ej. Mesa 1, Mesa 1 y 7"
-                  className="w-full p-2 text-sm border rounded-md"
+                <TableSelector
+                  selectedTable={meal?.tableNumber || ''}
+                  onSelectTable={(tableNumber) => handleImmediateChange('tableNumber', tableNumber)}
                 />
                 {!meal?.tableNumber && (
                   <p className="text-[10px] text-red-600 bg-red-50 p-1 rounded mt-1">
-                    Por favor, ingresa el número de mesa
+                    Por favor, selecciona una mesa
                   </p>
                 )}
               </div>

@@ -501,28 +501,30 @@ const InteraccionesPedidos = ({
                   {proteins.length === 0 ? (
                     <p className="text-sm text-gray-500 dark:text-gray-400">No hay proteínas registradas.</p>
                   ) : (
-                    <ul className="space-y-2">
-                      {proteins.map((protein) => (
-                        <li key={protein.id} className={classNames('flex justify-between items-center p-2 rounded-md', theme === 'dark' ? 'bg-gray-700' : 'bg-gray-100')}>
-                          <div className="flex flex-col text-xs sm:text-sm">
-                            <span className="font-medium">{protein.name}</span>
-                            <div className="flex gap-3 mt-0.5">
-                              <span>Inicial: <strong>{protein.quantity || 0}</strong></span>
-                              <span>Restante: <strong>{protein.remaining != null ? protein.remaining : (protein.remainingUnits || 0)}</strong></span>
-                              <span>Vendidas: <strong>{(protein.quantity || 0) - (protein.remaining != null ? protein.remaining : (protein.remainingUnits || 0))}</strong></span>
+                    <div className="max-h-80 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-gray-400 scrollbar-track-transparent">
+                      <ul className="space-y-2">
+                        {proteins.map((protein) => (
+                          <li key={protein.id} className={classNames('flex justify-between items-center p-2 rounded-md', theme === 'dark' ? 'bg-gray-700' : 'bg-gray-100')}>
+                            <div className="flex flex-col text-xs sm:text-sm">
+                              <span className="font-medium">{protein.name}</span>
+                              <div className="flex gap-3 mt-0.5">
+                                <span>Inicial: <strong>{protein.quantity || 0}</strong></span>
+                                <span>Restante: <strong>{protein.remaining != null ? protein.remaining : (protein.remainingUnits || 0)}</strong></span>
+                                <span>Vendidas: <strong>{(protein.quantity || 0) - (protein.remaining != null ? protein.remaining : (protein.remainingUnits || 0))}</strong></span>
+                              </div>
                             </div>
-                          </div>
-                          <div className="flex gap-2">
-                            <button onClick={() => handleEditProtein(protein)} className="text-blue-500 hover:text-blue-400 transition-colors duration-150 p-1 rounded-md" title="Editar proteína" aria-label={`Editar ${protein.name}`}>
-                              <PencilIcon className="w-4 h-4" />
-                            </button>
-                            <button onClick={() => handleDeleteProtein(protein.id)} className="text-red-500 hover:text-red-400 transition-colors duration-150 p-1 rounded-md" title="Eliminar proteína" aria-label={`Eliminar ${protein.name}`}>
-                              <TrashIcon className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
+                            <div className="flex gap-2">
+                              <button onClick={() => handleEditProtein(protein)} className="text-blue-500 hover:text-blue-400 transition-colors duration-150 p-1 rounded-md" title="Editar proteína" aria-label={`Editar ${protein.name}`}>
+                                <PencilIcon className="w-4 h-4" />
+                              </button>
+                              <button onClick={() => handleDeleteProtein(protein.id)} className="text-red-500 hover:text-red-400 transition-colors duration-150 p-1 rounded-md" title="Eliminar proteína" aria-label={`Eliminar ${protein.name}`}>
+                                <TrashIcon className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   )}
                 </div>
               </Dialog.Panel>

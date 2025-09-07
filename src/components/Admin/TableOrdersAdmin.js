@@ -54,6 +54,7 @@ const ensureAddress = (addr = {}, fallback = {}) => ({
   localName: addr.localName ?? fallback.localName ?? '',
   unitDetails: addr.unitDetails ?? fallback.unitDetails ?? '',
   recipientName: addr.recipientName ?? fallback.recipientName ?? '',
+  details: addr.details ?? fallback.details ?? '',  // Asegurar que las instrucciones de entrega se incluyan
 });
 
 // ===== Helpers NUEVOS / ROBUSTOS para pago =====

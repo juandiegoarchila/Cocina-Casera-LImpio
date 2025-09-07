@@ -15,12 +15,21 @@ export const getNestedProperty = (obj, path) => {
 export const getAddressDisplay = (address) => {
   if (!address?.address) return 'Sin dirección';
   let display = address.address;
+  
+  // Incluir instrucciones de entrega entre paréntesis si existen - prioridad alta
+  if (address.details && address.details.trim()) {
+    display += ` (${cleanText(address.details)})`;
+    return display; // Retornar inmediatamente para priorizar instrucciones de entrega
+  }
+  
+  // Añadir información adicional según el tipo de dirección
   switch (address.addressType) {
     case 'school': if (address.recipientName) display += ` (Recibe: ${cleanText(address.recipientName)})`; break;
     case 'complex': if (address.unitDetails) display += ` (${cleanText(address.unitDetails)})`; break;
     case 'shop': if (address.localName) display += ` (${cleanText(address.localName)})`; break;
     default: break;
   }
+  
   return display;
 };
 
@@ -50,7 +59,18 @@ export const getMealDetailsDisplay = (meal) => {
   components.push(`Adiciones: ${additions}`);
   components.push(`Notas: ${meal.notes ? cleanText(meal.notes) : 'Ninguna'}`);
   components.push(`Hora de Entrega: ${meal.time?.name || meal.time ? cleanText(meal.time?.name || meal.time) : 'No especificada'}`);
-  components.push(`Dirección: ${getAddressDisplay(meal.address)}`);
+  // Dirección con instrucciones de entrega incluidas si existen
+  const addressDisplay = meal.address?.address ? 
+    `${meal.address.address}${meal.address?.details && meal.address.details.trim() ? ` (${cleanText(meal.address.details)})` : ''}` : 
+    'No especificada';
+  
+  components.push(`Dirección: ${addressDisplay}`);
+  
+  // Instrucciones de entrega como campo separado para referencia adicional
+  if (meal.address?.details && meal.address.details.trim()) {
+    components.push(`Instrucciones de entrega: ${cleanText(meal.address.details)}`);
+  }
+  
   let addressTypeDisplay = '';
   switch (meal.address?.addressType) {
     case 'house': addressTypeDisplay = 'Casa/Apto'; break;

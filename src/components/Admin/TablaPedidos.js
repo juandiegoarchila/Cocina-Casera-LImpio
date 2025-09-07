@@ -660,8 +660,10 @@ const TablaPedidos = ({
                                 Ver
                               </button>
                             </td>
-                            <td className="p-2 sm:p-3 text-gray-300 max-w-[150px] sm:max-w-xs overflow-hidden text-ellipsis whitespace-nowrap">
-                              {addressDisplay}
+                            <td className="p-2 sm:p-3 text-gray-300 max-w-[250px] sm:max-w-xs">
+                              <div className="text-xs sm:text-sm break-words whitespace-pre-wrap">
+                                {addressDisplay}
+                              </div>
                             </td>
                             <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">
                               {order.meals?.[0]?.address?.phoneNumber ||

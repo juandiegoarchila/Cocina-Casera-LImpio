@@ -5,7 +5,7 @@ import { calculateMealPrice } from '../utils/MealCalculations';
 
 // Constantes globales
 const fieldsToCheck = ['Sopa', 'Principio', 'Proteína', 'Bebida', 'Cubiertos', 'Acompañamientos', 'Hora', 'Dirección', 'Pago', 'Adiciones', 'Mesa'];
-const addressFields = ['address', 'addressType', 'recipientName', 'phoneNumber', 'unitDetails', 'localName'];
+const addressFields = ['address', 'addressType', 'recipientName', 'phoneNumber', 'details', 'unitDetails', 'localName'];
 const specialRiceOptions = ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'];
 
 // Función utilitaria para limpiar texto
@@ -202,14 +202,18 @@ const useOrderSummary = (meals, isWaiterView, calculateTotal, preCalculatedTotal
 
 // Componente para renderizar direcciones
 const AddressSummary = ({ commonAddressFields = {}, mealAddress, isCommon = false, globalCommonAddressFields = {} }) => {
+  const effectiveAddress = mealAddress || commonAddressFields;
+  const effectiveAddressType = effectiveAddress?.addressType || '';
+
   const renderAddressField = (field, value, addrType) => {
     if ((field === 'address' || field === 'addressType' || field === 'phoneNumber') && globalCommonAddressFields[field] && !isCommon) {
       return null;
     }
     if (field === 'address' && value) {
+      // Agregar instrucciones de entrega a la dirección si existen
       return (
         <p key={field} className="text-xs sm:text-sm text-gray-600">
-          📍 Dirección: {value}
+          📍 Dirección: {value}{effectiveAddress?.details ? ` (${effectiveAddress.details})` : ''}
         </p>
       );
     } else if (field === 'addressType' && value) {
@@ -229,6 +233,12 @@ const AddressSummary = ({ commonAddressFields = {}, mealAddress, isCommon = fals
           📞 Teléfono: {value}
         </p>
       );
+    } else if (field === 'details' && value) {
+      return (
+        <p key={field} className="text-xs sm:text-sm text-gray-600 font-medium">
+          📝 Instrucciones de entrega: {value}
+        </p>
+      );
     } else if (field === 'unitDetails' && addrType === 'complex' && value) {
       return <p key={field} className="text-xs sm:text-sm text-gray-600">🏢 Detalles: {value}</p>;
     } else if (field === 'localName' && addrType === 'shop' && value) {
@@ -236,9 +246,6 @@ const AddressSummary = ({ commonAddressFields = {}, mealAddress, isCommon = fals
     }
     return null;
   };
-
-  const effectiveAddress = mealAddress || commonAddressFields;
-  const effectiveAddressType = effectiveAddress?.addressType || '';
 
   return (
     <div className="relative">

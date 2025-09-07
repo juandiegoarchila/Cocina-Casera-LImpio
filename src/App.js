@@ -330,6 +330,7 @@ const order = {
         recipientName: item.address?.recipientName || '',
         unitDetails: item.address?.unitDetails || '',
         localName: item.address?.localName || '',
+        details: item.address?.details || '',  // Añadir instrucciones de entrega
       },
       payment: { name: item.payment?.name || 'Efectivo' },
       notes: item.notes || '',
@@ -355,6 +356,7 @@ const order = {
           recipientName: item.address?.recipientName || '',
           unitDetails: item.address?.unitDetails || '',
           localName: item.address?.localName || '',
+          details: item.address?.details || '',  // Añadir instrucciones de entrega
         },
         payment: { name: item.payment?.name || 'Efectivo' },
         time: item.time?.name || '',

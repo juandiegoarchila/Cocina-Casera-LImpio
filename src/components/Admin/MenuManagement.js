@@ -67,6 +67,7 @@ const MenuManagement = ({ setError, setSuccess, theme }) => {
     breakfastAdditions: 'Adiciones para Desayuno',
     breakfastTypes: 'Tipos de Desayuno',
     breakfastProteins: 'Proteínas para Desayuno',
+    tables: 'Mesas',
     schedules: 'Horarios de Menú',
   };
   const collections = Object.keys(collectionNames);
