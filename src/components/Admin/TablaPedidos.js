@@ -73,7 +73,7 @@ const paymentsRowsFromOrder = (order, fallbackBuilder) => {
   return [{ methodKey: 'other', amount: total }];
 };
 
-const sumPaymentsByDeliveryAndType = (orders, { fallbackBuilder } = {}) => {
+const sumPaymentsByDeliveryAndType = (orders, { fallbackBuilder, filter } = {}) => {
   const acc = {};
   const ensureBucket = (person, bucket) => {
     acc[person] = acc[person] || {};
@@ -86,7 +86,9 @@ const sumPaymentsByDeliveryAndType = (orders, { fallbackBuilder } = {}) => {
     obj.total += amount;
   };
 
-  (orders || []).forEach((order) => {
+  (orders || [])
+    .filter(order => !filter || filter(order))
+    .forEach((order) => {
     const person = String(order?.deliveryPerson || 'JUAN').trim(); // default "JUAN" si no hay asignado
     const isBreakfast = Array.isArray(order?.breakfasts) || order?.type === 'breakfast';
     const bucket = isBreakfast ? 'breakfast' : 'lunch';
@@ -382,8 +384,8 @@ const TablaPedidos = ({
   const resumen = useMemo(
     () => sumPaymentsByDeliveryAndType(orders || [], { 
       fallbackBuilder: defaultPaymentsForOrder,
-      // Solo incluir pedidos no liquidados en el resumen
-      filter: order => !order.settled 
+      // Solo incluir pedidos no liquidados y no cancelados en el resumen
+      filter: order => !order.settled && order.status !== 'Cancelado'
     }),
     [orders]
   );
