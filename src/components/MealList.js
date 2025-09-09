@@ -128,7 +128,7 @@ const MealList = ({
             <span className="font-bold">¡Configura tu almuerzo!</span>
           </h3>
           <p className="text-xs sm:text-sm text-blue-700 leading-relaxed">
-            <strong className="font-bold">Desliza</strong> para navegar por las opciones. Cada almuerzo se <strong className="font-bold">esconde en 30 segundos</strong> al completarse.
+            <strong className="font-bold">Desliza</strong> para navegar por las opciones. Cada almuerzo se <strong className="font-bold">esconde en 10 segundos</strong> al completarse.
           </p>
           <p className="text-xs sm:text-sm text-blue-700 leading-relaxed mt-1">
             ¿Quieres verlo de nuevo? ¡Solo <strong>haz clic</strong>!

@@ -37,7 +37,7 @@ const MealItem = ({
   isTableOrder = false,
   userRole, // Nuevo prop para identificar el rol
 }) => {
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(meal?.__startCollapsed ? false : true);
   const [isAdditionsExpanded, setIsAdditionsExpanded] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [collapseTimeout, setCollapseTimeout] = useState(null);
@@ -170,7 +170,7 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
         currentSlideIsComplete = true;
         if (field === 'additions' && isAdditionsExpanded) {
           if (collapseTimeout) clearTimeout(collapseTimeout);
-          const timeout = setTimeout(() => setIsAdditionsExpanded(false), 45000);
+          const timeout = setTimeout(() => setIsAdditionsExpanded(false), 10000);
           setCollapseTimeout(timeout);
         }
         break;
@@ -604,7 +604,7 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
       timer = setTimeout(() => {
         if (containerRef.current) containerRef.current.style.height = '0';
         setTimeout(() => setIsExpanded(false), 300);
-      }, 30000);
+  }, 10000);
     }
     return () => clearTimeout(timer);
   }, [isComplete, currentSlide, slides.length]);

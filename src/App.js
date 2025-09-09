@@ -189,6 +189,14 @@ return () => {
     }
   }, [successMessage]);
 
+  // Asegura que al no haber almuerzos, no arrastremos el slide/índice incompleto
+  useEffect(() => {
+    if (meals.length === 0) {
+      setIncompleteMealIndex(null);
+      setIncompleteSlideIndex(null);
+    }
+  }, [meals.length]);
+
   useEffect(() => {
   const handler = (e) => {
     const a = e.detail || {};
@@ -730,8 +738,23 @@ await sendToWhatsApp(
                         paymentMethods={paymentMethods}
                         isTableOrder={false}
                         onMealChange={(id, field, value) => handleMealChange(setMeals, id, field, value)}
-                        onRemoveMeal={(id) => removeMeal(setMeals, setSuccessMessage, id, meals)}
-                        onAddMeal={() => addMeal(setMeals, setSuccessMessage, meals, initialMeal)}
+                        onRemoveMeal={(id) => {
+                          // Eliminamos y, si queda vacío, limpiamos estados de incompletos
+                          removeMeal(setMeals, setSuccessMessage, id, meals);
+                          const willBeEmpty = meals.length <= 1;
+                          if (willBeEmpty) {
+                            setIncompleteMealIndex(null);
+                            setIncompleteSlideIndex(null);
+                          }
+                        }}
+                        onAddMeal={() => {
+                          // Si no hay almuerzos (caso "eliminé todos"), limpiar índices para iniciar en Sopa
+                          if (meals.length === 0) {
+                            setIncompleteMealIndex(null);
+                            setIncompleteSlideIndex(null);
+                          }
+                          addMeal(setMeals, setSuccessMessage, meals, initialMeal);
+                        }}
                         onDuplicateMeal={(meal) => duplicateMeal(setMeals, setSuccessMessage, meal, meals)}
                         incompleteMealIndex={incompleteMealIndex}
                         incompleteSlideIndex={incompleteSlideIndex}

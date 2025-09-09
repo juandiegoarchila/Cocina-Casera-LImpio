@@ -51,6 +51,7 @@ export const duplicateMeal = (setMeals, setSuccessMessage, mealToDuplicate, meal
     const newMeal = JSON.parse(JSON.stringify({
       ...mealToDuplicate,
       id: newId,
+  __startCollapsed: true,
     }));
     const originalIndex = prev.findIndex(meal => meal.id === mealToDuplicate.id);
     const newMeals = [...prev];
