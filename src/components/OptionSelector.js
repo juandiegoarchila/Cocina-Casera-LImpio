@@ -10,6 +10,7 @@ const OptionSelector = ({
   selected = [],
   showReplacements: propShowReplacements = false,
   replacements = [],
+  selectedReplacement = null,
   multiple = false,
   className = '',
   disabled = false,
@@ -29,11 +30,66 @@ const OptionSelector = ({
   const [showWarning, setShowWarning] = useState(false);
 
   useEffect(() => {
-    setPendingSelection(multiple ? (Array.isArray(selected) ? selected : []) : selected);
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[OptionSelector] pendingSelection inicializado:', multiple ? (Array.isArray(selected) ? selected : []) : selected);
+    let initialSelection = multiple ? (Array.isArray(selected) ? selected : []) : selected;
+    
+    // Debug específico para Principio
+    if (title === 'Principio' && process.env.NODE_ENV === 'development') {
+      console.log('[OptionSelector DEBUG] Principio useEffect iniciando:', {
+        selectedReplacement,
+        initialSelection,
+        multiple,
+        selectedProp: selected,
+        hasSelectedReplacement: !!selectedReplacement
+      });
     }
-  }, [selected, multiple]);
+    
+    // Si hay un reemplazo seleccionado para Principio, asegurar que "Remplazo por Principio" esté seleccionado
+    if (title === 'Principio' && selectedReplacement && multiple) {
+      const currentSelectionArray = Array.isArray(initialSelection) ? initialSelection : [];
+      const hasReplacementOption = currentSelectionArray.some(opt => opt?.name === 'Remplazo por Principio');
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[OptionSelector DEBUG] Principio con reemplazo:', {
+          currentSelectionArray,
+          hasReplacementOption,
+          optionsLength: options.length
+        });
+      }
+      
+      if (!hasReplacementOption && options.length > 0) {
+        const replacementOption = options.find(opt => opt?.name === 'Remplazo por Principio');
+        if (replacementOption) {
+          // Si no hay selección previa, usar solo el reemplazo
+          // Si hay selección previa, agregarla a la lista
+          initialSelection = currentSelectionArray.length > 0 
+            ? [...currentSelectionArray, replacementOption]
+            : [replacementOption];
+          
+          if (process.env.NODE_ENV === 'development') {
+            console.log('[OptionSelector DEBUG] Principio - agregando Remplazo por Principio:', {
+              previousSelection: currentSelectionArray,
+              newSelection: initialSelection,
+              replacementOption
+            });
+          }
+        } else {
+          if (process.env.NODE_ENV === 'development') {
+            console.log('[OptionSelector DEBUG] Principio - NO encontró Remplazo por Principio en options');
+          }
+        }
+      }
+    }
+    
+    setPendingSelection(initialSelection);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[OptionSelector] pendingSelection inicializado:', {
+        title,
+        selectedReplacement,
+        initialSelection,
+        hasReplacement: selectedReplacement ? true : false
+      });
+    }
+  }, [selected, multiple, title, selectedReplacement, options]);
 
   useEffect(() => {
     let shouldShow = propShowReplacements && Array.isArray(replacements) && replacements.length > 0;
@@ -56,11 +112,25 @@ const OptionSelector = ({
         }
       }
     } else if (title === 'Sopa') {
-      shouldShow = pendingSelection?.name === 'Remplazo por Sopa';
+      shouldShow = pendingSelection?.name === 'Remplazo por Sopa' || !!selectedReplacement;
     } else if (title === 'Principio') {
-      shouldShow =
-        (multiple && Array.isArray(pendingSelection) && pendingSelection.some((opt) => opt.name === 'Remplazo por Principio')) ||
-        (!multiple && pendingSelection?.name === 'Remplazo por Principio');
+      const hasReplacementInSelection = multiple && Array.isArray(pendingSelection) && pendingSelection.some((opt) => opt.name === 'Remplazo por Principio');
+      const hasNonMultipleReplacement = !multiple && pendingSelection?.name === 'Remplazo por Principio';
+      const hasSelectedReplacement = !!selectedReplacement;
+      
+      shouldShow = hasReplacementInSelection || hasNonMultipleReplacement || hasSelectedReplacement;
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[OptionSelector DEBUG] Principio shouldShow calculation:', {
+          hasReplacementInSelection,
+          hasNonMultipleReplacement,
+          hasSelectedReplacement,
+          finalShouldShow: shouldShow,
+          pendingSelection,
+          selectedReplacement,
+          multiple
+        });
+      }
     }
 
     setShowReplacement(shouldShow);
@@ -392,6 +462,32 @@ const OptionSelector = ({
             selectedOption.replacement === replacement.name)
         );
       } else if (title === 'Sopa' || title === 'Principio') {
+        // Verificar primero el selectedReplacement prop
+        if (selectedReplacement) {
+          // selectedReplacement puede ser string o objeto
+          const replacementName = typeof selectedReplacement === 'string' 
+            ? selectedReplacement 
+            : selectedReplacement.name;
+          
+          if (process.env.NODE_ENV === 'development' && title === 'Principio') {
+            console.log('[OptionSelector DEBUG] isReplacementSelected for Principio:', {
+              replacementBeingChecked: replacement.name,
+              selectedReplacement,
+              selectedReplacementType: typeof selectedReplacement,
+              replacementName,
+              replacementId: replacement.id,
+              selectedReplacementId: selectedReplacement?.id,
+              isMatch: replacementName === replacement.name,
+              isIdMatch: selectedReplacement?.id === replacement.id
+            });
+          }
+          
+          // Comparar tanto por nombre como por ID para mayor robustez
+          if (replacementName === replacement.name || selectedReplacement?.id === replacement.id) {
+            return true;
+          }
+        }
+        
         return (
           pendingSelection?.replacement === replacement.name ||
           (Array.isArray(pendingSelection) &&
@@ -401,7 +497,7 @@ const OptionSelector = ({
       }
       return false;
     },
-    [pendingSelection, selected, currentConfiguring, title]
+    [pendingSelection, selected, currentConfiguring, title, selectedReplacement]
   );
 
   // Analiza el texto de visualización y extrae la descripción si el nombre incluye "(Nuevo)"
@@ -433,11 +529,28 @@ const OptionSelector = ({
       ) {
         return `${baseName} (${selectedOption.replacement})`;
       }
-    } else if (
-      (title === 'Sopa' && option.name === 'Remplazo por Sopa' && selectedOption.replacement) ||
-      (title === 'Principio' && option.name === 'Remplazo por Principio' && selectedOption.replacement)
-    ) {
-      return `${baseName} (${selectedOption.replacement})`;
+    } else if (title === 'Sopa' && option.name === 'Remplazo por Sopa') {
+      const replacementText = typeof selectedReplacement === 'object' && selectedReplacement 
+        ? selectedReplacement.name 
+        : selectedReplacement || selectedOption.replacement;
+      if (replacementText) {
+        return `${baseName} (${replacementText})`;
+      }
+    } else if (title === 'Principio' && option.name === 'Remplazo por Principio') {
+      const replacementText = typeof selectedReplacement === 'object' && selectedReplacement 
+        ? selectedReplacement.name 
+        : selectedReplacement || selectedOption.replacement;
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[OptionSelector] Principio replacement debug:', {
+          selectedReplacement,
+          selectedOptionReplacement: selectedOption.replacement,
+          replacementText,
+          optionName: option.name
+        });
+      }
+      if (replacementText) {
+        return `${baseName} (${replacementText})`;
+      }
     }
     return baseName;
   };
@@ -533,8 +646,20 @@ const OptionSelector = ({
               </div>
             </div>
             <div className="grid grid-cols-1 gap-1">
-              {replacements.map((replacement, idx) => (
-                <div key={replacement.id || idx} className="relative">
+              {replacements.map((replacement, idx) => {
+                // Debug para Principio antes del render
+                if (process.env.NODE_ENV === 'development' && title === 'Principio') {
+                  console.log(`[OptionSelector DEBUG] Rendering replacement ${idx + 1}/${replacements.length}:`, {
+                    replacementName: replacement.name,
+                    replacementId: replacement.id,
+                    isSelected: isReplacementSelected(replacement),
+                    selectedReplacement,
+                    hasSelectedReplacement: !!selectedReplacement
+                  });
+                }
+                
+                return (
+                  <div key={replacement.id || idx} className="relative">
                   <button
                     onClick={() => handleReplacementClick(replacement)}
                     disabled={disabled || replacement.isFinished}
@@ -578,8 +703,9 @@ const OptionSelector = ({
                       AGOTADO
                     </span>
                   )}
-                </div>
-              ))}
+                  </div>
+                );
+              })}
             </div>
             {showWarning && (
               <p className="text-[10px] text-red-600 bg-red-50 p-1 rounded mt-1">

@@ -8,6 +8,14 @@ import BreakfastOrderSummary from '../BreakfastOrderSummary';
 import { db } from '../../config/firebase';
 import { deleteDoc, doc, updateDoc, onSnapshot, collection } from 'firebase/firestore';
 import OptionSelector from '../OptionSelector';
+
+// Lista de barrios disponibles
+const BARRIOS = [
+  "Gaitana",
+  "Lisboa",
+  "Berlín",
+  "Tibabuyes",
+];
 import { calculateTotal } from '../../utils/MealCalculations';
 import { calculateBreakfastPrice } from '../../utils/BreakfastCalculations';
 
@@ -21,15 +29,65 @@ const byName = (list, value) => {
   return list.find((o) => normalizeName(o.name) === normalizeName(name)) || null;
 };
 
+// Función específica para reemplazos que maneja más casos
+const byNameReplacement = (list, value) => {
+  if (!value) return null;
+  
+  // Si es string, buscar directamente
+  if (typeof value === 'string') {
+    const found = list.find((o) => normalizeName(o.name) === normalizeName(value));
+    if (found) return found;
+    
+    // Buscar por coincidencia parcial si no se encuentra exacta
+    const partialMatch = list.find((o) => 
+      normalizeName(o.name).includes(normalizeName(value)) ||
+      normalizeName(value).includes(normalizeName(o.name))
+    );
+    if (partialMatch) return partialMatch;
+  }
+  
+  // Si es objeto, intentar varias propiedades
+  if (typeof value === 'object') {
+    const possibleNames = [
+      value.name,
+      value.replacement,
+      value.replacementName,
+      value.replacementText
+    ].filter(Boolean);
+    
+    for (const name of possibleNames) {
+      // Busqueda exacta primero
+      let found = list.find((o) => normalizeName(o.name) === normalizeName(name));
+      if (found) return found;
+      
+      // Busqueda parcial como fallback
+      found = list.find((o) => 
+        normalizeName(o.name).includes(normalizeName(name)) ||
+        normalizeName(name).includes(normalizeName(o.name))
+      );
+      if (found) return found;
+    }
+  }
+  
+  // Fallback final: si el valor parece ser un reemplazo pero no se encontró,
+  // intentar crear un objeto temporal con el nombre
+  if (typeof value === 'string' && value.trim()) {
+    return { name: value.trim(), id: `temp-${Date.now()}` };
+  }
+  
+  return null;
+};
+
 const manyByName = (list, arr) => (Array.isArray(arr) ? arr.map((v) => byName(list, v)).filter(Boolean) : []);
 
 const ensureAddress = (addr = {}, fallback = {}) => ({
   address: addr.address ?? fallback.address ?? '',
   phoneNumber: addr.phoneNumber ?? fallback.phoneNumber ?? '',
-  addressType: addr.addressType ?? fallback.addressType ?? '',
+  neighborhood: addr.neighborhood ?? fallback.neighborhood ?? '',
   localName: addr.localName ?? fallback.localName ?? '',
   unitDetails: addr.unitDetails ?? fallback.unitDetails ?? '',
   recipientName: addr.recipientName ?? fallback.recipientName ?? '',
+  details: addr.details ?? fallback.details ?? '',
 });
 
 const InteraccionesPedidos = ({
@@ -216,15 +274,57 @@ const InteraccionesPedidos = ({
       }));
       handleEditFormFieldChange('breakfasts', breakfasts);
     } else {
+      // Debug temporal para ver los datos crudos del ADMIN
+      console.log('🔍 ADMIN DEBUG principleReplacement:', {
+        meals: editingOrder.meals,
+        soupReplacements: soupReplacements,
+        firstMeal: editingOrder.meals?.[0],
+        soupReplacementValue: editingOrder.meals?.[0]?.soupReplacement,
+        principleReplacementValue: editingOrder.meals?.[0]?.principleReplacement
+      });
+      
       const meals = (editingOrder.meals || []).map((m) => ({
         soup: byName(soups, m.soup),
-        soupReplacement:
-          typeof m.soupReplacement === 'string' ? m.soupReplacement : m.soupReplacement?.replacement || '',
-        principle: Array.isArray(m.principle) ? m.principle.map((p) => byName(principles, p)).filter(Boolean) : [],
-        principleReplacement:
-          typeof m.principleReplacement === 'string'
-            ? m.principleReplacement
-            : m.principleReplacement?.replacement || '',
+        soupReplacement: byNameReplacement(soupReplacements, m.soupReplacement),
+        // Construir principle inicial (sin placeholder) y principleRaw
+        principle: (() => {
+          const base = Array.isArray(m.principle)
+            ? m.principle.map((p) => byName(principles, p)).filter(Boolean)
+            : [];
+          return base;
+        })(),
+        principleRaw: Array.isArray(m.principle) ? m.principle : [],
+        principleReplacement: (() => {
+          // 1. Campo dedicado
+          const found = byNameReplacement(soupReplacements, m.principleReplacement);
+          if (found) return { name: found.name };
+          if (typeof m.principleReplacement === 'string' && m.principleReplacement.trim()) return { name: m.principleReplacement.trim() };
+          if (typeof m.principleReplacement === 'object' && m.principleReplacement?.name) return { name: m.principleReplacement.name };
+          // 2. Derivar de placeholder embebido
+            if (Array.isArray(m.principle)) {
+              const placeholder = m.principle.find(p => {
+                const n = typeof p === 'string' ? p : p?.name;
+                return n && n.toLowerCase().includes('remplazo por principio');
+              });
+              if (placeholder) {
+                let candidate = '';
+                if (typeof placeholder === 'object') {
+                  let rawCandidate = placeholder.replacement || placeholder.selectedReplacement || placeholder.value || '';
+                  if (rawCandidate && typeof rawCandidate === 'object') rawCandidate = rawCandidate.name || '';
+                  candidate = rawCandidate;
+                  if (!candidate && typeof placeholder.name === 'string') {
+                    const match = placeholder.name.match(/remplazo por principio\s*\(([^)]+)\)/i);
+                    if (match && match[1]) candidate = match[1];
+                  }
+                } else if (typeof placeholder === 'string') {
+                  const match = placeholder.match(/remplazo por principio\s*\(([^)]+)\)/i);
+                  if (match && match[1]) candidate = match[1];
+                }
+                if (candidate && typeof candidate === 'string' && candidate.trim()) return { name: candidate.trim() };
+              }
+            }
+          return null;
+        })(),
         protein: byName(menuProteins, m.protein),
         drink: byName(drinks, m.drink),
         sides: manyByName(sides, m.sides),
@@ -240,7 +340,28 @@ const InteraccionesPedidos = ({
         time: typeof m.time === 'string' ? m.time : m.time?.name || '',
         address: ensureAddress(m.address, fallbackAddress),
         notes: m.notes || '',
-      }));
+        }));
+
+      // Segunda pasada: si hay principleReplacement y no está el placeholder, insertarlo para edición (visual en verde)
+      const placeholderPrinciple = principles.find(p => p.name === 'Remplazo por Principio');
+      meals.forEach(mealObj => {
+        if (mealObj.principleReplacement && placeholderPrinciple) {
+          const hasPlaceholder = Array.isArray(mealObj.principle) && mealObj.principle.some(p => p?.name === 'Remplazo por Principio');
+          if (!hasPlaceholder) {
+            mealObj.principle = [placeholderPrinciple];
+            try { console.log('[EDIT HYDRATE DEBUG] Inserted placeholder Remplazo por Principio for meal with replacement:', mealObj.principleReplacement); } catch(_) {}
+          }
+        }
+      });
+        
+      // Debug: verificar qué devuelve byNameReplacement para cada reemplazo en ADMIN
+      console.log('🔍 ADMIN DEBUG byNameReplacement results:', {
+        soupReplacementResult: byNameReplacement(soupReplacements, editingOrder.meals?.[0]?.soupReplacement),
+        principleReplacementResult: byNameReplacement(soupReplacements, editingOrder.meals?.[0]?.principleReplacement),
+        mealsAfterTransformation: meals,
+        firstMealAfterTransform: meals[0]
+      });
+        
       handleEditFormFieldChange('meals', meals);
     }
 
@@ -273,8 +394,68 @@ const InteraccionesPedidos = ({
   }, [editingOrder, editForm.meals, handleEditFormFieldChange, calculateTotal]);
 
   // Soporta lunch (meals) y breakfast (breakfasts)
+  // Normaliza mealsForDetails para asegurar que principleReplacement siempre sea objeto { name: ... }
   const mealsForDetails = Array.isArray(showMealDetails?.meals)
-    ? showMealDetails.meals
+    ? showMealDetails.meals.map((m) => ({
+        ...m,
+  principleRaw: Array.isArray(m.principle) ? m.principle : [],
+        principle: Array.isArray(m.principle)
+          ? m.principle
+              .map((p) => {
+                const name = typeof p === 'string' ? p : p?.name;
+                // Ignorar el placeholder 'Remplazo por Principio' para que no aparezca como principio normal
+                if (name && name.toLowerCase().includes('remplazo por principio')) return null;
+                return byName(principles, p);
+              })
+              .filter(Boolean)
+          : [],
+        principleReplacement: (() => {
+          try {
+            console.log('[DETAILS DEBUG] Raw meal for details:', {
+              principleRaw: m.principle,
+              principleReplacementRaw: m.principleReplacement,
+              hasArray: Array.isArray(m.principle),
+              typePrincipleReplacement: typeof m.principleReplacement,
+            });
+          } catch(_) {}
+          // 1. Intentar con el campo dedicado
+          const found = byNameReplacement(soupReplacements, m.principleReplacement);
+          if (found) return { name: found.name };
+          if (typeof m.principleReplacement === 'string' && m.principleReplacement.trim()) return { name: m.principleReplacement.trim() };
+          if (typeof m.principleReplacement === 'object' && m.principleReplacement?.name) return { name: m.principleReplacement.name };
+
+          // 2. Derivar desde el array principle si trae el placeholder con un replacement embebido
+          if (Array.isArray(m.principle)) {
+            const replEntry = m.principle.find((p) => {
+              const n = typeof p === 'string' ? p : p?.name;
+              return n && n.toLowerCase().includes('remplazo por principio');
+            });
+            if (replEntry) {
+              let candidate = '';
+              if (typeof replEntry === 'object') {
+                let rawCandidate = replEntry.replacement || replEntry.selectedReplacement || replEntry.value || '';
+                if (rawCandidate && typeof rawCandidate === 'object') {
+                  rawCandidate = rawCandidate.name || '';
+                }
+                candidate = rawCandidate;
+                if (!candidate && typeof replEntry.name === 'string') {
+                  const match = replEntry.name.match(/remplazo por principio\s*\(([^)]+)\)/i);
+                  if (match && match[1]) candidate = match[1];
+                }
+              }
+              if (typeof replEntry === 'string') {
+                const match = replEntry.match(/remplazo por principio\s*\(([^)]+)\)/i);
+                if (match && match[1]) candidate = match[1];
+              }
+              if (candidate && typeof candidate === 'string' && candidate.trim()) {
+                try { console.log('[DETAILS DEBUG] Derived from placeholder entry:', replEntry, '=>', candidate); } catch(_) {}
+                return { name: candidate.trim() };
+              }
+            }
+          }
+          return null;
+        })(),
+      }))
     : Array.isArray(showMealDetails?.breakfasts)
     ? showMealDetails.breakfasts
     : [];
@@ -717,52 +898,28 @@ const InteraccionesPedidos = ({
                             />
                           </div>
                           <div>
-                            <label className="block text-sm font-medium mb-1">Tipo de Dirección</label>
+                            <label className="block text-sm font-medium mb-1">Barrio</label>
                             <select
-                              value={row.address?.addressType || ''}
-                              onChange={(e) => handleBreakfastFormFieldChange(idx, 'address.addressType', e.target.value)}
+                              value={row.address?.neighborhood || ''}
+                              onChange={(e) => handleBreakfastFormFieldChange(idx, 'address.neighborhood', e.target.value)}
                               className={classNames('w-full p-2 rounded-md border text-sm', theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900', 'focus:outline-none focus:ring-1 focus:ring-blue-500')}
                             >
-                              <option value="">Seleccione</option>
-                              <option value="house">Casa/Apto</option>
-                              <option value="school">Colegio/Oficina</option>
-                              <option value="complex">Conjunto</option>
-                              <option value="shop">Tienda/Local</option>
+                              <option value="">Seleccione un barrio</option>
+                              {BARRIOS.map((barrio) => (
+                                <option key={barrio} value={barrio}>{barrio}</option>
+                              ))}
                             </select>
                           </div>
-                          {row.address?.addressType === 'shop' && (
-                            <div>
-                              <label className="block text-sm font-medium mb-1">Nombre del Local</label>
-                              <input
-                                type="text"
-                                value={row.address?.localName || ''}
-                                onChange={(e) => handleBreakfastFormFieldChange(idx, 'address.localName', e.target.value)}
-                                className={classNames('w-full p-2 rounded-md border text-sm', theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900', 'focus:outline-none focus:ring-1 focus:ring-blue-500')}
-                              />
-                            </div>
-                          )}
-                          {row.address?.addressType === 'school' && (
-                            <div>
-                              <label className="block text-sm font-medium mb-1">Nombre del destinatario</label>
-                              <input
-                                type="text"
-                                value={row.address?.recipientName || ''}
-                                onChange={(e) => handleBreakfastFormFieldChange(idx, 'address.recipientName', e.target.value)}
-                                className={classNames('w-full p-2 rounded-md border text-sm', theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900', 'focus:outline-none focus:ring-1 focus:ring-blue-500')}
-                              />
-                            </div>
-                          )}
-                          {row.address?.addressType === 'complex' && (
-                            <div>
-                              <label className="block text-sm font-medium mb-1">Detalles (Torre/Apto)</label>
-                              <input
-                                type="text"
-                                value={row.address?.unitDetails || ''}
-                                onChange={(e) => handleBreakfastFormFieldChange(idx, 'address.unitDetails', e.target.value)}
-                                className={classNames('w-full p-2 rounded-md border text-sm', theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900', 'focus:outline-none focus:ring-1 focus:ring-blue-500')}
-                              />
-                            </div>
-                          )}
+                          <div className="sm:col-span-2">
+                            <label className="block text-sm font-medium mb-1">Instrucciones de entrega</label>
+                            <input
+                              type="text"
+                              value={row.address?.details || ''}
+                              onChange={(e) => handleBreakfastFormFieldChange(idx, 'address.details', e.target.value)}
+                              placeholder="Ej: Spa, Gabriel maria, Interior 12..."
+                              className={classNames('w-full p-2 rounded-md border text-sm', theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900', 'focus:outline-none focus:ring-1 focus:ring-blue-500')}
+                            />
+                          </div>
                           <div className="sm:col-span-2">
                             <label className="block text-sm font-medium mb-1">Notas</label>
                             <input
@@ -777,7 +934,17 @@ const InteraccionesPedidos = ({
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <div>
                             <label className="block text-sm font-medium mb-1">Sopa o reemplazo</label>
-                            <OptionSelector title="Sopa" emoji="🥣" options={soups} selected={row.soup || null} multiple={false} onImmediateSelect={(v) => handleMealFormFieldChange(idx, 'soup', v)} />
+                            <OptionSelector 
+                              title="Sopa" 
+                              emoji="🥣" 
+                              options={soups} 
+                              selected={row.soup || null} 
+                              multiple={false} 
+                              replacements={soupReplacements}
+                              selectedReplacement={row.soupReplacement}
+                              onImmediateSelect={(v) => handleMealFormFieldChange(idx, 'soup', v)} 
+                              onImmediateReplacementSelect={(option) => handleMealFormFieldChange(idx, 'soupReplacement', option)}
+                            />
                           </div>
                           <div>
                             <label className="block text-sm font-medium mb-1">Principio</label>
@@ -788,8 +955,11 @@ const InteraccionesPedidos = ({
                               selected={row.principle || []}
                               multiple={true}
                               showConfirmButton={true}
+                              replacements={soupReplacements}
+                              selectedReplacement={row.principleReplacement}
                               onImmediateSelect={(selection) => handleMealFormFieldChange(idx, 'principle', selection)}
                               onConfirm={({ selection }) => handleMealFormFieldChange(idx, 'principle', selection)}
+                              onImmediateReplacementSelect={(option) => handleMealFormFieldChange(idx, 'principleReplacement', option)}
                             />
                           </div>
                           <div>
@@ -862,52 +1032,28 @@ const InteraccionesPedidos = ({
                             />
                           </div>
                           <div>
-                            <label className="block text-sm font-medium mb-1">Tipo de Dirección</label>
+                            <label className="block text-sm font-medium mb-1">Barrio</label>
                             <select
-                              value={row.address?.addressType || ''}
-                              onChange={(e) => handleMealFormFieldChange(idx, 'address.addressType', e.target.value)}
+                              value={row.address?.neighborhood || ''}
+                              onChange={(e) => handleMealFormFieldChange(idx, 'address.neighborhood', e.target.value)}
                               className={classNames('w-full p-2 rounded-md border text-sm', theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900', 'focus:outline-none focus:ring-1 focus:ring-blue-500')}
                             >
-                              <option value="">Seleccione</option>
-                              <option value="house">Casa/Apto</option>
-                              <option value="school">Colegio/Oficina</option>
-                              <option value="complex">Conjunto</option>
-                              <option value="shop">Tienda/Local</option>
+                              <option value="">Seleccione un barrio</option>
+                              {BARRIOS.map((barrio) => (
+                                <option key={barrio} value={barrio}>{barrio}</option>
+                              ))}
                             </select>
                           </div>
-                          {row.address?.addressType === 'shop' && (
-                            <div>
-                              <label className="block text-sm font-medium mb-1">Nombre del Local</label>
-                              <input
-                                type="text"
-                                value={row.address?.localName || ''}
-                                onChange={(e) => handleMealFormFieldChange(idx, 'address.localName', e.target.value)}
-                                className={classNames('w-full p-2 rounded-md border text-sm', theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900', 'focus:outline-none focus:ring-1 focus:ring-blue-500')}
-                              />
-                            </div>
-                          )}
-                          {row.address?.addressType === 'school' && (
-                            <div>
-                              <label className="block text-sm font-medium mb-1">Nombre del destinatario</label>
-                              <input
-                                type="text"
-                                value={row.address?.recipientName || ''}
-                                onChange={(e) => handleMealFormFieldChange(idx, 'address.recipientName', e.target.value)}
-                                className={classNames('w-full p-2 rounded-md border text-sm', theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900', 'focus:outline-none focus:ring-1 focus:ring-blue-500')}
-                              />
-                            </div>
-                          )}
-                          {row.address?.addressType === 'complex' && (
-                            <div>
-                              <label className="block text-sm font-medium mb-1">Detalles (Torre/Apto)</label>
-                              <input
-                                type="text"
-                                value={row.address?.unitDetails || ''}
-                                onChange={(e) => handleMealFormFieldChange(idx, 'address.unitDetails', e.target.value)}
-                                className={classNames('w-full p-2 rounded-md border text-sm', theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900', 'focus:outline-none focus:ring-1 focus:ring-blue-500')}
-                              />
-                            </div>
-                          )}
+                          <div className="sm:col-span-2">
+                            <label className="block text-sm font-medium mb-1">Instrucciones de entrega</label>
+                            <input
+                              type="text"
+                              value={row.address?.details || ''}
+                              onChange={(e) => handleMealFormFieldChange(idx, 'address.details', e.target.value)}
+                              placeholder="Ej: Spa, Gabriel maria, Interior 12..."
+                              className={classNames('w-full p-2 rounded-md border text-sm', theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900', 'focus:outline-none focus:ring-1 focus:ring-blue-500')}
+                            />
+                          </div>
                           <div className="sm:col-span-2">
                             <label className="block text-sm font-medium mb-1">Notas</label>
                             <input
@@ -1105,7 +1251,10 @@ const InteraccionesPedidos = ({
       options={soups}
       selected={typeof meal.soup === 'string' ? soups.find(s => s.name === meal.soup) : meal.soup}
       multiple={false}
+      replacements={soupReplacements}
+      selectedReplacement={meal.soupReplacement}
       onImmediateSelect={(v) => handleNewOrderMealFormFieldChange(mealIndex, 'soup', v)}
+      onImmediateReplacementSelect={(option) => handleNewOrderMealFormFieldChange(mealIndex, 'soupReplacement', option)}
     />
   </div>
 
@@ -1118,8 +1267,11 @@ const InteraccionesPedidos = ({
       selected={Array.isArray(meal.principle) ? meal.principle : []}
       multiple={true}
       showConfirmButton={true}
+      replacements={soupReplacements}
+      selectedReplacement={meal.principleReplacement}
       onImmediateSelect={(selection) => handleNewOrderMealFormFieldChange(mealIndex, 'principle', selection)}
       onConfirm={({ selection }) => handleNewOrderMealFormFieldChange(mealIndex, 'principle', selection)}
+      onImmediateReplacementSelect={(option) => handleNewOrderMealFormFieldChange(mealIndex, 'principleReplacement', option)}
     />
   </div>
 
@@ -1239,71 +1391,22 @@ onImmediateSelect={(sel) =>
   </div>
 
   <div>
-    <label className="block text-sm font-medium mb-1">Tipo de Dirección</label>
+    <label className="block text-sm font-medium mb-1">Barrio</label>
     <select
-      value={meal.address?.addressType || ''}
-      onChange={e => handleNewOrderMealFormFieldChange(mealIndex, 'address.addressType', e.target.value)}
+      value={meal.address?.neighborhood || ''}
+      onChange={e => handleNewOrderMealFormFieldChange(mealIndex, 'address.neighborhood', e.target.value)}
       className={classNames(
         "w-full p-2 rounded-md border text-sm",
         theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
         "focus:outline-none focus:ring-1 focus:ring-blue-500"
       )}
     >
-      <option value="">Seleccione</option>
-      <option value="house">Casa/Apto</option>
-      <option value="school">Colegio/Oficina</option>
-      <option value="complex">Conjunto</option>
-      <option value="shop">Tienda/Local</option>
+      <option value="">Seleccione un barrio</option>
+      {BARRIOS.map(barrio => (
+        <option key={barrio} value={barrio}>{barrio}</option>
+      ))}
     </select>
   </div>
-
-  {meal.address?.addressType === 'shop' && (
-    <div>
-      <label className="block text-sm font-medium mb-1">Nombre del Local</label>
-      <input
-        type="text"
-        value={meal.address?.localName || ''}
-        onChange={e => handleNewOrderMealFormFieldChange(mealIndex, 'address.localName', e.target.value)}
-        className={classNames(
-          "w-full p-2 rounded-md border text-sm",
-          theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
-          "focus:outline-none focus:ring-1 focus:ring-blue-500"
-        )}
-      />
-    </div>
-  )}
-
-  {meal.address?.addressType === 'school' && (
-    <div>
-      <label className="block text-sm font-medium mb-1">Nombre del destinatario</label>
-      <input
-        type="text"
-        value={meal.address?.recipientName || ''}
-        onChange={e => handleNewOrderMealFormFieldChange(mealIndex, 'address.recipientName', e.target.value)}
-        className={classNames(
-          "w-full p-2 rounded-md border text-sm",
-          theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
-          "focus:outline-none focus:ring-1 focus:ring-blue-500"
-        )}
-      />
-    </div>
-  )}
-
-  {meal.address?.addressType === 'complex' && (
-    <div>
-      <label className="block text-sm font-medium mb-1">Detalles (Torre/Apto)</label>
-      <input
-        type="text"
-        value={meal.address?.unitDetails || ''}
-        onChange={e => handleNewOrderMealFormFieldChange(mealIndex, 'address.unitDetails', e.target.value)}
-        className={classNames(
-          "w-full p-2 rounded-md border text-sm",
-          theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
-          "focus:outline-none focus:ring-1 focus:ring-blue-500"
-        )}
-      />
-    </div>
-  )}
 
   <div className="sm:col-span-2">
     <label className="block text-sm font-medium mb-1">Notas</label>

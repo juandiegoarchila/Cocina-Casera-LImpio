@@ -5,7 +5,8 @@ import { calculateMealPrice } from '../utils/MealCalculations';
 
 // Constantes globales
 const fieldsToCheck = ['Sopa', 'Principio', 'Proteína', 'Bebida', 'Cubiertos', 'Acompañamientos', 'Hora', 'Dirección', 'Pago', 'Adiciones', 'Mesa'];
-const addressFields = ['address', 'addressType', 'recipientName', 'phoneNumber', 'details', 'unitDetails', 'localName'];
+// Campos de dirección vigentes (incluye barrio)
+const addressFields = ['address', 'neighborhood', 'phoneNumber', 'details'];
 const specialRiceOptions = ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'];
 
 // Función utilitaria para limpiar texto
@@ -202,55 +203,25 @@ const useOrderSummary = (meals, isWaiterView, calculateTotal, preCalculatedTotal
 
 // Componente para renderizar direcciones
 const AddressSummary = ({ commonAddressFields = {}, mealAddress, isCommon = false, globalCommonAddressFields = {} }) => {
-  const renderAddressField = (field, value, addrType) => {
-    if ((field === 'address' || field === 'addressType' || field === 'phoneNumber') && globalCommonAddressFields[field] && !isCommon) {
-      return null;
-    }
+  const renderAddressField = (field, value) => {
+    if ((field === 'address' || field === 'phoneNumber' || field === 'neighborhood') && globalCommonAddressFields[field] && !isCommon) return null;
     if (field === 'address' && value) {
-      return (
-        <p key={field} className="text-xs sm:text-sm text-gray-600">
-          📍 Dirección: {value}
-        </p>
-      );
-    } else if (field === 'addressType' && value) {
-      return (
-        <p key={field} className="text-xs sm:text-sm text-gray-600 font-medium">
-          🏠 Lugar de entrega: {value === 'house' ? 'Casa/Apartamento Individual' :
-            value === 'school' ? 'Colegio/Oficina' :
-            value === 'complex' ? 'Conjunto Residencial' :
-            value === 'shop' ? 'Tienda/Local' : 'No especificado'}
-        </p>
-      );
-    } else if (field === 'recipientName' && addrType === 'school' && value) {
-      return <p key={field} className="text-xs sm:text-sm text-gray-600">👤 Nombre: {value}</p>;
+      return <p key={field} className="text-xs sm:text-sm text-gray-600">📍 Dirección: {value}</p>;
+    } else if (field === 'neighborhood' && value) {
+      return <p key={field} className="text-xs sm:text-sm text-gray-600">🏘️ Barrio: {value}</p>;
     } else if (field === 'phoneNumber' && value) {
-      return (
-        <p key={field} className="text-xs sm:text-sm text-gray-600 font-medium">
-          📞 Teléfono: {value}
-        </p>
-      );
+      return <p key={field} className="text-xs sm:text-sm text-gray-600 font-medium">📞 Teléfono: {value}</p>;
     } else if (field === 'details' && value) {
-      return (
-        <p key={field} className="text-xs sm:text-sm text-gray-600">
-          📝 Instrucciones de entrega: {value}
-        </p>
-      );
-    } else if (field === 'unitDetails' && addrType === 'complex' && value) {
-      return <p key={field} className="text-xs sm:text-sm text-gray-600">🏢 Detalles: {value}</p>;
-    } else if (field === 'localName' && addrType === 'shop' && value) {
-      return <p key={field} className="text-xs sm:text-sm text-gray-600">🏬 Nombre del local: {value}</p>;
+      return <p key={field} className="text-xs sm:text-sm text-gray-600">📝 Instrucciones de entrega: {value}</p>;
     }
     return null;
   };
-
   const effectiveAddress = mealAddress || commonAddressFields;
-  const effectiveAddressType = effectiveAddress?.addressType || '';
-
   return (
     <div className="relative">
       {addressFields.map(field => {
-        const value = isCommon ? commonAddressFields[field] : effectiveAddress[field];
-        return renderAddressField(field, value, effectiveAddressType);
+        const value = isCommon ? commonAddressFields[field] : effectiveAddress?.[field];
+        return renderAddressField(field, value);
       }).filter(Boolean)}
     </div>
   );
@@ -275,12 +246,145 @@ const MealFields = ({ meal, commonFields, isWaiterView }) => {
     }
   }
   if (commonFields.has('Principio') || commonFields.has('all')) {
-    if (meal?.principle?.length > 0 || meal?.principleReplacement?.name) {
+    // Recalcular replacement de principio en tiempo de render para evitar casos donde no quedó seteado
+    const ensurePrincipleReplacement = (mealObj) => {
+      if (mealObj?.principleReplacement?.name) return mealObj.principleReplacement;
+      // Escanear principleRaw
+      if (Array.isArray(mealObj?.principleRaw)) {
+        const ph = mealObj.principleRaw.find(p => {
+          const n = typeof p === 'string' ? p : p?.name;
+          return n && n.toLowerCase().includes('remplazo por principio');
+        });
+        if (ph) {
+          let candidate = '';
+          if (typeof ph === 'object') {
+            let rawCandidate = ph.replacement || ph.selectedReplacement || ph.value || '';
+            if (rawCandidate && typeof rawCandidate === 'object') rawCandidate = rawCandidate.name || '';
+            candidate = rawCandidate;
+            if (!candidate && typeof ph.name === 'string') {
+              const match = ph.name.match(/remplazo por principio\s*\(([^)]+)\)/i);
+              if (match && match[1]) candidate = match[1];
+            }
+          } else if (typeof ph === 'string') {
+            const match = ph.match(/remplazo por principio\s*\(([^)]+)\)/i);
+            if (match && match[1]) candidate = match[1];
+          }
+          if (candidate && typeof candidate === 'string' && candidate.trim()) {
+            mealObj.principleReplacement = { name: candidate.trim() }; // mutación controlada solo para visual
+            return mealObj.principleReplacement;
+          }
+        }
+      }
+      // Escanear principle (por si quedó el placeholder ahí)
+      if (Array.isArray(mealObj?.principle)) {
+        const ph = mealObj.principle.find(p => {
+          const n = typeof p === 'string' ? p : p?.name;
+          return n && n.toLowerCase().includes('remplazo por principio');
+        });
+        if (ph) {
+          let candidate = '';
+          if (typeof ph === 'object') {
+            let rawCandidate = ph.replacement || ph.selectedReplacement || ph.value || '';
+            if (rawCandidate && typeof rawCandidate === 'object') rawCandidate = rawCandidate.name || '';
+            candidate = rawCandidate;
+            if (!candidate && typeof ph.name === 'string') {
+              const match = ph.name.match(/remplazo por principio\s*\(([^)]+)\)/i);
+              if (match && match[1]) candidate = match[1];
+            }
+          } else if (typeof ph === 'string') {
+            const match = ph.match(/remplazo por principio\s*\(([^)]+)\)/i);
+            if (match && match[1]) candidate = match[1];
+          }
+          if (candidate && typeof candidate === 'string' && candidate.trim()) {
+            mealObj.principleReplacement = { name: candidate.trim() };
+            return mealObj.principleReplacement;
+          }
+        }
+      }
+      return null;
+    };
+    ensurePrincipleReplacement(meal);
+    // Fallback: si no vino principleReplacement pero existe un placeholder en principleRaw con replacement embebido
+    if (!meal?.principleReplacement?.name && Array.isArray(meal?.principleRaw)) {
+      const placeholder = meal.principleRaw.find(p => {
+        const n = typeof p === 'string' ? p : p?.name;
+        return n && n.toLowerCase().includes('remplazo por principio');
+      });
+      if (placeholder) {
+        let candidate = '';
+        if (typeof placeholder === 'object') {
+          let rawCandidate = placeholder.replacement || placeholder.selectedReplacement || placeholder.value || '';
+          if (rawCandidate && typeof rawCandidate === 'object') {
+            rawCandidate = rawCandidate.name || '';
+          }
+          candidate = rawCandidate;
+          if (!candidate && typeof placeholder.name === 'string') {
+            const match = placeholder.name.match(/remplazo por principio\s*\(([^)]+)\)/i);
+            if (match && match[1]) candidate = match[1];
+          }
+        } else if (typeof placeholder === 'string') {
+          const match = placeholder.match(/remplazo por principio\s*\(([^)]+)\)/i);
+          if (match && match[1]) candidate = match[1];
+        }
+        if (candidate && typeof candidate === 'string' && candidate.trim()) {
+          meal.principleReplacement = { name: candidate.trim() };
+        }
+      }
+    }
+    // Fallback adicional: intentar detectar si en principle original quedó un string tipo "Remplazo por Principio (X)"
+    if (!meal?.principleReplacement?.name && Array.isArray(meal?.principle)) {
+      const rawPlaceholder = meal.principle.find(p => {
+        const n = typeof p === 'string' ? p : p?.name;
+        return n && n.toLowerCase().includes('remplazo por principio');
+      });
+      if (rawPlaceholder) {
+        let candidate = '';
+        if (typeof rawPlaceholder === 'object') {
+          let rawCandidate = rawPlaceholder.replacement || rawPlaceholder.selectedReplacement || rawPlaceholder.value || '';
+          if (rawCandidate && typeof rawCandidate === 'object') {
+            rawCandidate = rawCandidate.name || '';
+          }
+          candidate = rawCandidate;
+          if (!candidate && typeof rawPlaceholder.name === 'string') {
+            const match = rawPlaceholder.name.match(/remplazo por principio\s*\(([^)]+)\)/i);
+            if (match && match[1]) candidate = match[1];
+          }
+        } else if (typeof rawPlaceholder === 'string') {
+          const match = rawPlaceholder.match(/remplazo por principio\s*\(([^)]+)\)/i);
+          if (match && match[1]) candidate = match[1];
+        }
+        if (candidate && typeof candidate === 'string' && candidate.trim()) {
+          meal.principleReplacement = { name: candidate.trim() };
+        }
+      }
+    }
+    try {
+      if (!meal?.principleReplacement?.name) {
+        console.log('[ORDER SUMMARY DEBUG] No principleReplacement final. Meal snapshot:', {
+          principle: meal.principle,
+          principleRaw: meal.principleRaw,
+          principleReplacement: meal.principleReplacement
+        });
+      } else {
+        console.log('[ORDER SUMMARY DEBUG] principleReplacement resolved:', meal.principleReplacement);
+      }
+    } catch(_) {}
+    if (meal?.principleReplacement?.name) {
       fields.push(
         <p key="principle" className="text-xs sm:text-sm text-gray-600">
-          {meal?.principleReplacement?.name
-            ? `${cleanText(meal.principleReplacement.name)} (por principio)`
-            : `${meal.principle.map(p => cleanText(p.name)).join(', ')}${meal.principle.length > 1 ? ' (mixto)' : ''}`}
+          {`${cleanText(meal.principleReplacement.name)} (por principio)`}
+        </p>
+      );
+    } else if (meal?.principle?.length > 0) {
+      fields.push(
+        <p key="principle" className="text-xs sm:text-sm text-gray-600">
+          {`${meal.principle.map(p => cleanText(p.name)).join(', ')}${meal.principle.length > 1 ? ' (mixto)' : ''}`}
+        </p>
+      );
+    } else {
+      fields.push(
+        <p key="principle" className="text-xs sm:text-sm text-gray-600">
+          Sin reemplazo
         </p>
       );
     }
@@ -323,6 +427,7 @@ const MealFields = ({ meal, commonFields, isWaiterView }) => {
   if ((commonFields.has('Mesa') || commonFields.has('all')) && isWaiterView && meal.tableNumber) {
     fields.push(<p key="table" className="text-xs sm:text-sm text-gray-600">Mesa: {meal.tableNumber}</p>);
   }
+  
   if ((commonFields.has('all') || commonFields.has('TipoPedido')) && isWaiterView && meal.orderType) {
     const tipoPedido = meal.orderType === 'table' ? 'Para mesa' : meal.orderType === 'takeaway' ? 'Para llevar' : meal.orderType;
     fields.push(<p key="orderType" className="text-xs sm:text-sm text-gray-600">Tipo: {tipoPedido}</p>);
@@ -430,32 +535,16 @@ const MealGroup = ({ group, globalCommonFields, globalCommonAddressFields, isWai
                         const isCommonInGroup = group.commonAddressFieldsInGroup[addrField];
                         if (isCommonInGroup) return null;
                         const value = meal.address?.[addrField];
-                        const addrType = meal.address?.addressType || '';
                         if (addrField === 'address' && value) {
-                          return (
-                            <p key={addrIdx}>📍 Dirección: {value}</p>
-                          );
-                        } else if (addrField === 'addressType' && value) {
-                          return (
-                            <p key={addrIdx}>🏠 Lugar de entrega: {
-                              value === 'house' ? 'Casa/Apartamento Individual' :
-                              value === 'school' ? 'Colegio/Oficina' :
-                              value === 'complex' ? 'Conjunto Residencial' :
-                              value === 'shop' ? 'Tienda/Local' : 'No especificado'
-                            }</p>
-                          );
-                        } else if (addrField === 'recipientName' && addrType === 'school' && value) {
-                          return <p key={addrIdx}>👤 Nombre: {value}</p>;
+                          return <p key={addrIdx}>📍 Dirección: {value}</p>;
+                        } else if (addrField === 'neighborhood' && value) {
+                          return <p key={addrIdx}>🏘️ Barrio: {value}</p>;
                         } else if (addrField === 'phoneNumber' && value) {
                           return <p key={addrIdx}>📞 Teléfono: {value}</p>;
                         } else if (addrField === 'details' && value) {
                           return <p key={addrIdx}>📝 Instrucciones de entrega: {value}</p>;
-                        } else if (addrField === 'unitDetails' && addrType === 'complex' && value) {
-                          return <p key={addrIdx}>🏢 Detalles: {value}</p>;
-                        } else if (addrField === 'localName' && addrType === 'shop' && value) {
-                          return <p key={addrIdx}>🏬 Nombre del local: {value}</p>;
                         }
-                        return null;
+                        return null; // campos obsoletos ignorados
                       }).filter(Boolean)}
                     </div>
                   );

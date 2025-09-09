@@ -150,6 +150,79 @@ const paymentMethodsOnly = (order) => {
     order?.breakfasts?.[0]?.paymentMethod || '';
   return String(legacy).trim() || 'Sin pago';
 };
+
+// Función para migrar direcciones del formato antiguo al nuevo (para visualización)
+const migrateOldAddressForDisplay = (address) => {
+  if (!address) return {};
+  
+  // Si ya tiene el formato nuevo (con campo details Y neighborhood), devolverlo tal como está
+  if (address.details !== undefined && address.neighborhood !== undefined) {
+    return address;
+  }
+  
+  let migratedAddress = { ...address };
+  let extractedDetails = '';
+  
+  // FORMATO ANTIGUO detectado - aplicar migración para display
+  if (address.addressType !== undefined && !address.neighborhood) {
+    console.log('📦 FORMATO ANTIGUO detectado para display, migrando...');
+    
+    // Estrategia 1: Buscar patrones de nombres en el campo address
+    if (address.address && typeof address.address === 'string') {
+      const addressText = address.address;
+      
+      // Buscar patrones como "(Gabriel maria)" o "- Gabriel maria" o "Gabriel maria" al final
+      const patterns = [
+        /\(([^)]+)\)\s*$/,  // (Gabriel maria) al final
+        /-\s*([^-]+)\s*$/,  // - Gabriel maria al final  
+        /,\s*([^,]+)\s*$/,   // , Gabriel maria al final
+        /\s+([A-Za-z\s]{3,})\s*$/  // Palabras al final (nombres)
+      ];
+      
+      for (const pattern of patterns) {
+        const match = addressText.match(pattern);
+        if (match && match[1] && match[1].trim().length > 2) {
+          const potential = match[1].trim();
+          // Verificar que no sea parte de la dirección (números, #, etc.)
+          if (!/[0-9#-]/.test(potential) && potential.length > 2) {
+            extractedDetails = potential;
+            // Remover las instrucciones de la dirección principal para display
+            migratedAddress.address = addressText.replace(pattern, '').trim();
+            break;
+          }
+        }
+      }
+    }
+    
+    // Estrategia 2: Revisar campos de nombre que pueden contener instrucciones
+    if (!extractedDetails) {
+      const nameFields = ['recipientName', 'localName', 'unitDetails'];
+      for (const field of nameFields) {
+        if (address[field] && typeof address[field] === 'string' && address[field].trim()) {
+          // Si parece ser una instrucción (no un tipo de dirección estándar)
+          const value = address[field].trim();
+          if (value.length > 2 && !['casa', 'apartamento', 'oficina', 'shop', 'house', 'school'].includes(value.toLowerCase())) {
+            extractedDetails = value;
+            break;
+          }
+        }
+      }
+    }
+    
+    // Agregar las instrucciones extraídas al campo details
+    if (extractedDetails) {
+      migratedAddress.details = extractedDetails;
+      console.log('🔄 Migración de dirección para display:', {
+        orderId: 'display',
+        original: address,
+        extractedDetails
+      });
+    }
+  }
+  
+  return migratedAddress;
+};
+
 /* =======================
    Component principal
    ======================= */
@@ -682,14 +755,24 @@ const TablaPedidos = ({
                             </td>
                             <td className="p-2 sm:p-3 text-gray-300 max-w-[250px] sm:max-w-xs">
                               <div className="text-xs sm:text-sm">
-                                <div className="whitespace-nowrap overflow-hidden text-ellipsis">
-                                  {(order.meals?.[0]?.address?.address || order.breakfasts?.[0]?.address?.address || 'Sin dirección')}
-                                </div>
-                                {(order.meals?.[0]?.address?.details || order.breakfasts?.[0]?.address?.details) && (
-                                  <div className="whitespace-nowrap overflow-hidden text-ellipsis text-gray-400 text-xs">
-                                    ({order.meals?.[0]?.address?.details || order.breakfasts?.[0]?.address?.details})
-                                  </div>
-                                )}
+                                {(() => {
+                                  // Migrar direcciones del formato antiguo para mostrar correctamente
+                                  const rawAddress = order.meals?.[0]?.address || order.breakfasts?.[0]?.address;
+                                  const migratedAddress = migrateOldAddressForDisplay(rawAddress);
+                                  
+                                  return (
+                                    <>
+                                      <div className="whitespace-nowrap overflow-hidden text-ellipsis">
+                                        {migratedAddress?.address || 'Sin dirección'}
+                                      </div>
+                                      {migratedAddress?.details && (
+                                        <div className="whitespace-nowrap overflow-hidden text-ellipsis text-gray-400 text-xs">
+                                          ({migratedAddress.details})
+                                        </div>
+                                      )}
+                                    </>
+                                  );
+                                })()}
                               </div>
                             </td>
                             <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">

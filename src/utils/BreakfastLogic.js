@@ -1,7 +1,7 @@
 //src/components/BreakfastTimeSelector.js
 import { isMobile, encodeMessage } from '../utils/Helpers';
 
-export const initializeBreakfastData = ({ address, phoneNumber, addressType, recipientName, unitDetails, localName, details, isWaitress = false }) => ({
+export const initializeBreakfastData = ({ address, phoneNumber, details, isWaitress = false }) => ({
   id: 0,
   type: null,
   eggs: null,
@@ -19,10 +19,6 @@ export const initializeBreakfastData = ({ address, phoneNumber, addressType, rec
     address: {
       address: address || '',
       phoneNumber: phoneNumber || '',
-      addressType: addressType || 'house',
-      recipientName: recipientName || '',
-      unitDetails: unitDetails || '',
-      localName: localName || '',
       details: details || '',
     },
     cutlery: null,
@@ -353,7 +349,7 @@ const formatNotes = (notes) => {
 const isValidTime = (time) => time && time.name && time.name !== 'Lo antes posible';
 
 const fieldsToCheck = ['type', 'eggs', 'broth', 'riceBread', 'drink', 'Cubiertos', 'Hora', 'Dirección', 'Pago', 'Adiciones'];
-const addressFields = ['address', 'addressType', 'recipientName', 'phoneNumber', 'unitDetails', 'localName', 'details'];
+const addressFields = ['address', 'phoneNumber', 'details'];
 
 export const generateMessageFromBreakfasts = (breakfasts, calculateBreakfastPrice, total, breakfastTypes, isWaitress = false) => {
   let message = `👋 ¡Hola Cocina Casera! 🍴\nQuiero hacer mi pedido de desayunos:\n\n`;
@@ -461,7 +457,7 @@ export const generateMessageFromBreakfasts = (breakfasts, calculateBreakfastPric
     const isCommon = breakfasts.every(breakfast => breakfast.address?.[field] === firstBreakfast?.address?.[field]);
     commonAddressFields[field] = isCommon ? firstBreakfast?.address?.[field] : null;
   });
-  const relevantAddressFields = ['address', 'addressType', 'phoneNumber', 'details'];
+  const relevantAddressFields = ['address', 'phoneNumber', 'details'];
   if (commonAddressFields.addressType === 'school') {
     relevantAddressFields.push('recipientName');
   } else if (commonAddressFields.addressType === 'complex') {

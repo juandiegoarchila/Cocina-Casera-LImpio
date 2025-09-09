@@ -1,7 +1,7 @@
 //src/utils/MealLogic.js
 import { isMobile, encodeMessage } from './Helpers';
 
-export const initializeMealData = ({ address, phoneNumber, addressType, recipientName, unitDetails, localName, details, isWaitress = false }) => ({
+export const initializeMealData = ({ address, phoneNumber, details, isWaitress = false }) => ({
   id: 0,
   soup: null,
   soupReplacement: null,
@@ -19,10 +19,6 @@ export const initializeMealData = ({ address, phoneNumber, addressType, recipien
     address: {
       address: address || '',
       phoneNumber: phoneNumber || '',
-      addressType: addressType || 'house',
-      recipientName: recipientName || '',
-      unitDetails: unitDetails || '',
-      localName: localName || '',
       details: details || '',
     },
     payment: null,
@@ -247,7 +243,7 @@ export const formatNotes = (notes) => {
 export const isValidTime = (time) => time && time.name && time.name !== 'Lo antes posible';
 
 const fieldsToCheck = ['Sopa', 'Principio', 'Proteína', 'Bebida', 'Cubiertos', 'Acompañamientos', 'Hora', 'Dirección', 'Pago', 'Adiciones', 'Mesa'];
-const addressFields = ['address', 'addressType', 'phoneNumber', 'recipientName', 'unitDetails', 'localName', 'details'];
+const addressFields = ['address', 'phoneNumber', 'details'];
 const specialRiceOptions = ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'];
 
 export const generateMessageFromMeals = (meals, calculateMealPrice, total, isWaitress = false) => {
@@ -367,7 +363,7 @@ export const generateMessageFromMeals = (meals, calculateMealPrice, total, isWai
     const isCommon = safeMeals.every(meal => meal.address?.[field] === firstMeal?.address?.[field]);
     commonAddressFields[field] = isCommon ? firstMeal?.address?.[field] : null;
   });
-  const relevantAddressFields = ['address', 'addressType', 'phoneNumber', 'details'];
+  const relevantAddressFields = ['address', 'phoneNumber', 'details'];
   if (commonAddressFields.addressType === 'school') {
     relevantAddressFields.push('recipientName');
   } else if (commonAddressFields.addressType === 'complex') {

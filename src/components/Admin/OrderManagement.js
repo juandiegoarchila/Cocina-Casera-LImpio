@@ -473,6 +473,90 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
     }
   };
 
+  // Función para migrar direcciones del formato antiguo al nuevo
+  const migrateOldAddressFormat = (address) => {
+    if (!address) return {};
+    
+    // Si ya tiene el formato nuevo (con campo details Y neighborhood), devolverlo tal como está
+    if (address.details !== undefined && address.neighborhood !== undefined) {
+      return address;
+    }
+    
+    let migratedAddress = { ...address };
+    let extractedDetails = '';
+    
+    console.log('🔍 Detectando formato de dirección:', {
+      hasDetails: address.details !== undefined,
+      hasNeighborhood: address.neighborhood !== undefined,
+      hasAddressType: address.addressType !== undefined,
+      addressValue: address.address,
+      allFields: Object.keys(address)
+    });
+    
+    // FORMATO ANTIGUO detectado - aplicar migración completa
+    if (address.addressType !== undefined && !address.neighborhood) {
+      console.log('📦 FORMATO ANTIGUO detectado, migrando...');
+      
+      // Estrategia 1: Buscar patrones de nombres en el campo address
+      if (address.address && typeof address.address === 'string') {
+        const addressText = address.address;
+        
+        // Buscar patrones como "(Gabriel maria)" o "- Gabriel maria" o "Gabriel maria" al final
+        const patterns = [
+          /\(([^)]+)\)\s*$/,  // (Gabriel maria) al final
+          /-\s*([^-]+)\s*$/,  // - Gabriel maria al final  
+          /,\s*([^,]+)\s*$/,   // , Gabriel maria al final
+          /\s+([A-Za-z\s]{3,})\s*$/  // Palabras al final (nombres)
+        ];
+        
+        for (const pattern of patterns) {
+          const match = addressText.match(pattern);
+          if (match && match[1] && match[1].trim().length > 2) {
+            const potential = match[1].trim();
+            // Verificar que no sea parte de la dirección (números, #, etc.)
+            if (!/[0-9#-]/.test(potential) && potential.length > 2) {
+              extractedDetails = potential;
+              // Remover las instrucciones de la dirección principal
+              migratedAddress.address = addressText.replace(pattern, '').trim();
+              break;
+            }
+          }
+        }
+      }
+      
+      // Estrategia 2: Revisar campos de nombre que pueden contener instrucciones
+      if (!extractedDetails) {
+        const nameFields = ['recipientName', 'localName', 'unitDetails'];
+        for (const field of nameFields) {
+          if (address[field] && typeof address[field] === 'string' && address[field].trim()) {
+            // Si parece ser una instrucción (no un tipo de dirección estándar)
+            const value = address[field].trim();
+            if (value.length > 2 && !['casa', 'apartamento', 'oficina', 'shop', 'house', 'school'].includes(value.toLowerCase())) {
+              extractedDetails = value;
+              migratedAddress[field] = ''; // Limpiar el campo original
+              break;
+            }
+          }
+        }
+      }
+      
+      // Migrar a formato nuevo
+      migratedAddress.neighborhood = migratedAddress.neighborhood || '';
+      migratedAddress.details = extractedDetails || migratedAddress.details || '';
+      
+      // Limpiar campos del formato antiguo que no se usan en el nuevo
+      delete migratedAddress.addressType;
+      
+      console.log('✅ Migración completada:', {
+        original: address,
+        migrated: migratedAddress,
+        extractedDetails
+      });
+    }
+    
+    return migratedAddress;
+  };
+
   const handleEditOrder = useCallback((order) => {
     setEditingOrder(order);
 
@@ -482,7 +566,8 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
       addressType: '',
       localName: '',
       recipientName: '',
-      unitDetails: ''
+      unitDetails: '',
+      details: ''
     };
 
     if (order.type === 'breakfast') {
@@ -490,7 +575,7 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
         Array.isArray(order.breakfasts) && order.breakfasts.length > 0
           ? order.breakfasts.map((b) => ({
               ...b,
-              address: b.address || { ...defaultAddress },
+              address: { ...defaultAddress, ...migrateOldAddressFormat(b.address) },
               additions: Array.isArray(b.additions) ? b.additions : [],
               cutlery: typeof b.cutlery === 'boolean' ? b.cutlery : !!b.cutlery,
               time: b.time || '',
@@ -534,7 +619,7 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
       Array.isArray(order.meals) && order.meals.length > 0
         ? order.meals.map((meal) => ({
             ...meal,
-            address: meal.address || { ...defaultAddress },
+            address: { ...defaultAddress, ...migrateOldAddressFormat(meal.address) },
             payment: meal.payment ? cleanText(meal.payment?.name || meal.payment) : 'Efectivo',
             additions: Array.isArray(meal.additions) ? meal.additions : [],
             principle: Array.isArray(meal.principle)
@@ -542,6 +627,10 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
               : meal.principle
               ? [{ name: meal.principle.name || meal.principle }]
               : [],
+            principleReplacement:
+              meal.principleReplacement
+                ? { name: typeof meal.principleReplacement === 'object' ? meal.principleReplacement.name : meal.principleReplacement }
+                : null,
             cutlery: typeof meal.cutlery === 'boolean' ? meal.cutlery : !!meal.cutlery,
             sides: Array.isArray(meal.sides) ? meal.sides : [],
             soup: meal.soup || '',
@@ -556,7 +645,7 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
               soup: '',
               soupReplacement: '',
               principle: [{ name: '' }],
-              principleReplacement: '',
+              principleReplacement: null,
               protein: '',
               drink: '',
               cutlery: false,
@@ -710,7 +799,8 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
             addressType: b.address?.addressType || '',
             localName: b.address?.localName || '',
             recipientName: b.address?.recipientName || '',
-            unitDetails: b.address?.unitDetails || ''
+            unitDetails: b.address?.unitDetails || '',
+            details: b.address?.details || ''
           }
         }));
 
@@ -763,7 +853,8 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
             addressType: meal.address?.addressType || '',
             localName: meal.address?.localName || '',
             recipientName: meal.address?.recipientName || '',
-            unitDetails: meal.address?.unitDetails || ''
+            unitDetails: meal.address?.unitDetails || '',
+            details: meal.address?.details || ''
           }
         }));
 
@@ -821,18 +912,65 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
     }
     setIsLoading(true);
     try {
-      const batch = writeBatch(db);
-      const ordersSnapshot = await getDocs(collection(db, 'orders'));
-      const breakfastOrdersSnapshot = await getDocs(collection(db, 'deliveryBreakfastOrders'));
-      ordersSnapshot.forEach((docRef) => batch.delete(docRef.ref));
-      breakfastOrdersSnapshot.forEach((docRef) => batch.delete(docRef.ref));
-      await batch.commit();
+      // Determinar fecha seleccionada (YYYY-MM-DD) y rango del día en hora local
+      const dayISO = selectedDate || getColombiaLocalDateString();
+      const startOfDay = new Date(`${dayISO}T00:00:00`);
+      const endOfDay = new Date(`${dayISO}T23:59:59.999`);
+
+      // Construir consultas por colección: por createdAtLocal o por rango createdAt
+      const qOrdersByLocal = query(collection(db, 'orders'), where('createdAtLocal', '==', dayISO));
+      const qOrdersByRange = query(collection(db, 'orders'), where('createdAt', '>=', startOfDay), where('createdAt', '<=', endOfDay));
+      const qBreakfastByLocal = query(collection(db, 'deliveryBreakfastOrders'), where('createdAtLocal', '==', dayISO));
+      const qBreakfastByRange = query(collection(db, 'deliveryBreakfastOrders'), where('createdAt', '>=', startOfDay), where('createdAt', '<=', endOfDay));
+
+      const [snapOrdersLocal, snapOrdersRange, snapBreakfastLocal, snapBreakfastRange] = await Promise.all([
+        getDocs(qOrdersByLocal),
+        getDocs(qOrdersByRange),
+        getDocs(qBreakfastByLocal),
+        getDocs(qBreakfastByRange)
+      ]);
+
+      // Deduplicar documentos por ID
+      const toDeleteRefs = [];
+      const seen = new Set();
+      const pushSnap = (snap) => {
+        snap.forEach((d) => {
+          if (!seen.has(d.id)) {
+            seen.add(d.id);
+            toDeleteRefs.push(d.ref);
+          }
+        });
+      };
+      pushSnap(snapOrdersLocal);
+      pushSnap(snapOrdersRange);
+      pushSnap(snapBreakfastLocal);
+      pushSnap(snapBreakfastRange);
+
+      if (toDeleteRefs.length === 0) {
+        setShowConfirmDeleteAll(false);
+        setConfirmText('');
+        setSuccess('No hay pedidos para eliminar en la fecha seleccionada.');
+        setIsLoading(false);
+        return;
+      }
+
+      // Borrado en lotes (límite de 500 por batch)
+      const chunkSize = 450;
+      let deleted = 0;
+      for (let i = 0; i < toDeleteRefs.length; i += chunkSize) {
+        const chunk = toDeleteRefs.slice(i, i + chunkSize);
+        const batch = writeBatch(db);
+        chunk.forEach((ref) => batch.delete(ref));
+        await batch.commit();
+        deleted += chunk.length;
+      }
+
       setShowConfirmDeleteAll(false);
       setConfirmText('');
-      setSuccess('Todos los pedidos han sido eliminados.');
-      logActivity('Eliminó todos los pedidos', { count: ordersSnapshot.size + breakfastOrdersSnapshot.size });
+      setSuccess(`Se eliminaron ${deleted} pedidos del ${new Date(dayISO.replace(/-/g, '/')).toLocaleDateString('es-CO')}.`);
+      logActivity('Eliminó pedidos por fecha', { date: dayISO, count: deleted });
     } catch (error) {
-      setError(`Error al eliminar todos los pedidos: ${error.message}`);
+      setError(`Error al eliminar pedidos del día: ${error.message}`);
     } finally {
       setIsLoading(false);
     }
@@ -996,13 +1134,13 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
       const normalizedMeals = newOrderForm.meals.map((meal) => ({
         ...meal,
         soup: meal.soup ? { name: meal.soup } : null,
-        soupReplacement: meal.soupReplacement ? { name: meal.soupReplacement } : null,
+        soupReplacement: meal.soupReplacement ? { name: typeof meal.soupReplacement === 'object' ? meal.soupReplacement.name : meal.soupReplacement } : null,
         principle: Array.isArray(meal.principle)
           ? meal.principle.map((p) => ({ name: p.name || p }))
           : meal.principle
           ? [{ name: meal.principle }]
           : [],
-        principleReplacement: meal.principleReplacement ? { name: meal.principleReplacement } : null,
+        principleReplacement: meal.principleReplacement ? { name: typeof meal.principleReplacement === 'object' ? meal.principleReplacement.name : meal.principleReplacement } : null,
         protein: meal.protein ? { name: meal.protein } : null,
         drink: meal.drink ? { name: meal.drink } : null,
         cutlery: meal.cutlery ? { name: meal.cutlery } : null,

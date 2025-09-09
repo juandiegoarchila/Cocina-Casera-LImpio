@@ -35,11 +35,9 @@ const App = () => {
   const [breakfasts, setBreakfasts] = useState([]);
   const [address, setAddress] = useLocalStorage('userAddress', '');
   const [phoneNumber, setPhoneNumber] = useLocalStorage('userPhoneNumber', '');
-  const [addressType, setAddressType] = useLocalStorage('userAddressType', 'house');
-  const [recipientName, setRecipientName] = useLocalStorage('userRecipientName', '');
-  const [unitDetails, setUnitDetails] = useLocalStorage('userUnitDetails', '');
-  const [localName, setLocalName] = useLocalStorage('userLocalName', '');
+  // Campos de dirección simplificados: solo address, phoneNumber, details
   const [details, setDetails] = useLocalStorage('userAddressDetails', '');
+  const [neighborhood, setNeighborhood] = useLocalStorage('userAddressNeighborhood', '');
   const [errorMessage, setErrorMessage] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -76,7 +74,7 @@ const App = () => {
     lunchEnd: 950,
   });
 
-  const savedAddress = { address, phoneNumber, addressType, recipientName, unitDetails, localName, details };
+  const savedAddress = { address, neighborhood, phoneNumber, details };
 
   const formatTime = (minutes) => {
     const hours = Math.floor(minutes / 60);
@@ -196,10 +194,7 @@ return () => {
     const a = e.detail || {};
     setAddress(a.address || '');
     setPhoneNumber(a.phoneNumber || '');
-    setAddressType(a.addressType || 'house');
-    setRecipientName(a.recipientName || '');
-    setUnitDetails(a.unitDetails || '');
-    setLocalName(a.localName || '');
+  // Ya no se usan: addressType, recipientName, unitDetails, localName
   };
   window.addEventListener('userAddressUpdated', handler);
   return () => window.removeEventListener('userAddressUpdated', handler);
@@ -326,11 +321,8 @@ const order = {
       cutlery: item.cutlery || false,
       address: {
         address: item.address?.address || '',
+        neighborhood: item.address?.neighborhood || neighborhood || '',
         phoneNumber: item.address?.phoneNumber || '',
-        addressType: item.address?.addressType || '',
-        recipientName: item.address?.recipientName || '',
-        unitDetails: item.address?.unitDetails || '',
-        localName: item.address?.localName || '',
         details: item.address?.details || '',
       },
       payment: { name: item.payment?.name || 'Efectivo' },
@@ -339,6 +331,8 @@ const order = {
     } : {
       soup: item.soup ? { name: item.soup.name } : null,
       soupReplacement: item.soupReplacement ? { name: item.soupReplacement.name } : null,
+  // Guardar principleReplacement explícitamente para que el admin lo recupere sin depender del placeholder
+  principleReplacement: item.principleReplacement ? { name: item.principleReplacement.name } : null,
       principle: Array.isArray(item.principle) ? item.principle.map(p => ({ name: p.name })) : [],
       protein: item.protein ? { name: item.protein.name } : null,
       drink: item.drink ? { name: item.drink.name } : null,
@@ -352,11 +346,8 @@ const order = {
       ...(isTableOrder ? { tableNumber: item.tableNumber || '' } : {
         address: {
           address: item.address?.address || '',
+          neighborhood: item.address?.neighborhood || neighborhood || '',
           phoneNumber: item.address?.phoneNumber || '',
-          addressType: item.address?.addressType || '',
-          recipientName: item.address?.recipientName || '',
-          unitDetails: item.address?.unitDetails || '',
-          localName: item.address?.localName || '',
           details: item.address?.details || '',
         },
         payment: { name: item.payment?.name || 'Efectivo' },
@@ -484,8 +475,13 @@ const order = {
     try {
       let message = '¡Hola! Quiero ordenar desayuno:\n\n';
 
+      principleReplacement: item.principleReplacement ? { name: item.principleReplacement.name } : null,
       breakfasts.forEach((b, index) => {
-        message += `*Desayuno ${index + 1}: ${b.type}*\n`;
+        // Conservar el replacement dentro del placeholder si existe
+        if (p.name === 'Remplazo por Principio' && item.principleReplacement?.name) {
+          return ({ name: p.name, replacement: item.principleReplacement.name });
+        }
+        return ({ name: p.name });
         if (b.broth) message += `- Caldo: ${b.broth.name}\n`;
         if (b.eggs) message += `- Huevos: ${b.eggs.name}\n`;
         if (b.riceBread) message += `- Arroz/Pan: ${b.riceBread.name}\n`;
@@ -509,15 +505,13 @@ const order = {
       message += `📍 ${address.address}\n`;
       message += `📞 ${address.phoneNumber}\n`;
 
-      if (address.addressType === 'school') message += `👤 ${address.recipientName}\n`;
-      if (address.addressType === 'complex') message += `🏢 ${address.unitDetails}\n`;
-      if (address.addressType === 'shop') message += `🏬 ${address.localName}\n`;
+  // Campos eliminados (addressType, recipientName, unitDetails, localName) ya no se muestran
 
       message += `\n*Total: $${calculateTotalBreakfastPrice(breakfasts, breakfastTypes).toLocaleString('es-CO')}*`;
 
       setAddress(address.address);
       setPhoneNumber(address.phoneNumber);
-      setAddressType(address.addressType);
+  // addressType eliminado
       setRecipientName(address.recipientName);
       setUnitDetails(address.unitDetails);
       setLocalName(address.localName);
@@ -579,7 +573,7 @@ const onSendOrder = async (isTableOrder = false) => {
       else if (!isTableOrder && !meal?.address?.address) missing.push('Dirección');
       else if (!isTableOrder && !meal?.payment?.name) missing.push('Método de pago');
       else if (!isCompleteRice && (!meal?.sides || meal.sides.length === 0)) missing.push('Acompañamientos');
-      else if (!isTableOrder && meal?.address?.addressType === 'shop' && !meal?.address?.localName) missing.push('Nombre del local');
+  // Validaciones eliminadas relacionadas con addressType/localName
       else if (isTableOrder && !meal?.tableNumber) missing.push('Mesa');
 
       if (missing.length > 0) {

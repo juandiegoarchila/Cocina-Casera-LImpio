@@ -285,6 +285,7 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
             onImmediateSelect={(option) => handleImmediateChange('soup', option)}
             showReplacements={meal?.soup?.name === 'Remplazo por Sopa'}
             replacements={soupReplacements}
+            selectedReplacement={meal?.soupReplacement}
             onImmediateReplacementSelect={(option) => handleImmediateChange('soupReplacement', option)}
           />
         </div>
@@ -307,6 +308,7 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
             onConfirm={(data) => handleOptionConfirm('principle', data)}
             showReplacements={Array.isArray(meal?.principle) && meal.principle.some(opt => opt.name === 'Remplazo por Principio')}
             replacements={soupReplacements}
+            selectedReplacement={meal?.principleReplacement}
             onImmediateReplacementSelect={(option) => handleImmediateChange('principleReplacement', option)}
           />
         </div>

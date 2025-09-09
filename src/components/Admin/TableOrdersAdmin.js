@@ -1208,14 +1208,68 @@ const newTotal = Number(calculateTotal(editingOrder.meals, 3) || 0);      if ((e
                         showSaveButton={false}
                       />
                     ) : (
-                      <OrderSummary
-                        meals={showMealDetails.meals}
-                        isTableOrder={true}
-                        calculateTotal={() => showMealDetails.total}
-                        isWaiterView={true}
-                        statusClass={''}
-                        userRole={3}
-                      />
+                      (() => {
+                        const rawMeals = Array.isArray(showMealDetails.meals) ? showMealDetails.meals : [];
+                        const normalizedMeals = rawMeals.map(m => {
+                          const principleRaw = Array.isArray(m.principle) ? m.principle : [];
+                          // Detect placeholder inside principle to derive replacement
+                          let derivedReplacement = null;
+                          if (Array.isArray(m.principle)) {
+                            const placeholder = m.principle.find(p => {
+                              const n = typeof p === 'string' ? p : p?.name;
+                              return n && n.toLowerCase().includes('remplazo por principio');
+                            });
+                            if (placeholder) {
+                              let candidate = '';
+                              if (typeof placeholder === 'object') {
+                                let rawCandidate = placeholder.replacement || placeholder.selectedReplacement || placeholder.value || '';
+                                if (rawCandidate && typeof rawCandidate === 'object') {
+                                  rawCandidate = rawCandidate.name || '';
+                                }
+                                candidate = rawCandidate;
+                                if (!candidate && typeof placeholder.name === 'string') {
+                                  const match = placeholder.name.match(/remplazo por principio\s*\(([^)]+)\)/i);
+                                  if (match && match[1]) candidate = match[1];
+                                }
+                              } else if (typeof placeholder === 'string') {
+                                const match = placeholder.match(/remplazo por principio\s*\(([^)]+)\)/i);
+                                if (match && match[1]) candidate = match[1];
+                              }
+                              if (candidate && typeof candidate === 'string' && candidate.trim()) {
+                                derivedReplacement = { name: candidate.trim() };
+                              }
+                            }
+                          }
+                          // Prefer existing principleReplacement if valid
+                          const finalPrincipleReplacement = (() => {
+                            if (m.principleReplacement && typeof m.principleReplacement === 'object' && m.principleReplacement.name) return { name: m.principleReplacement.name };
+                            if (typeof m.principleReplacement === 'string' && m.principleReplacement.trim()) return { name: m.principleReplacement.trim() };
+                            if (derivedReplacement) return derivedReplacement;
+                            return null;
+                          })();
+                          // Filter out placeholder from principle list
+                          const cleanedPrinciple = Array.isArray(m.principle)
+                            ? m.principle.filter(p => {
+                                const n = typeof p === 'string' ? p : p?.name;
+                                return !(n && n.toLowerCase().includes('remplazo por principio'));
+                              }).map(p => (typeof p === 'string' ? { name: p } : p))
+                            : [];
+                          try {
+                            console.log('[TABLE MODAL DEBUG] Meal normalization:', { originalPrinciple: m.principle, principleRaw, finalPrincipleReplacement });
+                          } catch(_) {}
+                          return { ...m, principle: cleanedPrinciple, principleRaw, principleReplacement: finalPrincipleReplacement };
+                        });
+                        return (
+                          <OrderSummary
+                            meals={normalizedMeals}
+                            isTableOrder={true}
+                            calculateTotal={() => showMealDetails.total}
+                            isWaiterView={true}
+                            statusClass={''}
+                            userRole={3}
+                          />
+                        );
+                      })()
                     )}
                   </div>
                   
