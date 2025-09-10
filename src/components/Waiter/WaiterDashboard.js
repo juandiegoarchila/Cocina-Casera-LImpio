@@ -956,6 +956,7 @@ const WaiterDashboard = () => {
                     isTableOrder={true}
                     isWaiterView={false}
                     userRole={3}
+                    allSides={sides}
                   />
                 );
               })()}
@@ -1053,6 +1054,7 @@ const WaiterDashboard = () => {
                       isWaiterView={true}
                       statusClass={statusColors[order.status] || ''}
                       userRole={3}
+                      allSides={sides}
                     />
                   )}
                 </div>
@@ -1134,6 +1136,7 @@ const WaiterDashboard = () => {
                       isWaiterView={true}
                       statusClass={statusColors[order.status] || ''}
                       userRole={3}
+                      allSides={sides}
                     />
                   </div>
                 ))}

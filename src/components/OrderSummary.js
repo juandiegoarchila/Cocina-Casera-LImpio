@@ -228,7 +228,7 @@ const AddressSummary = ({ commonAddressFields = {}, mealAddress, isCommon = fals
 };
 
 // Componente para renderizar campos de una comida
-const MealFields = ({ meal, commonFields, isWaiterView }) => {
+const MealFields = ({ meal, commonFields, isWaiterView, allSides = [] }) => {
   const hasSpecialRice = meal?.principle?.some(p => specialRiceOptions.includes(p.name));
 
   const fields = [];
@@ -404,11 +404,34 @@ const MealFields = ({ meal, commonFields, isWaiterView }) => {
     fields.push(<p key="cutlery" className="text-xs sm:text-sm text-gray-600">Cubiertos: {meal?.cutlery ? 'Sí' : 'No'}</p>);
   }
   if (commonFields.has('Acompañamientos') || commonFields.has('all')) {
+    const selectedSides = Array.isArray(meal?.sides) ? meal.sides.map(s => cleanText(s.name)) : [];
+    const hasNinguno = selectedSides.includes('Ninguno');
+    const displaySelected = hasSpecialRice ? 'Ya incluidos' : (selectedSides.length > 0 ? selectedSides.join(', ') : 'Sin acompañamientos');
     fields.push(
       <p key="sides" className="text-xs sm:text-sm text-gray-600">
-        Acompañamientos: {hasSpecialRice ? 'Ya incluidos' : meal?.sides?.length > 0 ? meal.sides.map(s => cleanText(s.name)).join(', ') : 'Sin acompañamientos'}
+        Acompañamientos: {displaySelected}
       </p>
     );
+    if (!hasSpecialRice && !hasNinguno && selectedSides.length > 0) {
+      // Normalizar nombres (remover etiqueta NUEVO y trim)
+      const normalize = (n) => (n || '').replace(/\s*NUEVO\s*$/i,'').trim();
+      const selectedNormalized = selectedSides.map(normalize);
+      const allSideNames = (allSides || [])
+        .map(s => normalize(cleanText(s.name)))
+        .filter(n => n && n.toLowerCase() !== 'ninguno');
+      // Evitar duplicados
+      const uniqueAll = [...new Set(allSideNames)];
+      const missing = uniqueAll.filter(n => !selectedNormalized.includes(n));
+      if (missing.length > 0) {
+        fields.push(
+          <p key="sides-missing" className="text-xs sm:text-sm text-gray-600">
+            No Incluir: {missing.join(', ')}
+          </p>
+        );
+      } else if (process.env.NODE_ENV === 'development') {
+        console.log('[OrderSummary] No missing sides calculados', { selectedNormalized, uniqueAll, allSides });
+      }
+    }
   }
   if (commonFields.has('Adiciones') || commonFields.has('all')) {
     if (meal?.additions?.length > 0) {
@@ -436,7 +459,7 @@ const MealFields = ({ meal, commonFields, isWaiterView }) => {
 };
 
 // Componente para un grupo de comidas
-const MealGroup = ({ group, globalCommonFields, globalCommonAddressFields, isWaiterView, isTableOrder, calculateTotal }) => {
+const MealGroup = ({ group, globalCommonFields, globalCommonAddressFields, isWaiterView, isTableOrder, calculateTotal, allSides = [] }) => {
   const baseMeal = group.meals[0];
   const count = group.meals.length;
   // Usar calculateTotal para el total del grupo de manera consistente
@@ -500,7 +523,7 @@ const MealGroup = ({ group, globalCommonFields, globalCommonAddressFields, isWai
       <h3 className="font-medium text-gray-800 text-xs sm:text-sm">
         🍽 {count > 1 ? `${count} Almuerzos iguales – $${groupTotal.toLocaleString('es-CO')} ${paymentText}` : `${count} Almuerzo – $${groupTotal.toLocaleString('es-CO')} ${paymentText}`}
       </h3>
-      <MealFields meal={baseMeal} commonFields={count > 1 ? group.commonFieldsInGroup : new Set(['all', 'Mesa'])} isWaiterView={isWaiterView} />
+  <MealFields meal={baseMeal} commonFields={count > 1 ? group.commonFieldsInGroup : new Set(['all', 'Mesa'])} isWaiterView={isWaiterView} allSides={allSides} />
       {count === 1 && !globalCommonFields.has('Dirección') && baseMeal.address && (
         <AddressSummary
           mealAddress={baseMeal.address}
@@ -603,7 +626,7 @@ const PaymentSummary = ({ paymentSummary, total, isWaiterView, isTableOrder }) =
 };
 
 // Componente principal
-const OrderSummary = ({ meals, onSendOrder, calculateTotal, preCalculatedTotal, isTableOrder = false, isWaiterView = false, statusClass = '' }) => {
+const OrderSummary = ({ meals, onSendOrder, calculateTotal, preCalculatedTotal, isTableOrder = false, isWaiterView = false, statusClass = '', allSides = [] }) => {
   const {
     groupedMeals,
     total,
@@ -653,6 +676,7 @@ const OrderSummary = ({ meals, onSendOrder, calculateTotal, preCalculatedTotal, 
               isWaiterView={isWaiterView}
               isTableOrder={isTableOrder}
               calculateTotal={calculateTotal}
+              allSides={allSides}
             />
           ))}
           {!isTableOrder && meals.length > 0 && (

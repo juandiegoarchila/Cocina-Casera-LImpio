@@ -770,6 +770,7 @@ await sendToWhatsApp(
                             calculateTotal={calculateTotal} 
                             preCalculatedTotal={totalCalculated}
                             isTableOrder={false} 
+                            allSides={sides}
                           />
                         );
                       })()}

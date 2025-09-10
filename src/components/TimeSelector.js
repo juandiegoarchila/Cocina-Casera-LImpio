@@ -141,16 +141,16 @@ const TimeSelector = ({ times, selectedTime, setSelectedTime, onConfirm }) => {
           <p className="text-[10px] xs:text-xs text-red-600 mt-1">{error}</p>
         )}
       </div>
-      <button
-        onClick={handleConfirm}
-        disabled={!selectedTime || !selectedTime.name}
-        className={`mt-2 bg-green-500 hover:bg-green-600 text-white px-2 xs:px-3 py-0.5 xs:py-1 rounded-lg text-[10px] xs:text-xs sm:text-sm transition-colors ${
-          !selectedTime || !selectedTime.name ? 'opacity-50 cursor-not-allowed' : ''
-        }`}
-        aria-label="Confirmar hora"
-      >
-        Confirmar hora
-      </button>
+<button
+  onClick={handleConfirm}
+  disabled={!selectedTime || !selectedTime.name}
+  className={`mt-2 bg-green-500 hover:bg-green-600 text-white px-5 py-2 rounded-lg text-sm transition-colors ${
+    !selectedTime || !selectedTime.name ? 'opacity-50 cursor-not-allowed' : ''
+  }`}
+  aria-label="Confirmar hora"
+>
+  Confirmar hora
+</button>
     </div>
   );
 };

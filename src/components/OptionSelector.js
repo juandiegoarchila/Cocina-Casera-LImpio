@@ -914,16 +914,16 @@ const OptionSelector = ({
         </div>
       )}
       {showConfirmButton && (
-        <button
-          onClick={handleConfirm}
-          disabled={isConfirmDisabled()}
-          className={`mt-2 bg-green-500 hover:bg-green-600 text-white px-4 py-1 rounded-lg text-xs transition-colors duration-200 ${
-            isConfirmDisabled() ? 'opacity-50 cursor-not-allowed' : ''
-          }`}
-          aria-label={`Confirmar ${title}`}
-        >
-          Confirmar Principio
-        </button>
+ <button
+  onClick={handleConfirm}
+  disabled={isConfirmDisabled()}
+  className={`mt-2 bg-green-500 hover:bg-green-600 text-white px-5 py-2 rounded-lg text-sm transition-colors duration-200 ${
+    isConfirmDisabled() ? 'opacity-50 cursor-not-allowed' : ''
+  }`}
+  aria-label={`Confirmar ${title}`}
+>
+  Confirmar Principio
+</button>
       )}
     </div>
   );

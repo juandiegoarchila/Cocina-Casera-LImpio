@@ -15,6 +15,15 @@ const TableOrderManagement = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
   const [editingOrder, setEditingOrder] = useState(null);
+  const [allSides, setAllSides] = useState([]);
+
+  // Cargar acompañamientos para poder derivar "No Incluir"
+  useEffect(() => {
+    const unsubSides = onSnapshot(collection(db, 'sides'), (snapshot) => {
+      setAllSides(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    return () => unsubSides();
+  }, []);
 
   useEffect(() => {
     if (loading) return;
@@ -212,6 +221,18 @@ const handleSaveEdit = async () => {
                       <p>Proteína: {formatValue(meal.protein)}</p>
                       <p>Bebida: {formatValue(meal.drink)}</p>
                       <p>Acompañamientos: {formatArray(meal.sides)}</p>
+                      {(() => {
+                        const selected = Array.isArray(meal.sides) ? meal.sides.map(s => s?.name).filter(Boolean) : [];
+                        const hasNinguno = selected.includes('Ninguno');
+                        if (selected.length > 0 && !hasNinguno) {
+                          const all = allSides.map(s => s.name).filter(n => n && n !== 'Ninguno');
+                          const missing = all.filter(n => !selected.includes(n));
+                          if (missing.length > 0) {
+                            return <p>No Incluir: {missing.join(', ')}</p>;
+                          }
+                        }
+                        return null;
+                      })()}
                       <p>Método de Pago: {formatValue(meal.paymentMethod)}</p>
                       <p>Tipo: {meal.orderType === 'takeaway' ? 'Para llevar' : 'Para mesa'}</p>
                       <p>Notas: {meal.notes || 'Ninguna'}</p>
