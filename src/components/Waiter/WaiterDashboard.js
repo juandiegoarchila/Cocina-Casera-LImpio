@@ -372,8 +372,9 @@ const WaiterDashboard = () => {
       };
       console.log('[WaiterDashboard] Saving order with meals:', order.meals);
       await addDoc(collection(db, 'tableOrders'), order);
-      setSuccessMessage('¡Orden de mesa guardada con éxito!');
-      setMeals([initializeMealData({}, true)]);
+  setSuccessMessage('¡Orden de mesa guardada con éxito!');
+  // Limpiar completamente la lista para mostrar mensaje "No hay almuerzos..."
+  setMeals([]);
     } catch (error) {
       if (process.env.NODE_ENV === 'development') console.error('Error al guardar la orden de mesa:', error);
       setErrorMessage('Error al guardar la orden. Intenta de nuevo.');
@@ -530,8 +531,9 @@ const WaiterDashboard = () => {
       });
       if (process.env.NODE_ENV === 'development') console.log('[WaiterDashboard] Saving breakfast order:', order);
       await addDoc(collection(db, 'breakfastOrders'), order);
-      setSuccessMessage('¡Orden de desayuno guardada con éxito!');
-      setBreakfasts([initializeBreakfastData({ isWaitress: true })]);
+  setSuccessMessage('¡Orden de desayuno guardada con éxito!');
+  // Limpiar lista para que aparezca mensaje "No hay desayunos..."
+  setBreakfasts([]);
     } catch (error) {
       if (process.env.NODE_ENV === 'development') console.error('Error al guardar la orden de desayuno:', error);
       setErrorMessage('Error al guardar la orden de desayuno. Intenta de nuevo.');
