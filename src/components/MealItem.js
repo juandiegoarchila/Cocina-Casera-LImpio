@@ -9,6 +9,8 @@ import ProgressBar from './ProgressBar';
 import OnboardingTutorial from './OnboardingTutorial';
 import ErrorMessage from './ErrorMessage';
 import { calculateMealPrice } from '../utils/MealCalculations';
+import { db } from '../config/firebase';
+import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 
 const MealItem = ({
   id,
@@ -46,6 +48,16 @@ const MealItem = ({
   const [showMaxMealsError, setShowMaxMealsError] = useState(false);
   const slideRef = useRef(null);
   const containerRef = useRef(null);
+  const [tables, setTables] = useState([]);
+  useEffect(() => {
+    if (!isTableOrder) return;
+    const q = query(collection(db, 'tables'), orderBy('name', 'asc'));
+    const unsub = onSnapshot(q, snap => {
+      setTables(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      window.dispatchEvent(new Event('optionsUpdated'));
+    });
+    return () => unsub();
+  }, [isTableOrder]);
 
   const isWaitress = userRole === 3;
 
@@ -382,17 +394,16 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
           {
             component: (
               <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
-                <h4 className="text-sm font-semibold text-green-700 mb-2">Número de Mesa</h4>
-                <input
-                  type="text"
-                  value={meal?.tableNumber || ''}
-                  onChange={(e) => handleImmediateChange('tableNumber', e.target.value)}
-                  placeholder="Ej. Mesa 1, Mesa 1 y 7"
-                  className="w-full p-2 text-sm border rounded-md"
+                <OptionSelector
+                  title="Mesa"
+                  emoji="🍽️"
+                  options={tables}
+                  selected={tables.find(t => t.name === meal?.tableNumber) || null}
+                  onImmediateSelect={(option) => handleImmediateChange('tableNumber', option?.name)}
                 />
                 {!meal?.tableNumber && (
                   <p className="text-[10px] text-red-600 bg-red-50 p-1 rounded mt-1">
-                    Por favor, ingresa el número de mesa
+                    Por favor, selecciona una mesa
                   </p>
                 )}
               </div>

@@ -1,45 +1,40 @@
-//src/components/TableSelector.js
-import React from 'react';
+// src/components/TableSelector.js
+import React, { useEffect, useState } from 'react';
+import { db } from '../config/firebase';
+import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 
-const TableSelector = ({ 
-  selectedTable, 
-  onTableSelect, 
-  availableTables = Array.from({ length: 10 }, (_, i) => ({ id: i + 1, name: `Mesa ${i + 1}` })),
-  isButtonStyle = false
-}) => {
+// Selector de mesas basado en colección 'tables' en Firestore
+// Props:
+//  - value: string (nombre de mesa seleccionado)
+//  - onChange: function(newValue)
+//  - disabled: boolean
+//  - placeholder: string
+const TableSelector = ({ value, onChange, disabled = false, placeholder = 'Selecciona mesa' }) => {
+  const [tables, setTables] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const q = query(collection(db, 'tables'), orderBy('name', 'asc'));
+    const unsub = onSnapshot(q, snap => {
+      setTables(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setLoading(false);
+    });
+    return () => unsub();
+  }, []);
+
   return (
-    <div className="w-full">
-      <h2 className="text-sm sm:text-base font-medium mb-2 text-gray-700">
-        <span className="mr-1">🍽️</span> Selecciona una mesa
-      </h2>
-      <div className={`grid ${isButtonStyle ? 'grid-cols-3 sm:grid-cols-5 gap-1' : 'grid-cols-1 gap-2'}`}>
-        {availableTables.map((table) => {
-          const isActive = selectedTable?.id === table.id;
-          return (
-            <button
-              key={table.id}
-              type="button"
-              onClick={() => onTableSelect(table)}
-              className={`p-2 rounded text-xs sm:text-sm font-medium transition-all duration-200
-                ${isButtonStyle
-                  ? `flex items-center justify-center ${
-                      isActive
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
-                    }`
-                  : `text-left px-3 py-2 ${
-                      isActive
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
-                    }`
-                }`}
-              aria-label={`Seleccionar ${table.name}`}
-            >
-              {table.name}
-            </button>
-          );
-        })}
-      </div>
+    <div className="space-y-1">
+      <select
+        className="w-full p-2 text-sm border rounded-md bg-white"
+        value={value || ''}
+        onChange={e => onChange(e.target.value)}
+        disabled={disabled || loading}
+      >
+        <option value="" disabled>{loading ? 'Cargando mesas...' : placeholder}</option>
+        {tables.map(t => (
+          <option key={t.id} value={t.name}>{t.name}</option>
+        ))}
+      </select>
     </div>
   );
 };

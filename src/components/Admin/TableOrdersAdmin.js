@@ -332,48 +332,23 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
 
   // ===== Filtro/búsqueda (incluye pago) =====
   const filteredOrders = useMemo(() => {
-    return orders.filter((order) => {
-      const searchLower = searchTerm.toLowerCase();
-
-      const matchesSearch =
-        order.id.toLowerCase().includes(searchLower) ||
-        // Almuerzos
-        order.meals?.some((meal) => {
-          const payText = normalizePaymentKey(meal.paymentMethod ?? '');
-          return (
-            meal.tableNumber?.toString().toLowerCase().includes(searchLower) ||
-            payText.includes(searchLower) ||
-            meal.notes?.toLowerCase().includes(searchLower)
-          );
-        }) ||
-        // Desayunos
-        order.breakfasts?.some((breakfast) => {
-          const payText = normalizePaymentKey(breakfast.payment ?? breakfast.paymentMethod ?? '');
-          return (
-            breakfast.tableNumber?.toString().toLowerCase().includes(searchLower) ||
-            payText.includes(searchLower) ||
-            breakfast.notes?.toLowerCase().includes(searchLower)
-          );
-        });
-
-      // Comparación por fecha local si existe, si no, fallback robusto
+    const term = searchTerm.trim().toLowerCase();
+    return orders.filter(order => {
+      // Fecha
       let matchesDate = true;
       if (selectedDate) {
         const selectedIso = new Date(selectedDate).toISOString().split('T')[0];
         if (order.createdAtLocal) {
-          // Comparar YYYY-MM-DD
           matchesDate = order.createdAtLocal === selectedIso;
         } else if (order.createdAt) {
-          // Si no tiene createdAtLocal, usar createdAt como respaldo inmediato
           let orderDate = null;
-          if (order.createdAt instanceof Date) {
-            orderDate = order.createdAt;
-          } else if (order.createdAt && typeof order.createdAt === 'object' && order.createdAt.seconds) {
-            // Firestore Timestamp
-            orderDate = new Date(order.createdAt.seconds * 1000);
-          } else if (typeof order.createdAt === 'string' || typeof order.createdAt === 'number') {
-            orderDate = new Date(order.createdAt);
-          }
+            if (order.createdAt instanceof Date) {
+              orderDate = order.createdAt;
+            } else if (order.createdAt && typeof order.createdAt === 'object' && order.createdAt.seconds) {
+              orderDate = new Date(order.createdAt.seconds * 1000);
+            } else if (typeof order.createdAt === 'string' || typeof order.createdAt === 'number') {
+              orderDate = new Date(order.createdAt);
+            }
           if (orderDate && !isNaN(orderDate)) {
             matchesDate = orderDate.toISOString().split('T')[0] === selectedIso;
           } else {
@@ -382,7 +357,70 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
         }
       }
 
-      return matchesSearch && matchesDate && (orderTypeFilter === 'all' || order.type === orderTypeFilter);
+      if (!matchesDate) return false;
+      if (orderTypeFilter !== 'all' && order.type !== orderTypeFilter) return false;
+      if (!term) return true; // sin término, ya pasa filtros de fecha y tipo
+
+      const parts = [];
+      parts.push(order.id || '');
+      parts.push(order.type === 'breakfast' ? 'desayuno' : 'almuerzo');
+      parts.push(order.status || '');
+      // Pagos (nuevo esquema y legacy)
+      if (Array.isArray(order.payments)) {
+        order.payments.forEach(p => {
+          parts.push(normalizePaymentKey(p.method || ''));
+        });
+      }
+      // Total
+      if (order.total) parts.push(String(order.total));
+
+      // Almuerzos
+      if (Array.isArray(order.meals)) {
+        order.meals.forEach(m => {
+          parts.push(m.tableNumber || '');
+          parts.push(m.notes || '');
+          ['soup','soupReplacement','principle','protein','drink'].forEach(f => {
+            const val = m[f];
+            if (val) parts.push(typeof val === 'string' ? val : val.name || '');
+          });
+          if (Array.isArray(m.sides)) {
+            m.sides.forEach(s => { if (s) parts.push(typeof s === 'string' ? s : s.name || ''); });
+          }
+          if (Array.isArray(m.additions)) {
+            m.additions.forEach(a => { if (a) parts.push(typeof a === 'string' ? a : a.name || ''); });
+          }
+          if (m.paymentMethod) {
+            parts.push(normalizePaymentKey(m.paymentMethod.name || m.paymentMethod));
+          }
+          if (m.address) {
+            if (m.address.address) parts.push(m.address.address);
+            if (m.address.phone) parts.push(m.address.phone);
+          }
+        });
+      }
+
+      // Desayunos
+      if (Array.isArray(order.breakfasts)) {
+        order.breakfasts.forEach(b => {
+          parts.push(b.tableNumber || '');
+            ['type','broth','eggs','riceBread','drink','protein'].forEach(f => {
+              const val = b[f];
+              if (val) parts.push(typeof val === 'string' ? val : val.name || '');
+            });
+          if (Array.isArray(b.additions)) {
+            b.additions.forEach(a => { if (a) parts.push(typeof a === 'string' ? a : a.name || ''); });
+          }
+          if (b.notes) parts.push(b.notes);
+          if (b.payment || b.paymentMethod) parts.push(normalizePaymentKey((b.payment && b.payment.name) || b.payment || (b.paymentMethod && b.paymentMethod.name) || b.paymentMethod || ''));
+          if (b.address) {
+            if (b.address.address) parts.push(b.address.address);
+            if (b.address.phone) parts.push(b.address.phone);
+          }
+        });
+      }
+
+      const haystack = parts.join(' ').toLowerCase();
+      return haystack.includes(term);
     });
   }, [orders, searchTerm, selectedDate, orderTypeFilter]);
 
@@ -843,16 +881,18 @@ const newTotal = Number(calculateTotal(editingOrder.meals, 3) || 0);      if ((e
 
       {/* Search and Menu */}
       <div className="flex flex-wrap justify-between items-center mb-6 gap-3 sm:gap-4">
-        <input
-          type="text"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          placeholder="Buscar órdenes por ID, mesa o método de pago..."
-          className={classNames(
-            "p-2 sm:p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:max-w-xs shadow-sm text-sm sm:text-base transition-all duration-200",
-            theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-300 bg-white text-gray-900'
-          )}
-        />
+        <div className="flex-1 min-w-[240px]">
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Buscar por cualquier dato: ID, mesa, tipo, pago, notas, ingredientes, dirección, teléfono..."
+            className={classNames(
+              "p-2 sm:p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 w-full shadow-sm text-sm sm:text-base transition-all duration-200",
+              theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400' : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500'
+            )}
+          />
+        </div>
         <label
           className={classNames(
             'relative flex items-center justify-center gap-2 px-3 py-2 sm:px-5 sm:py-3 rounded-lg text-xs sm:text-sm font-semibold shadow-sm border transition-colors duration-200 flex-shrink-0 cursor-pointer',
@@ -962,6 +1002,7 @@ const newTotal = Number(calculateTotal(editingOrder.meals, 3) || 0);      if ((e
                       Nº {getSortIcon('orderNumber')}
                     </th>
                     <th className="p-2 sm:p-3 border-b whitespace-nowrap">Detalles</th>
+                    <th className="p-2 sm:p-3 border-b whitespace-nowrap">Tipo</th>
                     {/* Columnas Dirección y Teléfono ocultas por requerimiento */}
                     <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('meals.0.tableNumber')}>
                       Mesa {getSortIcon('meals.0.tableNumber')}
@@ -981,7 +1022,7 @@ const newTotal = Number(calculateTotal(editingOrder.meals, 3) || 0);      if ((e
                 <tbody>
                   {paginatedOrders.length === 0 ? (
                     <tr>
-                      <td colSpan="7" className="p-6 text-center text-gray-500 dark:text-gray-400">
+                      <td colSpan="8" className="p-6 text-center text-gray-500 dark:text-gray-400">
                         No se encontraron órdenes de mesas. Intenta ajustar tu búsqueda.
                       </td>
                     </tr>
@@ -1076,6 +1117,9 @@ const newTotal = Number(calculateTotal(editingOrder.meals, 3) || 0);      if ((e
                               <InformationCircleIcon className="w-4 h-4 mr-1" />
                               Ver
                             </button>
+                          </td>
+                          <td className="p-2 sm:p-3 text-gray-300 font-medium">
+                            {order.type === 'breakfast' ? 'Desayuno' : 'Almuerzo'}
                           </td>
                           <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">
                             {formatValue(order.meals?.[0]?.tableNumber || order.breakfasts?.[0]?.tableNumber)}

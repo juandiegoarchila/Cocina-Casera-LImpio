@@ -137,6 +137,14 @@ const MenuManagement = ({ setError, setSuccess, theme }) => {
       setError('El nombre no puede estar vacío');
       return;
     }
+    // Validación específica para Mesas: nombre debe ser número o texto corto
+    if (selectedCollection === 'tables') {
+      const normalized = newItem.name.trim();
+      if (normalized.length > 10) {
+        setError('El identificador de la mesa es muy largo (max 10 caracteres)');
+        return;
+      }
+    }
     if ((selectedCollection === 'additions' || selectedCollection === 'breakfastAdditions') && 
         (!newItem.price || isNaN(parseFloat(newItem.price)) || parseFloat(newItem.price) <= 0)) {
       setError('El precio debe ser un número válido mayor a 0 para Adiciones');
@@ -167,7 +175,18 @@ const MenuManagement = ({ setError, setSuccess, theme }) => {
         itemData.steps = newItem.steps;
         itemData.requiresProtein = newItem.steps.includes('protein');
       }
-      await addDoc(collection(db, selectedCollection), itemData);
+      if (selectedCollection === 'tables') {
+        // Evitar duplicados por nombre
+        const existing = items.find(i => (i.name || '').toLowerCase() === itemData.name.toLowerCase());
+        if (existing) {
+          setError('Ya existe una mesa con ese nombre');
+          return;
+        }
+        itemData.status = 'disponible';
+        await addDoc(collection(db, selectedCollection), itemData);
+      } else {
+        await addDoc(collection(db, selectedCollection), itemData);
+      }
       setNewItem({ name: '', description: '', emoji: '', price: '', isNew: false, steps: [] });
       setShowAddItemForm(false);
       window.dispatchEvent(new Event('optionsUpdated'));
