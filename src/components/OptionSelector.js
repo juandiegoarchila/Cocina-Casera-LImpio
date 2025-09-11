@@ -28,6 +28,8 @@ const OptionSelector = ({
   );
   const [currentConfiguring, setCurrentConfiguring] = useState(null);
   const [showWarning, setShowWarning] = useState(false);
+  // NUEVO: nombres de opciones removidas por haberse agotado en tiempo real
+  const [outOfStockRemovedNames, setOutOfStockRemovedNames] = useState([]);
 
   useEffect(() => {
     let initialSelection = multiple ? (Array.isArray(selected) ? selected : []) : selected;
@@ -172,6 +174,57 @@ const OptionSelector = ({
       }
     }
   }, [pendingSelection, title, onImmediateSelect, currentConfiguring]);
+
+  // NUEVO: efecto que limpia selecciones que se han marcado como isFinished (agotadas) después de haber sido elegidas
+  useEffect(() => {
+    if (!options || options.length === 0) return;
+    const finishedById = new Map();
+    const finishedByName = new Set();
+    options.forEach(o => {
+      if (o?.isFinished) {
+        if (o.id) finishedById.set(o.id, o);
+        if (o.name) finishedByName.add(o.name);
+      }
+    });
+
+    if (multiple) {
+      if (!Array.isArray(pendingSelection) || pendingSelection.length === 0) return;
+      const toRemove = pendingSelection.filter(sel => sel && (finishedById.has(sel.id) || finishedByName.has(sel.name)));
+      if (toRemove.length > 0) {
+        const kept = pendingSelection.filter(sel => sel && !(finishedById.has(sel.id) || finishedByName.has(sel.name)));
+        setPendingSelection(kept);
+        onImmediateSelect(kept);
+        const removedNames = toRemove.map(r => r.name);
+        setOutOfStockRemovedNames(prev => [...prev, ...removedNames].slice(-5));
+        try {
+          window.dispatchEvent(new CustomEvent('option-out-of-stock', { detail: { names: removedNames, title, timestamp: Date.now() } }));
+        } catch(e) { /* noop */ }
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[OptionSelector] Removidas por agotarse:', toRemove.map(r => r.name));
+        }
+      }
+    } else {
+      if (pendingSelection && (finishedById.has(pendingSelection.id) || finishedByName.has(pendingSelection.name))) {
+        const removedName = pendingSelection.name;
+        setPendingSelection(null);
+        onImmediateSelect(null);
+        setOutOfStockRemovedNames(prev => [...prev, removedName].slice(-5));
+        try {
+          window.dispatchEvent(new CustomEvent('option-out-of-stock', { detail: { names: [removedName], title, timestamp: Date.now() } }));
+        } catch(e) { /* noop */ }
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[OptionSelector] Opción única removida por agotarse:', removedName);
+        }
+      }
+    }
+  }, [options, pendingSelection, multiple, onImmediateSelect]);
+
+  // Limpiar mensajes de agotado tras unos segundos
+  useEffect(() => {
+    if (!outOfStockRemovedNames.length) return;
+    const t = setTimeout(() => setOutOfStockRemovedNames([]), 6000);
+    return () => clearTimeout(t);
+  }, [outOfStockRemovedNames]);
 
   // Muestra advertencia si una adición está incompleta al colapsar
   const handleCollapseCheck = () => {
@@ -924,6 +977,17 @@ const OptionSelector = ({
 >
   Confirmar Principio
 </button>
+      )}
+      {outOfStockRemovedNames.length > 0 && (
+        <div className="mt-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded p-2">
+          {outOfStockRemovedNames.length === 1 ? (
+            <span>La opción "{outOfStockRemovedNames[0]}" se agotó y fue removida. Selecciona otra.</span>
+          ) : (
+            <span>
+              Las opciones {outOfStockRemovedNames.map((n,i)=>`"${n}"${i < outOfStockRemovedNames.length-1 ? ', ' : ''}`)} se agotaron y fueron removidas. Selecciona otras.
+            </span>
+          )}
+        </div>
       )}
     </div>
   );

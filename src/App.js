@@ -1,5 +1,5 @@
 //src/App.js
-import React, { useState, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useEffect, lazy, Suspense, useRef } from 'react';
 import { db, auth } from './config/firebase';
 import { collection, onSnapshot, doc, addDoc, setDoc, getDoc } from 'firebase/firestore';
 import { signInAnonymously } from 'firebase/auth';
@@ -12,6 +12,7 @@ import BreakfastOrderSummary from './components/BreakfastOrderSummary';
 import LoadingIndicator from './components/LoadingIndicator';
 import ErrorMessage from './components/ErrorMessage';
 import SuccessMessage from './components/SuccessMessage';
+import InfoMessage from './components/InfoMessage';
 import { Route, Routes } from 'react-router-dom';
 import { useAuth } from './components/Auth/AuthProvider';
 import { initializeMealData, handleMealChange, addMeal, duplicateMeal, removeMeal, sendToWhatsApp, paymentSummary as paymentSummaryByMode } from './utils/MealLogic';
@@ -73,6 +74,40 @@ const App = () => {
     lunchStart: 632,
     lunchEnd: 950,
   });
+  // NUEVO: mensaje informativo global (por ejemplo opciones agotadas en tiempo real)
+  const [infoMessage, setInfoMessage] = useState(null);
+  // Referencias para deduplicar y detectar nuevas opciones agotadas
+  const lastInfoEventRef = useRef({ key: '', ts: 0 });
+  const prevDataRef = useRef({}); // { collectionName: [{id, isFinished, name}, ...] }
+  const loadedCollectionsRef = useRef(new Set()); // evita avisos en la carga inicial
+
+  // Listener global para opciones que se agoten en tiempo real
+  useEffect(() => {
+    const handler = (e) => {
+      if (!e?.detail?.names) return;
+      const { names } = e.detail;
+      const sorted = [...names].sort();
+      const key = sorted.join('|');
+      const now = Date.now();
+      // Evitar mostrar el mismo conjunto de nombres más de una vez en 3s
+      if (lastInfoEventRef.current.key === key && (now - lastInfoEventRef.current.ts) < 3000) return;
+      lastInfoEventRef.current = { key, ts: now };
+      if (names.length === 1) {
+        setInfoMessage(`La opción ${names[0]} se agotó.`);
+      } else {
+        setInfoMessage(`Las opciones ${names.join(', ')} se agotaron.`);
+      }
+    };
+    window.addEventListener('option-out-of-stock', handler);
+    return () => window.removeEventListener('option-out-of-stock', handler);
+  }, []);
+
+  // Autocierre de infoMessage
+  useEffect(() => {
+    if (!infoMessage) return;
+    const t = setTimeout(() => setInfoMessage(null), 7000);
+    return () => clearTimeout(t);
+  }, [infoMessage]);
 
   const savedAddress = { address, neighborhood, phoneNumber, details };
 
@@ -224,6 +259,26 @@ return () => {
     const unsubscribers = collections.map((col, index) =>
       onSnapshot(collection(db, col), (snapshot) => {
         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        // Detección de nuevas opciones agotadas (isFinished cambia de false/undefined a true)
+        const prev = prevDataRef.current[col] || [];
+        if (loadedCollectionsRef.current.has(col)) {
+          const prevMap = new Map(prev.map(p => [p.id, p]));
+            const newlyFinished = data.filter(item => item.isFinished && !prevMap.get(item.id)?.isFinished);
+          if (newlyFinished.length > 0) {
+            const names = newlyFinished.map(i => i.name).filter(Boolean);
+            if (names.length > 0) {
+              try {
+                window.dispatchEvent(new CustomEvent('option-out-of-stock', { detail: { names, title: col, timestamp: Date.now() } }));
+              } catch (_) { /* noop */ }
+            }
+          }
+        } else {
+          // Marcar como ya cargada para no disparar eventos iniciales
+          loadedCollectionsRef.current.add(col);
+        }
+        prevDataRef.current[col] = data.map(d => ({ id: d.id, isFinished: !!d.isFinished, name: d.name }));
+
         setters[index](data);
         if (process.env.NODE_ENV === 'development') console.log(`Actualizada ${col}:`, data);
         if (data.length === 0) {
@@ -783,6 +838,7 @@ await sendToWhatsApp(
               {isLoading && <LoadingIndicator />}
               {errorMessage && <ErrorMessage message={errorMessage} onClose={() => setErrorMessage(null)} />}
               {successMessage && <SuccessMessage message={successMessage} onClose={() => setSuccessMessage(null)} />}
+              {infoMessage && <InfoMessage message={infoMessage} onClose={() => setInfoMessage(null)} />}
             </div>
             <Footer />
           </div>
