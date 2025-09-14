@@ -1,5 +1,6 @@
 //src/components/Admin/TableOrderManagement.js
 import React, { useState, useEffect } from 'react';
+import OptionSelector from '../OptionSelector';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../Auth/AuthProvider';
 import { db } from '../../config/firebase';
@@ -7,6 +8,9 @@ import { collection, onSnapshot, updateDoc, doc } from 'firebase/firestore';
 import LoadingIndicator from '../LoadingIndicator';
 import ErrorMessage from '../ErrorMessage';
 import { calculateTotal } from '../../utils/MealCalculations';
+
+// NOTA: Debes importar tu catálogo de adiciones correctamente. Aquí se asume que additions está disponible.
+import additions from '../../utils/additionsCatalog'; // Ajusta la ruta según tu proyecto
 
 const TableOrderManagement = () => {
   const { user, loading, role } = useAuth();
@@ -286,6 +290,48 @@ const handleSaveEdit = async () => {
               {editingOrder.meals.map((meal, index) => (
                 <div key={index} className="mt-2">
                   <h3 className="text-sm font-medium">Almuerzo #{index + 1}</h3>
+                  {/* ...campos existentes... */}
+                  {/* Adiciones con controles de cantidad y eliminar */}
+                  <div className="mt-1">
+                    <label className="text-xs">Adiciones</label>
+                    <OptionSelector
+                      title="Adiciones"
+                      emoji="➕"
+                      options={additions}
+                      selected={
+                        Array.isArray(meal.additions)
+                          ? meal.additions.map((a) => {
+                              const full = additions.find((opt) => opt.name === a.name || opt.id === a.id);
+                              return {
+                                id: full?.id || a.id || a.name,
+                                name: a.name,
+                                price: typeof a.price === 'number' ? a.price : (full?.price || 0),
+                                protein: a.protein || '',
+                                replacement: a.replacement || '',
+                                quantity: typeof a.quantity === 'number' ? a.quantity : 1
+                              };
+                            })
+                          : []
+                      }
+                      multiple={true}
+                      showQuantityControls={true}
+                      onImmediateSelect={(sel) =>
+                        handleFormChange(
+                          index,
+                          'additions',
+                          sel.map((a) => ({
+                            id: a.id || a.name,
+                            name: a.name,
+                            price: typeof a.price === 'number' ? a.price : 0,
+                            protein: a.protein || '',
+                            replacement: a.replacement || '',
+                            quantity: typeof a.quantity === 'number' ? a.quantity : 1
+                          }))
+                        )
+                      }
+                    />
+                  </div>
+                  {/* ...campos existentes... */}
                   <div className="mt-1">
                     <label className="text-xs">Sopa o Reemplazo</label>
                     <input
