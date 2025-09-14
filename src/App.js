@@ -538,13 +538,9 @@ const order = {
     try {
       let message = '¡Hola! Quiero ordenar desayuno:\n\n';
 
-      principleReplacement: item.principleReplacement ? { name: item.principleReplacement.name } : null,
       breakfasts.forEach((b, index) => {
-        // Conservar el replacement dentro del placeholder si existe
-        if (p.name === 'Remplazo por Principio' && item.principleReplacement?.name) {
-          return ({ name: p.name, replacement: item.principleReplacement.name });
-        }
-        return ({ name: p.name });
+        message += `*DESAYUNO ${index + 1}*\n`;
+        if (b.type) message += `- Tipo: ${b.type.name}\n`;
         if (b.broth) message += `- Caldo: ${b.broth.name}\n`;
         if (b.eggs) message += `- Huevos: ${b.eggs.name}\n`;
         if (b.riceBread) message += `- Arroz/Pan: ${b.riceBread.name}\n`;
@@ -553,7 +549,7 @@ const order = {
         message += `- Cubiertos: ${b.cutlery ? 'Sí' : 'No'}\n`;
         message += `- Hora: ${b.time?.name || 'No especificada'}\n`;
 
-        if (b.additions.length > 0) {
+        if (b.additions && b.additions.length > 0) {
           message += `- Adiciones:\n`;
           b.additions.forEach((add) => {
             message += `  • ${add.name} (${add.quantity || 1})\n`;
@@ -574,10 +570,6 @@ const order = {
 
       setAddress(address.address);
       setPhoneNumber(address.phoneNumber);
-  // addressType eliminado
-      setRecipientName(address.recipientName);
-      setUnitDetails(address.unitDetails);
-      setLocalName(address.localName);
 
       const phone = '573023931292';
       const encodedMessage = encodeURIComponent(message);
