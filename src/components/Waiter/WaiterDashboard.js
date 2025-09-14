@@ -50,6 +50,8 @@ const WaiterDashboard = () => {
   const [editingOrder, setEditingOrder] = useState(null);
   const [showMenu, setShowMenu] = useState(null);
   const [menuType, setMenuType] = useState('closed');
+  // Permitir override manual del menú
+  const [manualMenuType, setManualMenuType] = useState(null);
   const [schedules, setSchedules] = useState({
     breakfastStart: 420, // 07:00
     breakfastEnd: 631,   // 10:31
@@ -237,6 +239,30 @@ const WaiterDashboard = () => {
   }, [user]);
 
   useEffect(() => {
+    // Si hay override manual, no cambiar automáticamente
+    if (manualMenuType) {
+      setMenuType(manualMenuType);
+      setTimeRemaining(
+        manualMenuType === 'breakfast'
+          ? (() => {
+              const hours = Math.floor(schedules.breakfastEnd / 60);
+              const mins = schedules.breakfastEnd % 60;
+              const period = hours >= 12 ? 'PM' : 'AM';
+              const adjustedHours = hours % 12 || 12;
+              return `${adjustedHours}:${mins.toString().padStart(2, '0')} ${period}`;
+            })()
+          : manualMenuType === 'lunch'
+            ? (() => {
+                const hours = Math.floor(schedules.lunchEnd / 60);
+                const mins = schedules.lunchEnd % 60;
+                const period = hours >= 12 ? 'PM' : 'AM';
+                const adjustedHours = hours % 12 || 12;
+                return `${adjustedHours}:${mins.toString().padStart(2, '0')} ${period}`;
+              })()
+            : ''
+      );
+      return;
+    }
     const updateMenuTypeAndTime = () => {
       const now = new Date();
       const totalMinutes = now.getHours() * 60 + now.getMinutes();
@@ -266,7 +292,7 @@ const WaiterDashboard = () => {
     updateMenuTypeAndTime();
     const interval = setInterval(updateMenuTypeAndTime, 60000); // Update every minute
     return () => clearInterval(interval);
-  }, [schedules]);
+  }, [schedules, manualMenuType]);
 
   useEffect(() => {
     if (errorMessage) {
@@ -878,6 +904,7 @@ const WaiterDashboard = () => {
             Ver Órdenes
           </button>
         </div>
+  {/* Eliminado el selector anterior para evitar duplicidad */}
         {activeTab === 'create' ? (
           isOrderingDisabled || menuType === 'closed' ? (
             <div className="flex flex-col items-center justify-center text-center bg-red-50 text-red-700 p-4 rounded-lg shadow-md">
@@ -886,9 +913,25 @@ const WaiterDashboard = () => {
             </div>
           ) : menuType === 'breakfast' ? (
             <>
-              <p className="text-center text-gray-700 mb-4 text-sm bg-white p-3 rounded-lg shadow-sm">
-                Toma pedidos rápido. Desayuno disponible hasta {timeRemaining}
-              </p>
+              <div className="mb-4">
+                <div className="flex items-center justify-center bg-white p-3 rounded-lg shadow-sm">
+                  <span className="text-gray-700 text-sm text-center">
+                    Toma pedidos rápido. {(manualMenuType || menuType) === 'breakfast' ? 'Desayuno' : (manualMenuType || menuType) === 'lunch' ? 'Almuerzo' : 'Menú'} disponible hasta {timeRemaining}
+                  </span>
+                  <div className="ml-4 flex items-center">
+                    <select
+                      className="border rounded px-2 py-1 text-xs focus:outline-none focus:ring focus:border-blue-300"
+                      value={manualMenuType || menuType}
+                      onChange={e => setManualMenuType(e.target.value === 'auto' ? null : e.target.value)}
+                      style={{ minWidth: 100 }}
+                    >
+                      <option value="auto">Automático</option>
+                      <option value="breakfast">Desayuno</option>
+                      <option value="lunch">Almuerzo</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
               <BreakfastList
                 breakfasts={breakfasts}
                 setBreakfasts={setBreakfasts}
@@ -922,9 +965,25 @@ const WaiterDashboard = () => {
             </>
           ) : (
             <>
-              <p className="text-center text-gray-700 mb-4 text-sm bg-white p-3 rounded-lg shadow-sm">
-                Toma pedidos rápido. Almuerzo disponible hasta {timeRemaining}
-              </p>
+              <div className="mb-4">
+                <div className="flex items-center justify-center bg-white p-3 rounded-lg shadow-sm">
+                  <span className="text-gray-700 text-sm text-center">
+                    Toma pedidos rápido. {(manualMenuType || menuType) === 'breakfast' ? 'Desayuno' : (manualMenuType || menuType) === 'lunch' ? 'Almuerzo' : 'Menú'} disponible hasta {timeRemaining}
+                  </span>
+                  <div className="ml-4 flex items-center">
+                    <select
+                      className="border rounded px-2 py-1 text-xs focus:outline-none focus:ring focus:border-blue-300"
+                      value={manualMenuType || menuType}
+                      onChange={e => setManualMenuType(e.target.value === 'auto' ? null : e.target.value)}
+                      style={{ minWidth: 100 }}
+                    >
+                      <option value="auto">Automático</option>
+                      <option value="breakfast">Desayuno</option>
+                      <option value="lunch">Almuerzo</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
               <MealList
                 meals={meals}
                 soups={soups}
