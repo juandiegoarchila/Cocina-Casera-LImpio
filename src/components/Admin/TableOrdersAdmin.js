@@ -1812,19 +1812,6 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
                                 });
                                 setMealField(index, 'additions', newAdditions);
                               }}
-                              onRemove={(id) => {
-                                const newAdditions = (Array.isArray(m.additions) ? m.additions : []).filter((a) => (a.id || a.name) !== id);
-                                setMealField(index, 'additions', newAdditions);
-                              }}
-                              onIncrease={(id) => {
-                                const newAdditions = (Array.isArray(m.additions) ? m.additions : []).map((a) => {
-                                  if ((a.id || a.name) === id) {
-                                    return { ...a, quantity: (typeof a.quantity === 'number' ? a.quantity : 1) + 1 };
-                                  }
-                                  return a;
-                                });
-                                setMealField(index, 'additions', newAdditions);
-                              }}
                             />
                           </div>
 
