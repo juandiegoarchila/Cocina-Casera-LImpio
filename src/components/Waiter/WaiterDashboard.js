@@ -133,69 +133,6 @@ const WaiterDashboard = () => {
       }
     });
 
-    const breakfastOrdersUnsubscribe = onSnapshot(collection(db, 'breakfastOrders'), (snapshot) => {
-      const breakfastOrders = snapshot.docs
-        .map(doc => {
-          const data = doc.data();
-          // Determinar método principal del split de pagos
-          let mainMethod = '';
-          if (Array.isArray(data.payments) && data.payments.length) {
-            const max = data.payments.reduce((a, b) => (b.amount > a.amount ? b : a), data.payments[0]);
-            mainMethod = max.method;
-          }
-          return { 
-            id: doc.id, 
-            ...data, 
-            type: 'breakfast',
-            // Hidratar las adiciones con precios desde el catálogo y sincronizar método de pago
-            breakfasts: Array.isArray(data.breakfasts) ? data.breakfasts.map(b => ({
-              ...b,
-              additions: Array.isArray(b.additions) ? b.additions.map(a => {
-                if (breakfastAdditions && breakfastAdditions.length > 0) {
-                  const fullAddition = breakfastAdditions.find(ba => ba.name === a.name);
-                  if (fullAddition) {
-                    return { 
-                      ...fullAddition, 
-                      quantity: a.quantity || 1, 
-                      price: fullAddition.price ?? a.price ?? 0 
-                    };
-                  }
-                }
-                return a;
-              }) : [],
-              paymentMethod: mainMethod ? { name: mainMethod } : (b.paymentMethod || b.payment || null),
-              payment: mainMethod ? { name: mainMethod } : (b.payment || b.paymentMethod || null),
-            })) : [],
-            createdAt: data.createdAt ? 
-              (data.createdAt instanceof Date ? 
-                data.createdAt : 
-                data.createdAt.toDate ? 
-                  data.createdAt.toDate() : 
-                  new Date(data.createdAt)
-              ) : 
-              new Date()
-          };
-        })
-        .filter(order => order.userId === user?.uid);
-      
-      // Guardamos las órdenes de desayuno y luego ordenamos todas juntas
-      setOrders(prev => {
-        // Mantener órdenes que no son desayuno
-        const nonBreakfastOrders = prev.filter(order => order.type !== 'breakfast');
-        // Combinar todas las órdenes
-        const updatedOrders = [...nonBreakfastOrders, ...breakfastOrders];
-        // Ordenar por fecha de creación (más reciente primero)
-        return updatedOrders.sort((a, b) => {
-          // Convertir a timestamp si es posible, o usar 0 si no existe
-          const timestampA = a.createdAt ? (a.createdAt instanceof Date ? a.createdAt.getTime() : new Date(a.createdAt).getTime()) : 0;
-          const timestampB = b.createdAt ? (b.createdAt instanceof Date ? b.createdAt.getTime() : new Date(b.createdAt).getTime()) : 0;
-          return timestampB - timestampA;
-        });
-      });
-      
-      if (process.env.NODE_ENV === 'development') console.log('Updated breakfast orders:', breakfastOrders);
-    });
-
     const ordersUnsubscribe = onSnapshot(collection(db, 'tableOrders'), (snapshot) => {
       const orderData = snapshot.docs
         .map(doc => {
@@ -248,10 +185,72 @@ const WaiterDashboard = () => {
       unsubscribers.forEach(unsubscribe => unsubscribe());
       settingsUnsubscribe();
       schedulesUnsubscribe();
-      breakfastOrdersUnsubscribe();
       ordersUnsubscribe();
     };
   }, [user]);
+
+  useEffect(() => {
+    if (!user || !breakfastAdditions.length) return;
+
+    const breakfastOrdersUnsubscribe = onSnapshot(collection(db, 'breakfastOrders'), (snapshot) => {
+      const breakfastOrders = snapshot.docs
+        .map(doc => {
+          const data = doc.data();
+          // Determinar método principal del split de pagos
+          let mainMethod = '';
+          if (Array.isArray(data.payments) && data.payments.length) {
+            const max = data.payments.reduce((a, b) => (b.amount > a.amount ? b : a), data.payments[0]);
+            mainMethod = max.method;
+          }
+          return { 
+            id: doc.id, 
+            ...data, 
+            type: 'breakfast',
+            // Hidratar las adiciones con precios desde el catálogo y sincronizar método de pago
+            breakfasts: Array.isArray(data.breakfasts) ? data.breakfasts.map(b => ({
+              ...b,
+              additions: Array.isArray(b.additions) ? b.additions.map(a => {
+                const fullAddition = breakfastAdditions.find(ba => ba.name === a.name);
+                return {
+                  ...a,
+                  price: a.price ?? (fullAddition?.price || 0)
+                };
+              }) : [],
+              paymentMethod: mainMethod ? { name: mainMethod } : (b.paymentMethod || b.payment || null),
+              payment: mainMethod ? { name: mainMethod } : (b.payment || b.paymentMethod || null),
+            })) : [],
+            createdAt: data.createdAt ? 
+              (data.createdAt instanceof Date ? 
+                data.createdAt : 
+                data.createdAt.toDate ? 
+                  data.createdAt.toDate() : 
+                  new Date(data.createdAt)
+              ) : 
+              new Date()
+          };
+        })
+        .filter(order => order.userId === user?.uid);
+      
+      // Guardamos las órdenes de desayuno y luego ordenamos todas juntas
+      setOrders(prev => {
+        // Mantener órdenes que no son desayuno
+        const nonBreakfastOrders = prev.filter(order => order.type !== 'breakfast');
+        // Combinar todas las órdenes
+        const updatedOrders = [...nonBreakfastOrders, ...breakfastOrders];
+        // Ordenar por fecha de creación (más reciente primero)
+        return updatedOrders.sort((a, b) => {
+          // Convertir a timestamp si es posible, o usar 0 si no existe
+          const timestampA = a.createdAt ? (a.createdAt instanceof Date ? a.createdAt.getTime() : new Date(a.createdAt).getTime()) : 0;
+          const timestampB = b.createdAt ? (b.createdAt instanceof Date ? b.createdAt.getTime() : new Date(b.createdAt).getTime()) : 0;
+          return timestampB - timestampA;
+        });
+      });
+      
+      if (process.env.NODE_ENV === 'development') console.log('Updated breakfast orders:', breakfastOrders);
+    });
+
+    return () => breakfastOrdersUnsubscribe();
+  }, [user, breakfastAdditions]);
 
   useEffect(() => {
     // Si hay override manual, no cambiar automáticamente
@@ -533,6 +532,7 @@ const WaiterDashboard = () => {
           additions: breakfast.additions?.map(addition => ({
             name: addition.name,
             quantity: addition.quantity || 1,
+            price: addition.price || 0,
           })) || [],
           tableNumber: breakfast.tableNumber || '',
           // Normaliza y guarda ambos por compatibilidad
@@ -834,6 +834,7 @@ const WaiterDashboard = () => {
             additions: breakfast.additions?.map(addition => ({
               name: addition.name,
               quantity: addition.quantity || 1,
+              price: addition.price || 0,
             })) || [],
             tableNumber: breakfast.tableNumber || '',
             paymentMethod: (breakfast.paymentMethod || breakfast.payment)
