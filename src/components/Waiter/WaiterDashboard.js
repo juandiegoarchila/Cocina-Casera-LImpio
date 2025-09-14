@@ -137,19 +137,23 @@ const WaiterDashboard = () => {
       const breakfastOrders = snapshot.docs
         .map(doc => {
           const data = doc.data();
+          // Determinar método principal del split de pagos
+          let mainMethod = '';
+          if (Array.isArray(data.payments) && data.payments.length) {
+            const max = data.payments.reduce((a, b) => (b.amount > a.amount ? b : a), data.payments[0]);
+            mainMethod = max.method;
+          }
           return { 
             id: doc.id, 
             ...data, 
             type: 'breakfast',
-            // Hidratar las adiciones con precios desde el catálogo
+            // Hidratar las adiciones con precios desde el catálogo y sincronizar método de pago
             breakfasts: Array.isArray(data.breakfasts) ? data.breakfasts.map(b => ({
               ...b,
               additions: Array.isArray(b.additions) ? b.additions.map(a => {
-                // Solo hidratar si tenemos el catálogo cargado
                 if (breakfastAdditions && breakfastAdditions.length > 0) {
                   const fullAddition = breakfastAdditions.find(ba => ba.name === a.name);
                   if (fullAddition) {
-                    console.log('Hydrating addition in WaiterDashboard:', a.name, 'with price:', fullAddition.price);
                     return { 
                       ...fullAddition, 
                       quantity: a.quantity || 1, 
@@ -157,12 +161,11 @@ const WaiterDashboard = () => {
                     };
                   }
                 }
-                // Si no encontramos la adición en el catálogo, conservamos la original
-                console.log('Could not hydrate addition in WaiterDashboard:', a.name, 'additions available:', breakfastAdditions.length);
                 return a;
-              }) : []
+              }) : [],
+              paymentMethod: mainMethod ? { name: mainMethod } : (b.paymentMethod || b.payment || null),
+              payment: mainMethod ? { name: mainMethod } : (b.payment || b.paymentMethod || null),
             })) : [],
-            // Asegurar que createdAt sea siempre un objeto Date para comparación
             createdAt: data.createdAt ? 
               (data.createdAt instanceof Date ? 
                 data.createdAt : 
@@ -195,20 +198,32 @@ const WaiterDashboard = () => {
 
     const ordersUnsubscribe = onSnapshot(collection(db, 'tableOrders'), (snapshot) => {
       const orderData = snapshot.docs
-        .map(doc => ({ 
-          id: doc.id, 
-          ...doc.data(), 
-          type: 'lunch',
-          // Asegurar que createdAt sea siempre un objeto Date para comparación
-          createdAt: doc.data().createdAt ? 
-            (doc.data().createdAt instanceof Date ? 
-              doc.data().createdAt : 
-              doc.data().createdAt.toDate ? 
-                doc.data().createdAt.toDate() : 
-                new Date(doc.data().createdAt)
-            ) : 
-            new Date()
-        }))
+        .map(doc => {
+          const data = doc.data();
+          // Determinar método principal del split de pagos
+          let mainMethod = '';
+          if (Array.isArray(data.payments) && data.payments.length) {
+            const max = data.payments.reduce((a, b) => (b.amount > a.amount ? b : a), data.payments[0]);
+            mainMethod = max.method;
+          }
+          return {
+            id: doc.id,
+            ...data,
+            type: 'lunch',
+            meals: Array.isArray(data.meals) ? data.meals.map(m => ({
+              ...m,
+              paymentMethod: mainMethod ? { name: mainMethod } : (m.paymentMethod || null),
+            })) : [],
+            createdAt: data.createdAt ?
+              (data.createdAt instanceof Date ?
+                data.createdAt :
+                data.createdAt.toDate ?
+                  data.createdAt.toDate() :
+                  new Date(data.createdAt)
+              ) :
+              new Date()
+          };
+        })
         .filter(order => order.userId === user?.uid);
       
       // Guardamos las órdenes de almuerzo y luego ordenamos todas juntas
@@ -795,6 +810,18 @@ const WaiterDashboard = () => {
       try {
         setIsLoading(true);
         console.log('[WaiterDashboard] Saving edited breakfast order:', editingOrder);
+        // Recalcular desglose de pagos por método
+        const paymentsByMethodBreakfast = {};
+        editingOrder.breakfasts.forEach((b, index) => {
+          const method = getMethodName(b.paymentMethod || b.payment);
+          if (!method) return;
+          const amount = Number(calculateBreakfastPrice(b, 3) || 0);
+          paymentsByMethodBreakfast[method] = (paymentsByMethodBreakfast[method] || 0) + amount;
+        });
+        const paymentsBreakfast = Object.entries(paymentsByMethodBreakfast).map(([method, amount]) => ({
+          method,
+          amount: Math.floor(amount),
+        }));
         const orderRef = doc(db, 'breakfastOrders', editingOrder.id);
         await updateDoc(orderRef, {
           breakfasts: editingOrder.breakfasts.map(breakfast => ({
@@ -816,6 +843,7 @@ const WaiterDashboard = () => {
             notes: breakfast.notes || '',
           })),
           total: editingOrder.total !== undefined ? editingOrder.total : calculateTotalBreakfastPrice(editingOrder.breakfasts, 3, breakfastTypes),
+          payments: paymentsBreakfast,
           updatedAt: new Date(),
         });
         setEditingOrder(null);
@@ -1547,7 +1575,10 @@ const WaiterDashboard = () => {
                           title="Adiciones (por desayuno)"
                           emoji="➕"
                           options={breakfastAdditions}
-                          selected={breakfast?.additions || []}
+                          selected={(breakfast?.additions || []).map(add => ({
+                            ...add,
+                            id: add.id || add.name // Asegura que cada adición tenga un id
+                          }))}
                           multiple={true}
                           onImmediateSelect={(selection) => {
                             console.log(`[WaiterDashboard] Additions selected for breakfast ${index + 1}:`, selection);
@@ -1555,27 +1586,28 @@ const WaiterDashboard = () => {
                               name: add.name,
                               quantity: add.quantity || 1,
                               price: add.price || 0,
+                              id: add.id || add.name
                             })));
                           }}
                           onAdd={(addition) => {
                             console.log(`[WaiterDashboard] Adding addition for breakfast ${index + 1}:`, addition);
-                            const existingAddition = breakfast?.additions?.find(a => a.name === addition.name);
+                            const existingAddition = breakfast?.additions?.find(a => (a.id || a.name) === (addition.id || addition.name));
                             const updatedAdditions = existingAddition
-                              ? breakfast.additions.map(a => a.name === addition.name ? { ...a, quantity: (a.quantity || 1) + 1 } : a)
-                              : [...(breakfast.additions || []), { name: addition.name, quantity: 1, price: addition.price || 0 }];
+                              ? breakfast.additions.map(a => (a.id || a.name) === (addition.id || addition.name) ? { ...a, quantity: (a.quantity || 1) + 1 } : a)
+                              : [...(breakfast.additions || []), { name: addition.name, quantity: 1, price: addition.price || 0, id: addition.id || addition.name }];
                             handleFormChange(index, 'additions', updatedAdditions);
                           }}
-                          onRemove={(additionName) => {
-                            console.log(`[WaiterDashboard] Removing addition ${additionName} for breakfast ${index + 1}`);
+                          onRemove={(additionId) => {
+                            console.log(`[WaiterDashboard] Removing addition ${additionId} for breakfast ${index + 1}`);
                             const updatedAdditions = breakfast.additions
-                              .map(add => add.name === additionName ? { ...add, quantity: (add.quantity || 1) - 1 } : add)
+                              .map(add => (add.id || add.name) === additionId ? { ...add, quantity: (add.quantity || 1) - 1 } : add)
                               .filter(add => add.quantity > 0);
                             handleFormChange(index, 'additions', updatedAdditions);
                           }}
-                          onIncrease={(additionName) => {
-                            console.log(`[WaiterDashboard] Increasing addition ${additionName} for breakfast ${index + 1}`);
+                          onIncrease={(additionId) => {
+                            console.log(`[WaiterDashboard] Increasing addition ${additionId} for breakfast ${index + 1}`);
                             const updatedAdditions = breakfast.additions.map(add =>
-                              add.name === additionName ? { ...add, quantity: (add.quantity || 1) + 1 } : add
+                              (add.id || add.name) === additionId ? { ...add, quantity: (add.quantity || 1) + 1 } : add
                             );
                             handleFormChange(index, 'additions', updatedAdditions);
                           }}

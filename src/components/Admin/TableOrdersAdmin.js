@@ -677,14 +677,22 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
         drink: byName(breakfastDrinks, b.drink),
         protein: byName(breakfastProteins, b.protein),
         additions: Array.isArray(b.additions)
-          ? b.additions
-              .map((a) => {
-                const full = byName(breakfastAdditions, a);
-                const result = full ? { ...full, quantity: a.quantity || 1, price: full.price ?? a.price ?? 0 } : null;
-                console.log('Addition mapping:', { original: a, found: full, result });
-                return result;
-              })
-              .filter(Boolean)
+          ? b.additions.map((a) => {
+              const full = byName(breakfastAdditions, a);
+              return full
+                ? {
+                    id: full.id || a.id || a.name,
+                    name: full.name,
+                    quantity: typeof a.quantity === 'number' ? a.quantity : 1,
+                    price: typeof a.price === 'number' ? a.price : full.price || 0
+                  }
+                : {
+                    id: a.id || a.name,
+                    name: a.name,
+                    quantity: typeof a.quantity === 'number' ? a.quantity : 1,
+                    price: typeof a.price === 'number' ? a.price : 0
+                  };
+            })
           : [],
         cutlery: !!b.cutlery,
         time: typeof b.time === 'string' ? b.time : b.time?.name || '',
@@ -704,12 +712,26 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
         drink: byName(drinks, m.drink),
         sides: manyByName(sides, m.sides),
         additions: Array.isArray(m.additions)
-          ? m.additions
-              .map((a) => {
-                const full = byName(additions, a);
-                return full ? { ...full, quantity: a.quantity || 1, price: a.price ?? full.price ?? 0 } : null;
-              })
-              .filter(Boolean)
+          ? m.additions.map((a) => {
+              const full = byName(additions, a);
+              return full
+                ? {
+                    id: full.id || a.id || a.name,
+                    name: full.name,
+                    price: typeof a.price === 'number' ? a.price : full.price || 0,
+                    protein: a.protein || '',
+                    replacement: a.replacement || '',
+                    quantity: typeof a.quantity === 'number' ? a.quantity : 1
+                  }
+                : {
+                    id: a.id || a.name,
+                    name: a.name,
+                    price: typeof a.price === 'number' ? a.price : 0,
+                    protein: a.protein || '',
+                    replacement: a.replacement || '',
+                    quantity: typeof a.quantity === 'number' ? a.quantity : 1
+                  };
+            })
           : [],
         cutlery: !!m.cutlery,
         time: typeof m.time === 'string' ? m.time : m.time?.name || '',
@@ -734,7 +756,8 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
     if (!editingOrder) return;
 
     if (Array.isArray(editingOrder.meals)) {
-const newTotal = Number(calculateTotal(editingOrder.meals, 3) || 0);      if ((editingOrder.total || 0) !== newTotal) {
+      const newTotal = Number(calculateTotal(editingOrder.meals, 3) || 0);
+      if ((editingOrder.total || 0) !== newTotal) {
         setEditingOrder((prev) => ({ ...prev, total: newTotal }));
       }
     } else if (Array.isArray(editingOrder.breakfasts)) {
@@ -744,6 +767,28 @@ const newTotal = Number(calculateTotal(editingOrder.meals, 3) || 0);      if ((e
       }
     }
   }, [editingOrder?.meals, editingOrder?.breakfasts, role, breakfastTypes]); // eslint-disable-line
+
+  // Ajustar automáticamente el split de pagos si el total cambia
+  useEffect(() => {
+    if (!editingOrder || typeof editingOrder !== 'object' || editingOrder === null) return;
+    if (!Array.isArray(editingOrder.payments) || !editingOrder.payments.length) return;
+    if (typeof editingOrder.total !== 'number') return;
+    const sum = editingOrder.payments.reduce((acc, p) => acc + (Number(p.amount) || 0), 0);
+    const diff = (Number(editingOrder.total) || 0) - sum;
+    if (diff !== 0) {
+      setEditingOrder((prev) => {
+        if (!prev || typeof prev !== 'object' || prev === null) return prev;
+        if (!Array.isArray(prev.payments) || !prev.payments.length) return prev;
+        if (typeof prev.total !== 'number') return prev;
+        const newPayments = prev.payments.map((p, i) =>
+          i === prev.payments.length - 1
+            ? { ...p, amount: (Number(p.amount) || 0) + diff }
+            : p
+        );
+        return { ...prev, payments: newPayments };
+      });
+    }
+  }, [editingOrder && editingOrder.total]);
 
   const setMealField = (i, key, value) => {
     setEditingOrder((prev) => {
@@ -794,11 +839,13 @@ const newTotal = Number(calculateTotal(editingOrder.meals, 3) || 0);      if ((e
       const collectionName = isBreakfast ? 'breakfastOrders' : 'tableOrders';
       const orderRef = doc(db, collectionName, editingOrder.id);
 
+      // Recalcular total actualizado
       const newTotal = isBreakfast
         ? Number(calculateTotalBreakfastPrice(editingOrder.breakfasts, role, breakfastTypes) || 0)
         : Number(calculateTotal(editingOrder.meals, role) || 0);
 
-      const payments = Array.isArray(editingOrder.payments) && editingOrder.payments.length
+      // --- Split de pagos sincronizado ---
+      let payments = Array.isArray(editingOrder.payments) && editingOrder.payments.length
         ? editingOrder.payments.map((p) => ({
             method: (typeof p.method === 'string' ? p.method : p?.method?.name || ''),
             amount: Math.floor(Number(p.amount || 0)) || 0,
@@ -806,16 +853,47 @@ const newTotal = Number(calculateTotal(editingOrder.meals, 3) || 0);      if ((e
           }))
         : defaultPaymentsForOrder({ ...editingOrder, total: newTotal });
 
-      const sum = payments.reduce((a, b) => a + (b.amount || 0), 0);
-      if (sum !== newTotal) {
-        alert(`La suma de pagos (${sum.toLocaleString('es-CO')}) no coincide con el total (${newTotal.toLocaleString('es-CO')}). Ajústala antes de guardar.`);
-        setIsLoading(false);
-        return;
+      // Si el split existe pero el total cambió, reescalar proporcionalmente
+      const sumPagos = payments.reduce((a, b) => a + (b.amount || 0), 0);
+      if (sumPagos !== newTotal) {
+        // Reescalar proporcionalmente
+        payments = payments.map((p) => ({
+          ...p,
+          amount: Math.round((Number(p.amount) || 0) * (newTotal / (sumPagos || 1)))
+        }));
+        // Ajuste por redondeo
+        const diff = newTotal - payments.reduce((a, b) => a + (b.amount || 0), 0);
+        if (diff !== 0 && payments.length) {
+          payments[0].amount += diff;
+        }
+      }
+      // --- Fin split pagos ---
+
+      // Determinar el método de pago principal (mayor monto)
+      let mainMethod = '';
+      if (payments.length) {
+        const max = payments.reduce((a, b) => (b.amount > a.amount ? b : a), payments[0]);
+        mainMethod = max.method;
       }
 
-      const payload = isBreakfast
-        ? { breakfasts: editingOrder.breakfasts }
-        : { meals: editingOrder.meals };
+      let payload;
+      if (isBreakfast) {
+        // Actualizar paymentMethod y payment en cada desayuno
+        const updatedBreakfasts = editingOrder.breakfasts.map(b => ({
+          ...b,
+          paymentMethod: mainMethod ? { name: mainMethod } : null,
+          payment: mainMethod ? { name: mainMethod } : null,
+        }));
+        payload = { breakfasts: updatedBreakfasts };
+      } else {
+        // Actualizar paymentMethod y payment en cada meal
+        const updatedMeals = editingOrder.meals.map(m => ({
+          ...m,
+          paymentMethod: mainMethod ? { name: mainMethod } : null,
+          payment: mainMethod ? { name: mainMethod } : null,
+        }));
+        payload = { meals: updatedMeals };
+      }
 
       await updateDoc(orderRef, {
         ...payload,
@@ -1171,6 +1249,12 @@ const newTotal = Number(calculateTotal(editingOrder.meals, 3) || 0);      if ((e
                                 const hydratedOrder = { ...order };
                                 
                                 if (Array.isArray(order.breakfasts)) {
+                                  // Determinar método principal del split de pagos
+                                  let mainMethod = '';
+                                  if (Array.isArray(order.payments) && order.payments.length) {
+                                    const max = order.payments.reduce((a, b) => (b.amount > a.amount ? b : a), order.payments[0]);
+                                    mainMethod = max.method;
+                                  }
                                   hydratedOrder.breakfasts = order.breakfasts.map((b) => ({
                                     ...b,
                                     type: byName(breakfastTypes, b.type),
@@ -1190,10 +1274,17 @@ const newTotal = Number(calculateTotal(editingOrder.meals, 3) || 0);      if ((e
                                           .filter(Boolean)
                                       : [],
                                     time: typeof b.time === 'string' ? b.time : b.time?.name || '',
-                                    paymentMethod: byName(paymentMethods, b.payment || b.paymentMethod),
+                                    paymentMethod: mainMethod ? { name: mainMethod } : byName(paymentMethods, b.payment || b.paymentMethod),
+                                    payment: mainMethod ? { name: mainMethod } : byName(paymentMethods, b.payment || b.paymentMethod),
                                   }));
                                   hydratedOrder.type = 'breakfast';
                                 } else if (Array.isArray(order.meals)) {
+                                  // Determinar método principal del split de pagos
+                                  let mainMethod = '';
+                                  if (Array.isArray(order.payments) && order.payments.length) {
+                                    const max = order.payments.reduce((a, b) => (b.amount > a.amount ? b : a), order.payments[0]);
+                                    mainMethod = max.method;
+                                  }
                                   hydratedOrder.meals = order.meals.map((m) => ({
                                     ...m,
                                     soup: byName(soups, m.soup),
@@ -1211,7 +1302,7 @@ const newTotal = Number(calculateTotal(editingOrder.meals, 3) || 0);      if ((e
                                           .filter(Boolean)
                                       : [],
                                     time: typeof m.time === 'string' ? m.time : m.time?.name || '',
-                                    paymentMethod: byName(paymentMethods, m.payment || m.paymentMethod),
+                                    paymentMethod: mainMethod ? { name: mainMethod } : byName(paymentMethods, m.payment || m.paymentMethod),
                                   }));
                                   hydratedOrder.type = 'meal';
                                 }
@@ -1456,72 +1547,110 @@ const newTotal = Number(calculateTotal(editingOrder.meals, 3) || 0);      if ((e
 
                   {/* === Desayuno === */}
                   {Array.isArray(editingOrder.breakfasts) ? (
-                    editingOrder.breakfasts.map((b, index) => (
-                      <div key={index} className="mb-6 p-4 border rounded-md border-gray-200 dark:border-gray-700">
-                        <h4 className="text-sm font-medium mb-2">Desayuno #{index + 1}</h4>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          <div>
-                            <label className="block text-xs font-medium mb-1">Tipo</label>
-                            <OptionSelector
-                              title="Tipo" emoji="🥞" options={breakfastTypes}
-                              selected={b.type || null} multiple={false}
-                              onImmediateSelect={(v) => setBreakfastField(index, 'type', v)}
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-medium mb-1">Caldo</label>
-                            <OptionSelector
-                              title="Caldo" emoji="🥣" options={breakfastBroths}
-                              selected={b.broth || null} multiple={false}
-                              onImmediateSelect={(v) => setBreakfastField(index, 'broth', v)}
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-medium.mb-1">Huevos</label>
-                            <OptionSelector
-                              title="Huevos" emoji="🥚" options={breakfastEggs}
-                              selected={b.eggs || null} multiple={false}
-                              onImmediateSelect={(v) => setBreakfastField(index, 'eggs', v)}
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-medium mb-1">Arroz/Pan</label>
-                            <OptionSelector
-                              title="Arroz/Pan" emoji="🍞" options={breakfastRiceBread}
-                              selected={b.riceBread || null} multiple={false}
-                              onImmediateSelect={(v) => setBreakfastField(index, 'riceBread', v)}
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-medium mb-1">Bebida</label>
-                            <OptionSelector
-                              title="Bebida" emoji="🥤" options={breakfastDrinks}
-                              selected={b.drink || null} multiple={false}
-                              onImmediateSelect={(v) => setBreakfastField(index, 'drink', v)}
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-medium mb-1">Proteína</label>
-                            <OptionSelector
-                              title="Proteína" emoji="🍖" options={breakfastProteins}
-                              selected={b.protein || null} multiple={false}
-                              onImmediateSelect={(v) => setBreakfastField(index, 'protein', v)}
-                            />
-                          </div>
-                          <div className="sm:col-span-2">
-                            <label className="block.text-xs font-medium mb-1">Adiciones</label>
-                            <OptionSelector
-                              title="Adiciones" emoji="➕" options={breakfastAdditions}
-                              selected={b.additions || []} multiple={true}
-                              onImmediateSelect={(sel) =>
-                                setBreakfastField(
-                                  index,
-                                  'additions',
-                                  sel.map((a) => ({ name: a.name, quantity: a.quantity || 1, price: a.price || 0 }))
-                                )
-                              }
-                            />
-                          </div>
+                    !breakfastAdditions.length ? (
+                      <div className="flex justify-center items-center h-32">
+                        <LoadingIndicator />
+                        <span className="ml-2">Cargando catálogo de adiciones...</span>
+                      </div>
+                    ) : (
+                      editingOrder.breakfasts.map((b, index) => (
+                        <div key={index} className="mb-6 p-4 border rounded-md border-gray-200 dark:border-gray-700">
+                          <h4 className="text-sm font-medium mb-2">Desayuno #{index + 1}</h4>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-xs font-medium mb-1">Tipo</label>
+                              <OptionSelector
+                                title="Tipo" emoji="🥞" options={breakfastTypes}
+                                selected={b.type || null} multiple={false}
+                                onImmediateSelect={(v) => setBreakfastField(index, 'type', v)}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium mb-1">Caldo</label>
+                              <OptionSelector
+                                title="Caldo" emoji="🥣" options={breakfastBroths}
+                                selected={b.broth || null} multiple={false}
+                                onImmediateSelect={(v) => setBreakfastField(index, 'broth', v)}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium.mb-1">Huevos</label>
+                              <OptionSelector
+                                title="Huevos" emoji="🥚" options={breakfastEggs}
+                                selected={b.eggs || null} multiple={false}
+                                onImmediateSelect={(v) => setBreakfastField(index, 'eggs', v)}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium mb-1">Arroz/Pan</label>
+                              <OptionSelector
+                                title="Arroz/Pan" emoji="🍞" options={breakfastRiceBread}
+                                selected={b.riceBread || null} multiple={false}
+                                onImmediateSelect={(v) => setBreakfastField(index, 'riceBread', v)}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium mb-1">Bebida</label>
+                              <OptionSelector
+                                title="Bebida" emoji="🥤" options={breakfastDrinks}
+                                selected={b.drink || null} multiple={false}
+                                onImmediateSelect={(v) => setBreakfastField(index, 'drink', v)}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium mb-1">Proteína</label>
+                              <OptionSelector
+                                title="Proteína" emoji="🍖" options={breakfastProteins}
+                                selected={b.protein || null} multiple={false}
+                                onImmediateSelect={(v) => setBreakfastField(index, 'protein', v)}
+                              />
+                            </div>
+                            <div className="sm:col-span-2">
+                              <label className="block text-xs font-medium mb-1">Adiciones</label>
+                              <OptionSelector
+                                title="Adiciones (por desayuno)" emoji="➕" options={breakfastAdditions}
+                                selected={
+                                  Array.isArray(b.additions)
+                                    ? b.additions.map((a) => {
+                                        const full = breakfastAdditions.find((opt) => opt.id === a.id || opt.name === a.name);
+                                        return {
+                                          id: full?.id || a.id || a.name,
+                                          name: full?.name || a.name,
+                                          quantity: typeof a.quantity === 'number' ? a.quantity : 1,
+                                          price: typeof a.price === 'number' ? a.price : (full?.price ?? a.price ?? 0)
+                                        };
+                                      })
+                                    : []
+                                }
+                                multiple={true}
+                                showQuantityControls={true}
+                                onImmediateSelect={(sel) =>
+                                  setBreakfastField(
+                                    index,
+                                    'additions',
+                                    sel.map((a) => ({
+                                      id: a.id || a.name,
+                                      name: a.name,
+                                      quantity: typeof a.quantity === 'number' ? a.quantity : 1,
+                                      price: typeof a.price === 'number' ? a.price : 0
+                                    }))
+                                  )
+                                }
+                                onRemove={(id) => {
+                                  const newAdditions = (Array.isArray(b.additions) ? b.additions : []).filter((a) => (a.id || a.name) !== id);
+                                  setBreakfastField(index, 'additions', newAdditions);
+                                }}
+                                onIncrease={(id) => {
+                                  const newAdditions = (Array.isArray(b.additions) ? b.additions : []).map((a) => {
+                                    if ((a.id || a.name) === id) {
+                                      return { ...a, quantity: (typeof a.quantity === 'number' ? a.quantity : 1) + 1 };
+                                    }
+                                    return a;
+                                  });
+                                  setBreakfastField(index, 'additions', newAdditions);
+                                }}
+                              />
+                            </div>
 
                           {/* Operativos */}
                           <div>
@@ -1580,6 +1709,7 @@ const newTotal = Number(calculateTotal(editingOrder.meals, 3) || 0);      if ((e
                         </div>
                       </div>
                     ))
+                  ) // fin breakfastAdditions.length ? loader : map
                   ) : (
                     // === Almuerzo ===
                     editingOrder.meals?.map((m, index) => (
@@ -1637,22 +1767,64 @@ const newTotal = Number(calculateTotal(editingOrder.meals, 3) || 0);      if ((e
                           <div className="sm:col-span-2">
                             <label className="block text-xs font-medium mb-1">Adiciones</label>
                             <OptionSelector
-                              title="Adiciones" emoji="➕" options={additions}
-                              selected={m.additions || []} multiple={true}
+                              title="Adiciones (por almuerzo)" emoji="➕" options={additions}
+                              selected={
+                                Array.isArray(m.additions)
+                                  ? m.additions.map((a) => {
+                                      const full = additions.find((opt) => opt.name === a.name || opt.id === a.id);
+                                      return {
+                                        id: full?.id || a.id || a.name,
+                                        name: a.name,
+                                        price: typeof a.price === 'number' ? a.price : (full?.price || 0),
+                                        protein: a.protein || '',
+                                        replacement: a.replacement || '',
+                                        quantity: typeof a.quantity === 'number' ? a.quantity : 1
+                                      };
+                                    })
+                                  : []
+                              }
+                              multiple={true}
+                              showQuantityControls={true}
                               onImmediateSelect={(sel) =>
                                 setMealField(
                                   index,
                                   'additions',
                                   sel.map((a) => ({
-                                    id: a.id,
+                                    id: a.id || a.name,
                                     name: a.name,
-                                    price: a.price || 0,
+                                    price: typeof a.price === 'number' ? a.price : 0,
                                     protein: a.protein || '',
                                     replacement: a.replacement || '',
-                                    quantity: a.quantity || 1,
+                                    quantity: typeof a.quantity === 'number' ? a.quantity : 1
                                   }))
                                 )
                               }
+                              onRemove={(id) => {
+                                const newAdditions = (Array.isArray(m.additions) ? m.additions : []).filter((a) => (a.id || a.name) !== id);
+                                setMealField(index, 'additions', newAdditions);
+                              }}
+                              onIncrease={(id) => {
+                                const newAdditions = (Array.isArray(m.additions) ? m.additions : []).map((a) => {
+                                  if ((a.id || a.name) === id) {
+                                    return { ...a, quantity: (typeof a.quantity === 'number' ? a.quantity : 1) + 1 };
+                                  }
+                                  return a;
+                                });
+                                setMealField(index, 'additions', newAdditions);
+                              }}
+                              onRemove={(id) => {
+                                const newAdditions = (Array.isArray(m.additions) ? m.additions : []).filter((a) => (a.id || a.name) !== id);
+                                setMealField(index, 'additions', newAdditions);
+                              }}
+                              onIncrease={(id) => {
+                                const newAdditions = (Array.isArray(m.additions) ? m.additions : []).map((a) => {
+                                  if ((a.id || a.name) === id) {
+                                    return { ...a, quantity: (typeof a.quantity === 'number' ? a.quantity : 1) + 1 };
+                                  }
+                                  return a;
+                                });
+                                setMealField(index, 'additions', newAdditions);
+                              }}
                             />
                           </div>
 
@@ -1662,7 +1834,28 @@ const newTotal = Number(calculateTotal(editingOrder.meals, 3) || 0);      if ((e
                             <OptionSelector
                               title="Método de Pago" emoji="💳" options={paymentMethods}
                               selected={m.paymentMethod || null} multiple={false}
-                              onImmediateSelect={(v) => setMealField(index, 'paymentMethod', v)}
+                              onImmediateSelect={(v) => {
+                                setMealField(index, 'paymentMethod', v);
+                                // Si hay split de pagos, actualizarlo para reflejar el método seleccionado
+                                setEditingOrder((prev) => {
+                                  if (!prev || !Array.isArray(prev.meals)) return prev;
+                                  // Si hay más de un meal, solo actualiza si todos tienen el mismo método
+                                  const allSame = prev.meals.every((meal, i) => i === index || (meal.paymentMethod?.name === v?.name));
+                                  if (allSame) {
+                                    return {
+                                      ...prev,
+                                      payments: [
+                                        {
+                                          method: v?.name || '',
+                                          amount: Number(prev.total) || 0,
+                                          note: ''
+                                        }
+                                      ]
+                                    };
+                                  }
+                                  return prev;
+                                });
+                              }}
                             />
                           </div>
                           <div>
