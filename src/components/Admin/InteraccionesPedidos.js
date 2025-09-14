@@ -2,6 +2,102 @@
 import React, { useState, useEffect } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { XMarkIcon, TrashIcon, PencilIcon } from '@heroicons/react/24/outline';
+import { PrinterIcon } from '@heroicons/react/24/outline';
+// Función para imprimir recibo de domicilio
+const handlePrintDeliveryReceipt = (order) => {
+  // SOLO imprime el recibo, NO abre la caja registradora
+  const win = window.open('', 'PRINT', 'height=700,width=400');
+  if (!win) return;
+  const isBreakfast = order.type === 'breakfast';
+  const pago = order.payment || order.paymentMethod || 'N/A';
+  const total = order.total?.toLocaleString('es-CO') || 'N/A';
+  const tipo = isBreakfast ? 'Desayuno' : 'Almuerzo';
+  const address = order.meals?.[0]?.address || order.address || {};
+  const direccion = address.address || '';
+  const telefono = address.phoneNumber || '';
+  const barrio = address.neighborhood || '';
+  const detalles = address.details || '';
+  const nombre = address.recipientName || '';
+  const now = new Date();
+  const fecha = now.toLocaleDateString('es-CO') + ' ' + now.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+  let resumen = '';
+  if (!isBreakfast && Array.isArray(order.meals)) {
+    resumen += `<div style='font-weight:bold;margin-bottom:4px;'>✅ Resumen del Pedido</div>`;
+    resumen += `<div>🍽 ${order.meals.length} almuerzos en total</div>`;
+    order.meals.forEach((m, idx) => {
+      resumen += `<div style='margin-top:10px;'><b>🍽 Almuerzo ${idx + 1} – $${(m.price || order.total || '').toLocaleString('es-CO')} (${pago})</b></div>`;
+      if (m.soup?.name === 'Solo bandeja') resumen += '<div>solo bandeja</div>';
+      else if (m.soupReplacement?.name) resumen += `<div>${m.soupReplacement.name} (por sopa)</div>`;
+      else if (m.soup?.name && m.soup.name !== 'Sin sopa') resumen += `<div>${m.soup.name}</div>`;
+      if (m.principleReplacement?.name) resumen += `<div>${m.principleReplacement.name} (por principio)</div>`;
+      else if (Array.isArray(m.principle) && m.principle.length > 0) resumen += `<div>${m.principle.map(p => p.name).join(', ')}</div>`;
+      const specialRice = Array.isArray(m.principle) && m.principle.some(p => ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'].includes(p.name));
+      if (specialRice) resumen += `<div>Proteína: Ya incluida en el arroz</div>`;
+      else if (m.protein?.name) resumen += `<div>Proteína: ${m.protein.name}</div>`;
+      if (m.drink?.name) resumen += `<div>${m.drink.name === 'Juego de mango' ? 'Jugo de mango' : m.drink.name}</div>`;
+      resumen += `<div>Cubiertos: ${m.cutlery ? 'Sí' : 'No'}</div>`;
+      if (specialRice) resumen += `<div>Acompañamientos: Ya incluidos</div>`;
+      else if (Array.isArray(m.sides) && m.sides.length > 0) resumen += `<div>Acompañamientos: ${m.sides.map(s => s.name).join(', ')}</div>`;
+      else resumen += `<div>Acompañamientos: Ninguno</div>`;
+      if (Array.isArray(m.additions) && m.additions.length > 0) {
+        resumen += `<div>Adiciones:</div>`;
+        m.additions.forEach(a => {
+          resumen += `<div style='margin-left:10px;'>- ${a.name}${a.protein ? ' (' + a.protein + ')' : ''} (${a.quantity || 1})</div>`;
+        });
+      }
+      resumen += `<div>Notas: ${m.notes || 'Ninguna'}</div>`;
+    });
+  } else if (isBreakfast && Array.isArray(order.breakfasts)) {
+    resumen += `<div style='font-weight:bold;margin-bottom:4px;'>✅ Resumen del Pedido</div>`;
+    resumen += `<div>🍽 ${order.breakfasts.length} desayunos en total</div>`;
+    order.breakfasts.forEach((b, idx) => {
+      resumen += `<div style='margin-top:10px;'><b>🍽 Desayuno ${idx + 1} – $${(b.price || order.total || '').toLocaleString('es-CO')} (${pago})</b></div>`;
+      if (b.type) resumen += `<div>${typeof b.type === 'string' ? b.type : b.type?.name || ''}</div>`;
+      if (b.protein) resumen += `<div>Proteína: ${typeof b.protein === 'string' ? b.protein : b.protein?.name || ''}</div>`;
+      if (b.drink) resumen += `<div>Bebida: ${typeof b.drink === 'string' ? b.drink : b.drink?.name || ''}</div>`;
+      if (b.additions && b.additions.length > 0) {
+        resumen += `<div>Adiciones:</div>`;
+        b.additions.forEach(a => {
+          resumen += `<div style='margin-left:10px;'>- ${a.name} (${a.quantity || 1})</div>`;
+        });
+      }
+      resumen += `<div>Notas: ${b.notes || 'Ninguna'}</div>`;
+    });
+  }
+  win.document.write(`
+    <html><head><title>Recibo Domicilio</title>
+    <style>
+      body { font-family: monospace; font-size: 14px; margin: 0; padding: 0; }
+      h2 { margin: 0 0 8px 0; font-size: 18px; }
+      .line { border-bottom: 1px dashed #888; margin: 8px 0; }
+    </style>
+    </head><body>
+    <h2>RECIBO DE DOMICILIO</h2>
+    <div class='line'></div>
+    <div><b>Tipo:</b> ${tipo}</div>
+    <div><b>Pago:</b> ${pago}</div>
+    <div><b>Total:</b> $${total}</div>
+    <div><b>Fecha:</b> ${fecha}</div>
+    <div class='line'></div>
+    <div><b>Nombre:</b> ${nombre}</div>
+    <div><b>Dirección:</b> ${direccion}</div>
+    <div><b>Barrio:</b> ${barrio}</div>
+    <div><b>Teléfono:</b> ${telefono}</div>
+    <div><b>Detalles:</b> ${detalles}</div>
+    <div class='line'></div>
+    ${resumen}
+    <div class='line'></div>
+    <div style='text-align:center;margin-top:16px;'>¡Gracias por su compra!</div>
+<br><br><br><br><br><br>
+    </body></html>
+  `);
+  win.document.close();
+  win.focus();
+  setTimeout(() => {
+    win.print();
+    win.close();
+  }, 500);
+};
 import { classNames } from '../../utils/classNames';
 import OrderSummary from '../OrderSummary';
 import BreakfastOrderSummary from '../BreakfastOrderSummary';
@@ -1116,6 +1212,14 @@ const InteraccionesPedidos = ({
                   </div>
                 </div>
                 <div className="mt-6 flex justify-end gap-2">
+                  <button
+                    onClick={() => handlePrintDeliveryReceipt(editForm)}
+                    className={classNames('p-2 rounded-md border border-green-600 text-green-600 hover:text-green-500 hover:border-green-500 transition-colors duration-150')}
+                    title="Imprimir recibo domicilio"
+                    aria-label="Imprimir recibo domicilio"
+                  >
+                    <PrinterIcon className="w-5 h-5" />
+                  </button>
                   <button onClick={() => setEditingOrder(null)} className={classNames('px-4 py-2 rounded-md text-sm font-medium', theme === 'dark' ? 'bg-gray-600 hover:bg-gray-700 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-900')}>
                     Cancelar
                   </button>
