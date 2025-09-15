@@ -1394,6 +1394,8 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
                   <option value="20">20</option>
                   <option value="30">30</option>
                   <option value="50">50</option>
+                  <option value="100">100</option>
+                  <option value="200">200</option>
                 </select>
               </div>
               <div className="flex.items-center gap-2 text-sm text-gray-700 dark:text-gray-300">

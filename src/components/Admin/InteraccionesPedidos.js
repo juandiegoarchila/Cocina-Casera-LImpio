@@ -12,12 +12,11 @@ const handlePrintDeliveryReceipt = (order) => {
   const pago = order.payment || order.paymentMethod || 'N/A';
   const total = order.total?.toLocaleString('es-CO') || 'N/A';
   const tipo = isBreakfast ? 'Desayuno' : 'Almuerzo';
-  const address = order.meals?.[0]?.address || order.address || {};
+  const address = (isBreakfast ? order.breakfasts?.[0]?.address : order.meals?.[0]?.address) || order.address || {};
   const direccion = address.address || '';
   const telefono = address.phoneNumber || '';
   const barrio = address.neighborhood || '';
   const detalles = address.details || '';
-  const nombre = address.recipientName || '';
   const now = new Date();
   const fecha = now.toLocaleDateString('es-CO') + ' ' + now.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
   let resumen = '';
@@ -25,7 +24,7 @@ const handlePrintDeliveryReceipt = (order) => {
     resumen += `<div style='font-weight:bold;margin-bottom:4px;'>✅ Resumen del Pedido</div>`;
     resumen += `<div>🍽 ${order.meals.length} almuerzos en total</div>`;
     order.meals.forEach((m, idx) => {
-      resumen += `<div style='margin-top:10px;'><b>🍽 Almuerzo ${idx + 1} – $${(m.price || order.total || '').toLocaleString('es-CO')} (${pago})</b></div>`;
+      resumen += `<div style='margin-top:10px;'><b>🍽 Almuerzo ${idx + 1} – ${(order.total || '').toLocaleString('es-CO')} (${pago})</b></div>`;
       if (m.soup?.name === 'Solo bandeja') resumen += '<div>solo bandeja</div>';
       else if (m.soupReplacement?.name) resumen += `<div>${m.soupReplacement.name} (por sopa)</div>`;
       else if (m.soup?.name && m.soup.name !== 'Sin sopa') resumen += `<div>${m.soup.name}</div>`;
@@ -51,10 +50,13 @@ const handlePrintDeliveryReceipt = (order) => {
     resumen += `<div style='font-weight:bold;margin-bottom:4px;'>✅ Resumen del Pedido</div>`;
     resumen += `<div>🍽 ${order.breakfasts.length} desayunos en total</div>`;
     order.breakfasts.forEach((b, idx) => {
-      resumen += `<div style='margin-top:10px;'><b>🍽 Desayuno ${idx + 1} – $${(b.price || order.total || '').toLocaleString('es-CO')} (${pago})</b></div>`;
-      if (b.type) resumen += `<div>${typeof b.type === 'string' ? b.type : b.type?.name || ''}</div>`;
-      if (b.protein) resumen += `<div>Proteína: ${typeof b.protein === 'string' ? b.protein : b.protein?.name || ''}</div>`;
+      resumen += `<div style='margin-top:10px;'><b>🍽 Desayuno ${idx + 1} – ${(order.total || '').toLocaleString('es-CO')} (${pago})</b></div>`;
+      if (b.type) resumen += `<div>Tipo: ${typeof b.type === 'string' ? b.type : b.type?.name || ''}</div>`;
+      if (b.broth) resumen += `<div>Caldo: ${typeof b.broth === 'string' ? b.broth : b.broth?.name || ''}</div>`;
+      if (b.eggs) resumen += `<div>Huevos: ${typeof b.eggs === 'string' ? b.eggs : b.eggs?.name || ''}</div>`;
+      if (b.riceBread) resumen += `<div>Arroz/Pan: ${typeof b.riceBread === 'string' ? b.riceBread : b.riceBread?.name || ''}</div>`;
       if (b.drink) resumen += `<div>Bebida: ${typeof b.drink === 'string' ? b.drink : b.drink?.name || ''}</div>`;
+      if (b.protein) resumen += `<div>Proteína: ${typeof b.protein === 'string' ? b.protein : b.protein?.name || ''}</div>`;
       if (b.additions && b.additions.length > 0) {
         resumen += `<div>Adiciones:</div>`;
         b.additions.forEach(a => {
@@ -76,10 +78,9 @@ const handlePrintDeliveryReceipt = (order) => {
     <div class='line'></div>
     <div><b>Tipo:</b> ${tipo}</div>
     <div><b>Pago:</b> ${pago}</div>
-    <div><b>Total:</b> $${total}</div>
+    <div><b>Total:</b> ${total}</div>
     <div><b>Fecha:</b> ${fecha}</div>
     <div class='line'></div>
-    <div><b>Nombre:</b> ${nombre}</div>
     <div><b>Dirección:</b> ${direccion}</div>
     <div><b>Barrio:</b> ${barrio}</div>
     <div><b>Teléfono:</b> ${telefono}</div>

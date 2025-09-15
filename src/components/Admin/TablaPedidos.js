@@ -26,12 +26,11 @@ const handlePrintDeliveryReceipt = (order) => {
   const pago = order.payment || order.paymentMethod || 'N/A';
   const total = order.total?.toLocaleString('es-CO') || 'N/A';
   const tipo = isBreakfast ? 'Desayuno' : 'Almuerzo';
-  const address = order.meals?.[0]?.address || order.address || {};
+  const address = (isBreakfast ? order.breakfasts?.[0]?.address : order.meals?.[0]?.address) || order.address || {};
   const direccion = address.address || '';
   const telefono = address.phoneNumber || '';
   const barrio = address.neighborhood || '';
   const detalles = address.details || '';
-  const nombre = address.recipientName || '';
   const now = new Date();
   const fecha = now.toLocaleDateString('es-CO') + ' ' + now.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
   let resumen = '';
@@ -39,7 +38,7 @@ const handlePrintDeliveryReceipt = (order) => {
     resumen += `<div style='font-weight:bold;margin-bottom:4px;'>✅ Resumen del Pedido</div>`;
     resumen += `<div>🍽 ${order.meals.length} almuerzos en total</div>`;
     order.meals.forEach((m, idx) => {
-      resumen += `<div style='margin-top:10px;'><b>🍽 Almuerzo ${idx + 1} – $${(m.price || order.total || '').toLocaleString('es-CO')} (${pago})</b></div>`;
+      resumen += `<div style='margin-top:10px;'><b>🍽 Almuerzo ${idx + 1} – ${(m.price || order.total || '').toLocaleString('es-CO')} (${pago})</b></div>`;
       if (m.soup?.name === 'Solo bandeja') resumen += '<div>solo bandeja</div>';
       else if (m.soupReplacement?.name) resumen += `<div>${m.soupReplacement.name} (por sopa)</div>`;
       else if (m.soup?.name && m.soup.name !== 'Sin sopa') resumen += `<div>${m.soup.name}</div>`;
@@ -65,7 +64,7 @@ const handlePrintDeliveryReceipt = (order) => {
     resumen += `<div style='font-weight:bold;margin-bottom:4px;'>✅ Resumen del Pedido</div>`;
     resumen += `<div>🍽 ${order.breakfasts.length} desayunos en total</div>`;
     order.breakfasts.forEach((b, idx) => {
-      resumen += `<div style='margin-top:10px;'><b>🍽 Desayuno ${idx + 1} – $${(b.price || order.total || '').toLocaleString('es-CO')} (${pago})</b></div>`;
+      resumen += `<div style='margin-top:10px;'><b>🍽 Desayuno ${idx + 1} – ${(b.price || order.total || '').toLocaleString('es-CO')} (${pago})</b></div>`;
       if (b.type) resumen += `<div>${typeof b.type === 'string' ? b.type : b.type?.name || ''}</div>`;
       if (b.protein) resumen += `<div>Proteína: ${typeof b.protein === 'string' ? b.protein : b.protein?.name || ''}</div>`;
       if (b.drink) resumen += `<div>Bebida: ${typeof b.drink === 'string' ? b.drink : b.drink?.name || ''}</div>`;
@@ -90,10 +89,9 @@ const handlePrintDeliveryReceipt = (order) => {
     <div class='line'></div>
     <div><b>Tipo:</b> ${tipo}</div>
     <div><b>Pago:</b> ${pago}</div>
-    <div><b>Total:</b> $${total}</div>
+    <div><b>Total:</b> ${total}</div>
     <div><b>Fecha:</b> ${fecha}</div>
     <div class='line'></div>
-    <div><b>Nombre:</b> ${nombre}</div>
     <div><b>Dirección:</b> ${direccion}</div>
     <div><b>Barrio:</b> ${barrio}</div>
     <div><b>Teléfono:</b> ${telefono}</div>
@@ -115,7 +113,8 @@ const handlePrintDeliveryReceipt = (order) => {
 
 // Firestore para persistir pagos
 import { db } from '../../config/firebase';
-import { updateDoc, doc, getDoc } from 'firebase/firestore';
+import { updateDoc, doc, getDoc, collection, query, where, getDocs, addDoc, serverTimestamp, increment } from 'firebase/firestore';
+import { INGRESOS_COLLECTION } from './dashboardConstants';
 
 /* ===========================
    Helpers de resumen (in-file)
@@ -621,6 +620,54 @@ const TablaPedidos = ({
             cash: hasCash ? true : (order.paymentSettled?.cash || false)
           };
           await updateDoc(ref, updateData);
+          // También actualizar el documento de Ingresos para la fecha de la orden
+          (async function updateIngresosForOrder(o) {
+            try {
+              const getOrderISO = (ord) => {
+                const ts = ord?.createdAt || ord?.timestamp || ord?.date;
+                const d = ts?.toDate ? ts.toDate() : (ts ? new Date(ts) : null);
+                if (!d) return null;
+                d.setHours(0,0,0,0);
+                return d.toISOString().split('T')[0];
+              };
+              const iso = getOrderISO(o) || new Date().toISOString().split('T')[0];
+              const amount = Math.floor(Number(o.total || 0)) || 0;
+              if (!amount) return;
+              const isBreakfast = (o?.type === 'breakfast') || Array.isArray(o?.breakfasts);
+              const categoryKey = isBreakfast ? 'domiciliosDesayuno' : 'domiciliosAlmuerzo';
+
+              const colRef = collection(db, INGRESOS_COLLECTION);
+              const q = query(colRef, where('date', '==', iso));
+              const snap = await getDocs(q);
+              if (!snap.empty) {
+                const docRef = doc(db, INGRESOS_COLLECTION, snap.docs[0].id);
+                // Intentar incrementar campos existentes (si no existen, setearlos a amount)
+                const updates = {
+                  ['categories.' + categoryKey]: increment(amount),
+                  totalIncome: increment(amount),
+                  updatedAt: serverTimestamp(),
+                };
+                await updateDoc(docRef, updates);
+              } else {
+                // Crear nuevo registro para la fecha con la categoría adecuada
+                const payload = {
+                  date: iso,
+                  categories: {
+                    domiciliosAlmuerzo: isBreakfast ? 0 : amount,
+                    domiciliosDesayuno: isBreakfast ? amount : 0,
+                    mesasAlmuerzo: 0,
+                    mesasDesayuno: 0,
+                  },
+                  totalIncome: amount,
+                  createdAt: serverTimestamp(),
+                  updatedAt: serverTimestamp(),
+                };
+                await addDoc(colRef, payload);
+              }
+            } catch (e) {
+              console.error('[Ingresos] error al actualizar ingresos por liquidación:', e);
+            }
+          })(order);
           ok++;
         } catch (e) {
           console.error('[Liquidar] updateDoc error', e);
@@ -1043,6 +1090,8 @@ const TablaPedidos = ({
                     <option value="20">20</option>
                     <option value="30">30</option>
                     <option value="50">50</option>
+                    <option value="100">100</option>
+                    <option value="200">200</option>
                   </select>
                 </div>
                 <div className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
