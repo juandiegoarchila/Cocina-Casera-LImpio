@@ -626,7 +626,7 @@ const PaymentSummary = ({ paymentSummary, total, isWaiterView, isTableOrder }) =
 };
 
 // Componente principal
-const OrderSummary = ({ meals, onSendOrder, calculateTotal, preCalculatedTotal, isTableOrder = false, isWaiterView = false, statusClass = '', allSides = [] }) => {
+const OrderSummary = ({ meals, onSendOrder, calculateTotal, preCalculatedTotal, isTableOrder = false, isWaiterView = false, statusClass = '', allSides = [], deliveryTime = null }) => {
   const {
     groupedMeals,
     total,
@@ -682,10 +682,9 @@ const OrderSummary = ({ meals, onSendOrder, calculateTotal, preCalculatedTotal, 
           {!isTableOrder && meals.length > 0 && (
             <div className="text-sm text-gray-600">
               <hr className="border-t border-gray-300 my-2" />
-              {commonDeliveryTime && (
-                <p className="font-medium text-gray-800">
-                  🕒 Entrega: {isValidTime(meals[0].time) ? cleanText(meals[0].time.name) : 'Lo más rápido'}
-                </p>
+              {/* Mostrar deliveryTime (prop) o fallback a commonDeliveryTime calculado */}
+              {((typeof deliveryTime === 'string' && deliveryTime) || commonDeliveryTime) && (
+                <p className="font-medium text-gray-800">🕒 Entrega: {deliveryTime || (isValidTime(meals[0].time) ? cleanText(meals[0].time.name) : commonDeliveryTime)}</p>
               )}
               {Object.keys(commonAddressFields).some(field => commonAddressFields[field]) && (
                 <AddressSummary commonAddressFields={commonAddressFields} isCommon={true} globalCommonAddressFields={commonAddressFields} />

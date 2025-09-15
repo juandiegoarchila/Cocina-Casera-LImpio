@@ -828,11 +828,41 @@ const InteraccionesPedidos = ({
                 </Dialog.Title>
                 {showMealDetails && (
                   <>
-                    {showMealDetails?.type === 'breakfast' ? (
-                      <BreakfastOrderSummary items={showMealDetails.breakfasts || mealsForDetails} user={{ role: 3 }} breakfastTypes={breakfastTypes} statusClass="bg-white" showSaveButton={false} />
-                    ) : (
-                      <OrderSummary meals={mealsForDetails} isTableOrder={false} isWaiterView={true} statusClass="bg-white" />
-                    )}
+                    {/* Calcular deliveryTime y pasarlo al componente de resumen para que aparezca DENTRO del bloque 'Resumen del Pedido' */}
+                    {(() => {
+                      const timeValue = showMealDetails?.meals?.[0]?.time || showMealDetails?.breakfasts?.[0]?.time || showMealDetails?.time || null;
+                      let displayTime = '';
+                      if (typeof timeValue === 'string' && timeValue.trim()) {
+                        displayTime = timeValue;
+                      } else if (timeValue instanceof Date) {
+                        displayTime = timeValue.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+                      } else if (timeValue && typeof timeValue === 'object') {
+                        if (typeof timeValue.toDate === 'function') {
+                          try {
+                            const d = timeValue.toDate();
+                            displayTime = d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+                          } catch (e) {
+                            displayTime = timeValue.name || '';
+                          }
+                        } else if (timeValue.name && typeof timeValue.name === 'string') {
+                          displayTime = timeValue.name;
+                        }
+                      }
+                      if ((!displayTime || displayTime === '') && showMealDetails?.createdAt) {
+                        try {
+                          const ca = showMealDetails.createdAt && typeof showMealDetails.createdAt.toDate === 'function'
+                            ? showMealDetails.createdAt.toDate()
+                            : (showMealDetails.createdAt instanceof Date ? showMealDetails.createdAt : new Date(showMealDetails.createdAt));
+                          displayTime = ca.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+                        } catch (e) {}
+                      }
+                      const deliveryTime = displayTime || null;
+                      return showMealDetails?.type === 'breakfast' ? (
+                        <BreakfastOrderSummary items={showMealDetails.breakfasts || mealsForDetails} user={{ role: 3 }} breakfastTypes={breakfastTypes} statusClass="bg-white" showSaveButton={false} deliveryTime={deliveryTime} allSides={sides} />
+                      ) : (
+                        <OrderSummary meals={mealsForDetails} isTableOrder={false} isWaiterView={true} statusClass="bg-white" deliveryTime={deliveryTime} allSides={sides} />
+                      );
+                    })()}
                     <div className="mt-3 text-xs sm:text-sm">
                       <p className="font-medium">Estado: {showMealDetails.status || 'Pendiente'}</p>
                       <p className="font-medium">Domiciliario: {showMealDetails.deliveryPerson || 'Sin asignar'}</p>

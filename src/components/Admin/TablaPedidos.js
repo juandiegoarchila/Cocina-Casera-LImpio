@@ -871,10 +871,37 @@ const TablaPedidos = ({
                             : order.status === 'Cancelado' ? 'bg-red-500 text-white'
                             : '';
 
-                        const timeValue = order.meals?.[0]?.time || order.breakfasts?.[0]?.time;
+                        const timeValue = order.meals?.[0]?.time || order.breakfasts?.[0]?.time || order.time || null;
                         let displayTime = 'N/A';
-                        if (typeof timeValue === 'string') displayTime = timeValue;
-                        else if (typeof timeValue === 'object' && timeValue !== null) displayTime = timeValue.name || 'N/A';
+                        // timeValue puede ser: string, {name}, Firestore Timestamp, Date, o null
+                        if (typeof timeValue === 'string' && timeValue.trim()) {
+                          displayTime = timeValue;
+                        } else if (timeValue instanceof Date) {
+                          displayTime = timeValue.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+                        } else if (timeValue && typeof timeValue === 'object') {
+                          // Firestore Timestamp tiene toDate(); también aceptamos { name }
+                          if (typeof timeValue.toDate === 'function') {
+                            try {
+                              const d = timeValue.toDate();
+                              displayTime = d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+                            } catch (e) {
+                              displayTime = timeValue.name || 'N/A';
+                            }
+                          } else if (timeValue.name && typeof timeValue.name === 'string') {
+                            displayTime = timeValue.name;
+                          } else {
+                            displayTime = 'N/A';
+                          }
+                        }
+                        // Si no hay time explícito, usar createdAt como fallback (si existe)
+                        if ((displayTime === 'N/A' || !displayTime) && order.createdAt) {
+                          try {
+                            const ca = order.createdAt && typeof order.createdAt.toDate === 'function' ? order.createdAt.toDate() : (order.createdAt instanceof Date ? order.createdAt : new Date(order.createdAt));
+                            displayTime = ca.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+                          } catch (e) {
+                            // mantener 'N/A' si falla
+                          }
+                        }
 
                         return (
                           <tr
