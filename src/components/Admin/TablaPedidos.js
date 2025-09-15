@@ -33,6 +33,30 @@ const handlePrintDeliveryReceipt = (order) => {
   const detalles = address.details || '';
   const now = new Date();
   const fecha = now.toLocaleDateString('es-CO') + ' ' + now.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+  
+  // Obtener la hora de entrega usando la misma lógica que en la tabla
+  const timeValue = order.meals?.[0]?.time || order.breakfasts?.[0]?.time || order.time || null;
+  let deliveryTime = '';
+  
+  // timeValue puede ser: string, {name}, Firestore Timestamp, Date, o null
+  if (typeof timeValue === 'string' && timeValue.trim()) {
+    deliveryTime = timeValue;
+  } else if (timeValue instanceof Date) {
+    deliveryTime = timeValue.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+  } else if (timeValue && typeof timeValue === 'object') {
+    // Firestore Timestamp tiene toDate(); también aceptamos { name }
+    if (typeof timeValue.toDate === 'function') {
+      try {
+        const d = timeValue.toDate();
+        deliveryTime = d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+      } catch (e) {
+        deliveryTime = timeValue.name || '';
+      }
+    } else if (timeValue.name && typeof timeValue.name === 'string') {
+      deliveryTime = timeValue.name;
+    }
+  }
+
   let resumen = '';
   if (!isBreakfast && Array.isArray(order.meals)) {
     resumen += `<div style='font-weight:bold;margin-bottom:4px;'>✅ Resumen del Pedido</div>`;
@@ -43,15 +67,40 @@ const handlePrintDeliveryReceipt = (order) => {
       else if (m.soupReplacement?.name) resumen += `<div>${m.soupReplacement.name} (por sopa)</div>`;
       else if (m.soup?.name && m.soup.name !== 'Sin sopa') resumen += `<div>${m.soup.name}</div>`;
       if (m.principleReplacement?.name) resumen += `<div>${m.principleReplacement.name} (por principio)</div>`;
-      else if (Array.isArray(m.principle) && m.principle.length > 0) resumen += `<div>${m.principle.map(p => p.name).join(', ')}</div>`;
+      else if (Array.isArray(m.principle) && m.principle.length > 0) {
+        const principles = m.principle.map(p => p.name).join(', ');
+        // Agregar (mixto) si hay más de un principio
+        const mixtoLabel = m.principle.length > 1 ? ' (mixto)' : '';
+        resumen += `<div>${principles}${mixtoLabel}</div>`;
+      }
       const specialRice = Array.isArray(m.principle) && m.principle.some(p => ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'].includes(p.name));
       if (specialRice) resumen += `<div>Proteína: Ya incluida en el arroz</div>`;
       else if (m.protein?.name) resumen += `<div>Proteína: ${m.protein.name}</div>`;
       if (m.drink?.name) resumen += `<div>${m.drink.name === 'Juego de mango' ? 'Jugo de mango' : m.drink.name}</div>`;
       resumen += `<div>Cubiertos: ${m.cutlery ? 'Sí' : 'No'}</div>`;
       if (specialRice) resumen += `<div>Acompañamientos: Ya incluidos</div>`;
-      else if (Array.isArray(m.sides) && m.sides.length > 0) resumen += `<div>Acompañamientos: ${m.sides.map(s => s.name).join(', ')}</div>`;
+      else if (Array.isArray(m.sides) && m.sides.length > 0) {
+        // Mostrar los acompañamientos seleccionados sin etiqueta mixto
+        const sides = m.sides.map(s => s.name).join(', ');
+        resumen += `<div>Acompañamientos: ${sides}</div>`;
+      }
       else resumen += `<div>Acompañamientos: Ninguno</div>`;
+      
+      // Agregar la sección "No Incluir" solo con acompañamientos disponibles para ese día
+      // Asumir que estos son los acompañamientos disponibles reales, no inventados
+      const availableSidesForToday = ['Arroz', 'Ensalada', 'Papa', 'Tajadas'];
+      const selectedSides = Array.isArray(m.sides) ? m.sides.map(s => s.name) : [];
+      
+      // Filtrar los acompañamientos no seleccionados pero disponibles hoy
+      const excludedItems = availableSidesForToday.filter(side => 
+        !selectedSides.some(s => s.includes(side))
+      );
+      
+      // Solo mostrar "No Incluir" si hay elementos para excluir
+      if (excludedItems.length > 0) {
+        resumen += `<div>No Incluir: ${excludedItems.join(', ')}</div>`;
+      }
+      
       if (Array.isArray(m.additions) && m.additions.length > 0) {
         resumen += `<div>Adiciones:</div>`;
         m.additions.forEach(a => {
@@ -91,6 +140,7 @@ const handlePrintDeliveryReceipt = (order) => {
     <div><b>Pago:</b> ${pago}</div>
     <div><b>Total:</b> ${total}</div>
     <div><b>Fecha:</b> ${fecha}</div>
+    ${deliveryTime ? `<div><b>Entrega:</b> ${deliveryTime}</div>` : ''}
     <div class='line'></div>
     <div><b>Dirección:</b> ${direccion}</div>
     <div><b>Barrio:</b> ${barrio}</div>
