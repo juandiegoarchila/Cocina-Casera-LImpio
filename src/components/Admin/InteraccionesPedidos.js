@@ -3,8 +3,68 @@ import React, { useState, useEffect } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { XMarkIcon, TrashIcon, PencilIcon } from '@heroicons/react/24/outline';
 import { PrinterIcon } from '@heroicons/react/24/outline';
+import QRCode from 'qrcode';
+// Función para determinar si dos comidas son idénticas
+const areMealsIdentical = (meal1, meal2) => {
+  // Comparar propiedades principales de las comidas
+  if (meal1.soup?.name !== meal2.soup?.name) return false;
+  if (meal1.soupReplacement?.name !== meal2.soupReplacement?.name) return false;
+  if (meal1.principleReplacement?.name !== meal2.principleReplacement?.name) return false;
+  if (meal1.protein?.name !== meal2.protein?.name) return false;
+  if (meal1.drink?.name !== meal2.drink?.name) return false;
+  if (meal1.cutlery !== meal2.cutlery) return false;
+  if (meal1.notes !== meal2.notes) return false;
+  
+  // Comparar arreglos (principle, sides, additions)
+  // Comparar principios
+  if (Array.isArray(meal1.principle) && Array.isArray(meal2.principle)) {
+    if (meal1.principle.length !== meal2.principle.length) return false;
+    // Crear arrays de nombres y ordenarlos para comparación
+    const principles1 = meal1.principle.map(p => p.name).sort();
+    const principles2 = meal2.principle.map(p => p.name).sort();
+    for (let i = 0; i < principles1.length; i++) {
+      if (principles1[i] !== principles2[i]) return false;
+    }
+  } else if (meal1.principle || meal2.principle) {
+    return false;
+  }
+  
+  // Comparar acompañamientos
+  if (Array.isArray(meal1.sides) && Array.isArray(meal2.sides)) {
+    if (meal1.sides.length !== meal2.sides.length) return false;
+    // Crear arrays de nombres y ordenarlos para comparación
+    const sides1 = meal1.sides.map(s => s.name).sort();
+    const sides2 = meal2.sides.map(s => s.name).sort();
+    for (let i = 0; i < sides1.length; i++) {
+      if (sides1[i] !== sides2[i]) return false;
+    }
+  } else if (meal1.sides || meal2.sides) {
+    return false;
+  }
+  
+  // Comparar adiciones (más complejo debido a quantity y protein)
+  if (Array.isArray(meal1.additions) && Array.isArray(meal2.additions)) {
+    if (meal1.additions.length !== meal2.additions.length) return false;
+    
+    // Crear copias ordenadas por nombre para comparar
+    const additions1 = [...meal1.additions].sort((a, b) => a.name.localeCompare(b.name));
+    const additions2 = [...meal2.additions].sort((a, b) => a.name.localeCompare(b.name));
+    
+    for (let i = 0; i < additions1.length; i++) {
+      if (additions1[i].name !== additions2[i].name) return false;
+      if (additions1[i].protein !== additions2[i].protein) return false;
+      if (additions1[i].quantity !== additions2[i].quantity) return false;
+    }
+  } else if (meal1.additions || meal2.additions) {
+    return false;
+  }
+  
+  // Si pasa todas las comparaciones, son idénticas
+  return true;
+};
+
 // Función para imprimir recibo de domicilio
-const handlePrintDeliveryReceipt = (order) => {
+const handlePrintDeliveryReceipt = async (order) => {
   // SOLO imprime el recibo, NO abre la caja registradora
   const win = window.open('', 'PRINT', 'height=700,width=400');
   if (!win) return;
@@ -19,6 +79,28 @@ const handlePrintDeliveryReceipt = (order) => {
   const detalles = address.details || '';
   const now = new Date();
   const fecha = now.toLocaleDateString('es-CO') + ' ' + now.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+  
+  // Generar código QR para el canal de WhatsApp
+  const whatsappChannelUrl = 'https://whatsapp.com/channel/0029VafyYdVAe5VskWujmK0C';
+  let qrCodeDataUrl = '';
+
+  // Crear el código QR para incluirlo en el recibo
+  const generateQRCode = () => {
+    return new Promise((resolve) => {
+      QRCode.toDataURL(whatsappChannelUrl, { 
+        width: 150,
+        margin: 1,
+        errorCorrectionLevel: 'M'
+      }, (err, url) => {
+        if (err) {
+          console.error('Error al generar código QR:', err);
+          resolve(''); 
+        } else {
+          resolve(url);
+        }
+      });
+    });
+  };
   
   // Obtener la hora de entrega usando la misma lógica que en la tabla
   const timeValue = order.meals?.[0]?.time || order.breakfasts?.[0]?.time || order.time || null;
@@ -43,69 +125,285 @@ const handlePrintDeliveryReceipt = (order) => {
     }
   }
   
+  // Generar el QR antes de mostrar el recibo
+  qrCodeDataUrl = await generateQRCode();
+  
   let resumen = '';
   if (!isBreakfast && Array.isArray(order.meals)) {
     resumen += `<div style='font-weight:bold;margin-bottom:4px;'>✅ Resumen del Pedido</div>`;
     resumen += `<div>🍽 ${order.meals.length} almuerzos en total</div>`;
-    order.meals.forEach((m, idx) => {
-      resumen += `<div style='margin-top:10px;'><b>🍽 Almuerzo ${idx + 1} – ${(order.total || '').toLocaleString('es-CO')} (${pago})</b></div>`;
-      if (m.soup?.name === 'Solo bandeja') resumen += '<div>solo bandeja</div>';
-      else if (m.soupReplacement?.name) resumen += `<div>${m.soupReplacement.name} (por sopa)</div>`;
-      else if (m.soup?.name && m.soup.name !== 'Sin sopa') resumen += `<div>${m.soup.name}</div>`;
-      if (m.principleReplacement?.name) resumen += `<div>${m.principleReplacement.name} (por principio)</div>`;
-      else if (Array.isArray(m.principle) && m.principle.length > 0) {
-        const principles = m.principle.map(p => p.name).join(', ');
-        // Agregar (mixto) si hay más de un principio
-        const mixtoLabel = m.principle.length > 1 ? ' (mixto)' : '';
-        resumen += `<div>${principles}${mixtoLabel}</div>`;
-      }
-      const specialRice = Array.isArray(m.principle) && m.principle.some(p => ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'].includes(p.name));
-      if (specialRice) resumen += `<div>Proteína: Ya incluida en el arroz</div>`;
-      else if (m.protein?.name) resumen += `<div>Proteína: ${m.protein.name}</div>`;
-      if (m.drink?.name) resumen += `<div>${m.drink.name === 'Juego de mango' ? 'Jugo de mango' : m.drink.name}</div>`;
-      resumen += `<div>Cubiertos: ${m.cutlery ? 'Sí' : 'No'}</div>`;
-      if (specialRice) resumen += `<div>Acompañamientos: Ya incluidos</div>`;
-      else if (Array.isArray(m.sides) && m.sides.length > 0) {
-        // Mostrar los acompañamientos seleccionados sin etiqueta mixto
-        const sides = m.sides.map(s => s.name).join(', ');
-        resumen += `<div>Acompañamientos: ${sides}</div>`;
-      }
-      else resumen += `<div>Acompañamientos: Ninguno</div>`;
+    
+    // Nueva lógica de agrupación mejorada
+    // 1. Agrupar comidas idénticas
+    const groupedMeals = [];
+    order.meals.forEach(meal => {
+      // Buscar si ya existe un grupo con comidas idénticas
+      const existingGroup = groupedMeals.find(group => areMealsIdentical(group.meal, meal));
       
-      // Agregar la sección "No Incluir" solo con acompañamientos disponibles para ese día
-      // Asumir que estos son los acompañamientos disponibles reales, no inventados
-      const availableSidesForToday = ['Arroz', 'Ensalada', 'Papa', 'Tajadas'];
-      const selectedSides = Array.isArray(m.sides) ? m.sides.map(s => s.name) : [];
-      
-      // Filtrar los acompañamientos no seleccionados pero disponibles hoy
-      const excludedItems = availableSidesForToday.filter(side => 
-        !selectedSides.some(s => s.includes(side))
-      );
-      
-      // Solo mostrar "No Incluir" si hay elementos para excluir
-      if (excludedItems.length > 0) {
-        resumen += `<div>No Incluir: ${excludedItems.join(', ')}</div>`;
-      }
-      
-      if (Array.isArray(m.additions) && m.additions.length > 0) {
-        resumen += `<div>Adiciones:</div>`;
-        m.additions.forEach(a => {
-          resumen += `<div style='margin-left:10px;'>- ${a.name}${a.protein ? ' (' + a.protein + ')' : ''} (${a.quantity || 1})</div>`;
+      if (existingGroup) {
+        // Si existe, incrementar el contador e identificar el índice
+        existingGroup.count++;
+        existingGroup.indices.push(order.meals.indexOf(meal) + 1);
+      } else {
+        // Si no existe, crear un nuevo grupo
+        groupedMeals.push({ 
+          meal, 
+          count: 1,
+          indices: [order.meals.indexOf(meal) + 1]
         });
       }
-      resumen += `<div>Notas: ${m.notes || 'Ninguna'}</div>`;
     });
+    
+    // 2. Verificar si todos los almuerzos tienen elementos comunes
+    if (groupedMeals.length > 1) {
+      // Buscar propiedades comunes entre todos los grupos
+      const commonProperties = {};
+      const allMeals = groupedMeals.map(g => g.meal);
+      
+      // Verificar principio común
+      if (allMeals.every(m => 
+          Array.isArray(m.principle) && 
+          allMeals[0].principle.some(p1 => 
+            m.principle.some(p2 => p1.name === p2.name)
+          )
+      )) {
+        const commonPrinciple = allMeals[0].principle.find(p1 => 
+          allMeals.every(m => m.principle.some(p2 => p1.name === p2.name))
+        );
+        if (commonPrinciple) commonProperties.principle = commonPrinciple.name;
+      }
+      
+      // Verificar bebida común
+      if (allMeals.every(m => m.drink?.name === allMeals[0].drink?.name)) {
+        commonProperties.drink = allMeals[0].drink?.name;
+      }
+      
+      // Verificar cubiertos
+      if (allMeals.every(m => m.cutlery === allMeals[0].cutlery)) {
+        commonProperties.cutlery = allMeals[0].cutlery;
+      }
+      
+      // Verificar acompañamientos comunes
+      if (allMeals.every(m => Array.isArray(m.sides))) {
+        const commonSides = allMeals[0].sides.filter(side1 => 
+          allMeals.every(m => m.sides.some(side2 => side1.name === side2.name))
+        );
+        if (commonSides.length > 0) {
+          commonProperties.sides = commonSides.map(s => s.name);
+        }
+      }
+      
+      // Calcular precio total de todos los almuerzos
+      const totalPrice = order.total || groupedMeals.reduce((sum, g) => {
+        const unitPrice = g.meal.price || 0;
+        return sum + (unitPrice * g.count);
+      }, 0);
+      
+      // Mostrar la parte común primero
+      resumen += `<div style='margin-top:10px;'><b>🍽 ${order.meals.length} Almuerzos – $${totalPrice.toLocaleString('es-CO')} (${pago})</b></div>`;
+      
+      // Mostrar propiedades comunes
+      if (commonProperties.principle) {
+        resumen += `<div>${commonProperties.principle}</div>`;
+      }
+      
+      if (commonProperties.drink) {
+        const drinkName = commonProperties.drink === 'Juego de mango' ? 'Jugo de mango' : commonProperties.drink;
+        resumen += `<div>${drinkName}</div>`;
+      }
+      
+      resumen += `<div>Cubiertos: ${commonProperties.cutlery ? 'Sí' : 'No'}</div>`;
+      
+      if (commonProperties.sides && commonProperties.sides.length > 0) {
+        resumen += `<div>Acompañamientos: ${commonProperties.sides.join(', ')}</div>`;
+      }
+      
+      // Mostrar las diferencias
+      resumen += `<div style='margin-top:10px;'><b>🔄 Diferencias:</b></div>`;
+      
+      groupedMeals.forEach(group => {
+        const m = group.meal;
+        resumen += `<div style='margin-top:5px;'><b>* Almuerzos ${group.indices.join(', ')}:</b></div>`;
+        
+        if (m.soup?.name === 'Solo bandeja') resumen += '<div>solo bandeja</div>';
+        else if (m.soupReplacement?.name) resumen += `<div>${m.soupReplacement.name} (por sopa)</div>`;
+        else if (m.soup?.name && m.soup.name !== 'Sin sopa') resumen += `<div>${m.soup.name}</div>`;
+        
+        if (m.principleReplacement?.name) resumen += `<div>${m.principleReplacement.name} (por principio)</div>`;
+        else if (!commonProperties.principle && Array.isArray(m.principle) && m.principle.length > 0) {
+          const principles = m.principle.map(p => p.name).join(', ');
+          // Agregar (mixto) si hay más de un principio
+          const mixtoLabel = m.principle.length > 1 ? ' (mixto)' : '';
+          resumen += `<div>${principles}${mixtoLabel}</div>`;
+        }
+      
+      const specialRice = Array.isArray(m.principle) && m.principle.some(p => ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'].includes(p.name));
+        if (specialRice) resumen += `<div>Ya incluida en el arroz</div>`;
+        else if (m.protein?.name) resumen += `<div>${m.protein.name}</div>`;
+        
+        // Solo mostrar bebida si no es común
+        if (!commonProperties.drink && m.drink?.name) {
+          resumen += `<div>${m.drink.name === 'Juego de mango' ? 'Jugo de mango' : m.drink.name}</div>`;
+        }
+        
+        // Solo mostrar cubiertos si no son comunes
+        if (commonProperties.cutlery === undefined) {
+          resumen += `<div>Cubiertos: ${m.cutlery ? 'Sí' : 'No'}</div>`;
+        }
+        
+        // Solo mostrar acompañamientos si no son comunes
+        if (specialRice) {
+          resumen += `<div>Acompañamientos: Ya incluidos</div>`;
+        } else if (!commonProperties.sides && Array.isArray(m.sides) && m.sides.length > 0) {
+          const sides = m.sides.map(s => s.name).join(', ');
+          resumen += `<div>Acompañamientos: ${sides}</div>`;
+        } else if (!commonProperties.sides) {
+          resumen += `<div>Acompañamientos: Ninguno</div>`;
+        }
+        
+        if (Array.isArray(m.additions) && m.additions.length > 0) {
+          resumen += `<div>Adiciones:</div>`;
+          m.additions.forEach(a => {
+            resumen += `<div style='margin-left:10px;'>- ${a.name}${a.protein ? ' (' + a.protein + ')' : ''} (${a.quantity || 1})</div>`;
+          });
+        }
+        
+        if (m.notes) resumen += `<div>Notas: ${m.notes}</div>`;
+      });
+    } else {
+      // Si solo hay un grupo, mostrar como antes
+      groupedMeals.forEach((group, idx) => {
+        const m = group.meal;
+        const countText = group.count > 1 ? `${group.count} Almuerzos iguales` : '1 Almuerzo';
+        
+        // Mostrar precio total del grupo (precio unitario * cantidad)
+        const unitPrice = m.price || (order.total / order.meals.length) || 0;
+        const groupTotal = (unitPrice * group.count).toLocaleString('es-CO');
+        
+        resumen += `<div style='margin-top:10px;'><b>🍽 ${countText} – $${groupTotal} (${pago})</b></div>`;
+        
+        if (m.soup?.name === 'Solo bandeja') resumen += '<div>solo bandeja</div>';
+        else if (m.soupReplacement?.name) resumen += `<div>${m.soupReplacement.name} (por sopa)</div>`;
+        else if (m.soup?.name && m.soup.name !== 'Sin sopa') resumen += `<div>${m.soup.name}</div>`;
+        
+        if (m.principleReplacement?.name) resumen += `<div>${m.principleReplacement.name} (por principio)</div>`;
+        else if (Array.isArray(m.principle) && m.principle.length > 0) {
+          const principles = m.principle.map(p => p.name).join(', ');
+          // Agregar (mixto) si hay más de un principio
+          const mixtoLabel = m.principle.length > 1 ? ' (mixto)' : '';
+          resumen += `<div>${principles}${mixtoLabel}</div>`;
+        }
+        
+        const specialRice = Array.isArray(m.principle) && m.principle.some(p => ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'].includes(p.name));
+        if (specialRice) resumen += `<div>Ya incluida en el arroz</div>`;
+        else if (m.protein?.name) resumen += `<div>${m.protein.name}</div>`;
+        
+        if (m.drink?.name) resumen += `<div>${m.drink.name === 'Juego de mango' ? 'Jugo de mango' : m.drink.name}</div>`;
+        
+        resumen += `<div>Cubiertos: ${m.cutlery ? 'Sí' : 'No'}</div>`;
+        
+        if (specialRice) resumen += `<div>Acompañamientos: Ya incluidos</div>`;
+        else if (Array.isArray(m.sides) && m.sides.length > 0) {
+          // Mostrar los acompañamientos seleccionados sin etiqueta mixto
+          const sides = m.sides.map(s => s.name).join(', ');
+          resumen += `<div>Acompañamientos: ${sides}</div>`;
+        }
+        else resumen += `<div>Acompañamientos: Ninguno</div>`;
+        
+        if (Array.isArray(m.additions) && m.additions.length > 0) {
+          resumen += `<div>Adiciones:</div>`;
+          m.additions.forEach(a => {
+            resumen += `<div style='margin-left:10px;'>- ${a.name}${a.protein ? ' (' + a.protein + ')' : ''} (${a.quantity || 1})</div>`;
+          });
+        }
+        resumen += `<div>Notas: ${m.notes || 'Ninguna'}</div>`;
+      });
+    }
   } else if (isBreakfast && Array.isArray(order.breakfasts)) {
     resumen += `<div style='font-weight:bold;margin-bottom:4px;'>✅ Resumen del Pedido</div>`;
     resumen += `<div>🍽 ${order.breakfasts.length} desayunos en total</div>`;
-    order.breakfasts.forEach((b, idx) => {
-      resumen += `<div style='margin-top:10px;'><b>🍽 Desayuno ${idx + 1} – ${(order.total || '').toLocaleString('es-CO')} (${pago})</b></div>`;
-      if (b.type) resumen += `<div>Tipo: ${typeof b.type === 'string' ? b.type : b.type?.name || ''}</div>`;
-      if (b.broth) resumen += `<div>Caldo: ${typeof b.broth === 'string' ? b.broth : b.broth?.name || ''}</div>`;
-      if (b.eggs) resumen += `<div>Huevos: ${typeof b.eggs === 'string' ? b.eggs : b.eggs?.name || ''}</div>`;
-      if (b.riceBread) resumen += `<div>Arroz/Pan: ${typeof b.riceBread === 'string' ? b.riceBread : b.riceBread?.name || ''}</div>`;
-      if (b.drink) resumen += `<div>Bebida: ${typeof b.drink === 'string' ? b.drink : b.drink?.name || ''}</div>`;
-      if (b.protein) resumen += `<div>Proteína: ${typeof b.protein === 'string' ? b.protein : b.protein?.name || ''}</div>`;
+    
+    // Función para determinar si dos desayunos son idénticos
+    const areBreakfastsIdentical = (b1, b2) => {
+      if (typeof b1.type !== typeof b2.type) return false;
+      if (typeof b1.type === 'string' && b1.type !== b2.type) return false;
+      if (typeof b1.type === 'object' && b1.type?.name !== b2.type?.name) return false;
+      
+      // Validar broth (caldo)
+      if (typeof b1.broth !== typeof b2.broth) return false;
+      if (typeof b1.broth === 'string' && b1.broth !== b2.broth) return false;
+      if (typeof b1.broth === 'object' && b1.broth?.name !== b2.broth?.name) return false;
+      
+      // Validar eggs (huevos)
+      if (typeof b1.eggs !== typeof b2.eggs) return false;
+      if (typeof b1.eggs === 'string' && b1.eggs !== b2.eggs) return false;
+      if (typeof b1.eggs === 'object' && b1.eggs?.name !== b2.eggs?.name) return false;
+      
+      // Validar riceBread (arroz/pan)
+      if (typeof b1.riceBread !== typeof b2.riceBread) return false;
+      if (typeof b1.riceBread === 'string' && b1.riceBread !== b2.riceBread) return false;
+      if (typeof b1.riceBread === 'object' && b1.riceBread?.name !== b2.riceBread?.name) return false;
+      
+      if (typeof b1.protein !== typeof b2.protein) return false;
+      if (typeof b1.protein === 'string' && b1.protein !== b2.protein) return false;
+      if (typeof b1.protein === 'object' && b1.protein?.name !== b2.protein?.name) return false;
+      
+      if (typeof b1.drink !== typeof b2.drink) return false;
+      if (typeof b1.drink === 'string' && b1.drink !== b2.drink) return false;
+      if (typeof b1.drink === 'object' && b1.drink?.name !== b2.drink?.name) return false;
+      
+      if (b1.notes !== b2.notes) return false;
+      
+      // Comparar adiciones
+      if (Array.isArray(b1.additions) && Array.isArray(b2.additions)) {
+        if (b1.additions.length !== b2.additions.length) return false;
+        
+        const additions1 = [...b1.additions].sort((a, b) => a.name.localeCompare(b.name));
+        const additions2 = [...b2.additions].sort((a, b) => a.name.localeCompare(b.name));
+        
+        for (let i = 0; i < additions1.length; i++) {
+          if (additions1[i].name !== additions2[i].name) return false;
+          if (additions1[i].quantity !== additions2[i].quantity) return false;
+        }
+      } else if (b1.additions || b2.additions) {
+        return false;
+      }
+      
+      return true;
+    };
+    
+    // Agrupar desayunos idénticos
+    const groupedBreakfasts = [];
+    order.breakfasts.forEach(breakfast => {
+      // Buscar si ya existe un grupo con desayunos idénticos
+      const existingGroup = groupedBreakfasts.find(group => areBreakfastsIdentical(group.breakfast, breakfast));
+      
+      if (existingGroup) {
+        // Si existe, incrementar el contador
+        existingGroup.count++;
+      } else {
+        // Si no existe, crear un nuevo grupo
+        groupedBreakfasts.push({ breakfast, count: 1 });
+      }
+    });
+    
+    // Mostrar los desayunos agrupados
+    groupedBreakfasts.forEach((group, idx) => {
+      const b = group.breakfast;
+      const countText = group.count > 1 ? `${group.count} Desayunos iguales` : '1 Desayuno';
+      
+      // Mostrar precio total del grupo (precio unitario * cantidad)
+      const unitPrice = b.price || (order.total / order.breakfasts.length) || 0;
+      const groupTotal = (unitPrice * group.count).toLocaleString('es-CO');
+      
+      resumen += `<div style='margin-top:10px;'><b>🍽 ${countText} – $${groupTotal} (${pago})</b></div>`;
+      
+      if (b.type) resumen += `<div>${typeof b.type === 'string' ? b.type : b.type?.name || ''}</div>`;
+      if (b.broth) resumen += `<div>${typeof b.broth === 'string' ? b.broth : b.broth?.name || ''}</div>`;
+      if (b.eggs) resumen += `<div>${typeof b.eggs === 'string' ? b.eggs : b.eggs?.name || ''}</div>`;
+      if (b.riceBread) resumen += `<div>${typeof b.riceBread === 'string' ? b.riceBread : b.riceBread?.name || ''}</div>`;
+      if (b.drink) resumen += `<div>${typeof b.drink === 'string' ? b.drink : b.drink?.name || ''}</div>`;
+      if (b.protein) resumen += `<div>${typeof b.protein === 'string' ? b.protein : b.protein?.name || ''}</div>`;
       if (b.additions && b.additions.length > 0) {
         resumen += `<div>Adiciones:</div>`;
         b.additions.forEach(a => {
@@ -113,32 +411,54 @@ const handlePrintDeliveryReceipt = (order) => {
         });
       }
       resumen += `<div>Notas: ${b.notes || 'Ninguna'}</div>`;
+      
+      // Agregar campos de cubiertos que faltaban
+      resumen += `<div>Cubiertos: ${b.cutlery === true ? 'Sí' : 'No'}</div>`;
+      
+      // Ya no agregamos información de dirección aquí porque ya se muestra en la parte superior del recibo
     });
   }
   win.document.write(`
     <html><head><title>Recibo Domicilio</title>
     <style>
-      body { font-family: monospace; font-size: 14px; margin: 0; padding: 0; }
-      h2 { margin: 0 0 8px 0; font-size: 18px; }
+      body { font-family: monospace; font-size: 14px; margin: 0; padding: 0 10px; }
+      h2 { margin: 5px 0 8px 0; font-size: 18px; text-align: center; }
       .line { border-bottom: 1px dashed #888; margin: 8px 0; }
+      .qr-container { text-align: center; margin-top: 15px; }
+      .qr-text { font-size: 10px; margin-top: 5px; text-align: center; }
+      .logo { text-align: center; margin-bottom: 8px; }
+      .thanks { text-align: center; margin-top: 16px; font-weight: bold; }
+      .contact { text-align: center; margin-top: 8px; }
+      div { padding-left: 5px; padding-right: 5px; }
     </style>
     </head><body>
-    <h2>RECIBO DE DOMICILIO</h2>
+    <div class='logo'>
+      <img src="/formato finak.png" alt="Logo" style="width:100px; height:auto; display:block; margin:0 auto; filter:brightness(0);" />
+      <h2>Cocina Casera</h2>
+    </div>
     <div class='line'></div>
     <div><b>Tipo:</b> ${tipo}</div>
     <div><b>Pago:</b> ${pago}</div>
-    <div><b>Total:</b> ${total}</div>
+    <div><b>Total:</b> <strong>$${total}</strong></div>
     <div><b>Fecha:</b> ${fecha}</div>
     ${deliveryTime ? `<div><b>Entrega:</b> ${deliveryTime}</div>` : ''}
     <div class='line'></div>
-    <div><b>Dirección:</b> ${direccion}</div>
-    <div><b>Barrio:</b> ${barrio}</div>
-    <div><b>Teléfono:</b> ${telefono}</div>
+    <div><b>Dirección:</b> <strong>${direccion}</strong></div>
+    <div><b>Barrio:</b> <strong>${barrio}</strong></div>
+    <div><b>Teléfono:</b> <strong>${telefono}</strong></div>
     <div><b>Detalles:</b> ${detalles}</div>
     <div class='line'></div>
     ${resumen}
     <div class='line'></div>
-    <div style='text-align:center;margin-top:16px;'>¡Gracias por su compra!</div>
+    <div class='thanks'>Gracias por pedir en Cocina Casera</div>
+    <div class='contact'>Te esperamos mañana con un nuevo menú.<br>Escríbenos al <strong>301 6476916</strong></div>
+    
+    ${qrCodeDataUrl ? `
+      <div class='qr-container'>
+        <img src="${qrCodeDataUrl}" alt="Canal de WhatsApp" style="width:120px;height:120px;" />
+        <div class='qr-text'>Escanea para unirte a nuestro canal de WhatsApp<br>y recibir nuestro menú diario</div>
+      </div>
+    ` : ''}
 <br><br><br><br><br><br>
     </body></html>
   `);
@@ -164,7 +484,7 @@ const BARRIOS = [
   "Tibabuyes",
 ];
 import { calculateTotal } from '../../utils/MealCalculations';
-import { calculateBreakfastPrice } from '../../utils/BreakfastCalculations';
+import { calculateBreakfastPrice } from '../../utils/BreakfastLogic'; // Cambiado de BreakfastCalculations a BreakfastLogic para consistencia
 
 
 // ===================== Helpers para hidratación =====================
@@ -624,16 +944,20 @@ const InteraccionesPedidos = ({
     });
 
     const computed = list.reduce((sum, b, index) => {
+      // Crear una copia y forzar orderType='table' para el cálculo de precio
+      const breakfast = { ...b, orderType: 'table' };
+      
       console.log(`🔍 [InteraccionesPedidos] Calculando precio para desayuno ${index + 1}:`, {
         breakfast: {
-          type: b.type?.name,
-          broth: b.broth?.name,
-          orderType: b.orderType,
-          additions: b.additions
+          type: breakfast.type?.name,
+          broth: breakfast.broth?.name,
+          orderType: breakfast.orderType, // Ahora siempre será 'table'
+          originalOrderType: b.orderType, // Guardar el tipo original para referencia
+          additions: breakfast.additions
         }
       });
       
-      const itemPrice = Number(calculateBreakfastPrice(b, 3, breakfastTypes) || 0);
+      const itemPrice = Number(calculateBreakfastPrice(breakfast, 3, breakfastTypes) || 0);
       console.log(`🔍 [InteraccionesPedidos] Precio calculado:`, {
         itemPrice,
         sumAnterior: sum,
@@ -907,18 +1231,48 @@ const InteraccionesPedidos = ({
                         } catch (e) {}
                       }
                       const deliveryTime = displayTime || null;
+                      
+                      // Modificar los desayunos para forzar orderType='table' en la vista admin
+                      let breakfastItems = showMealDetails.breakfasts || mealsForDetails;
+                      if (breakfastItems && showMealDetails?.type === 'breakfast') {
+                        // Crear una copia profunda y forzar orderType='table' para cada desayuno
+                        breakfastItems = JSON.parse(JSON.stringify(breakfastItems)).map(item => ({
+                          ...item,
+                          orderType: 'table' // Forzar orderType='table' para calcular precio de $12,000
+                        }));
+                        console.log('🔍 [InteraccionesPedidos] Forzando orderType=table para todos los desayunos en vista admin');
+                      }
+                      
                       return showMealDetails?.type === 'breakfast' ? (
-                        <BreakfastOrderSummary items={showMealDetails.breakfasts || mealsForDetails} user={{ role: 3 }} breakfastTypes={breakfastTypes} statusClass="bg-white" showSaveButton={false} deliveryTime={deliveryTime} allSides={sides} />
+                        <BreakfastOrderSummary 
+                          items={breakfastItems} 
+                          user={{ role: 3 }} 
+                          breakfastTypes={breakfastTypes} 
+                          statusClass="bg-white" 
+                          showSaveButton={false} 
+                          deliveryTime={deliveryTime} 
+                          allSides={sides}
+                          isAdminView={true} 
+                        />
                       ) : (
-                        <OrderSummary meals={mealsForDetails} isTableOrder={false} isWaiterView={true} statusClass="bg-white" deliveryTime={deliveryTime} allSides={sides} />
+                        <OrderSummary 
+                          meals={mealsForDetails} 
+                          isTableOrder={false} 
+                          isWaiterView={false} 
+                          statusClass="bg-white" 
+                          deliveryTime={deliveryTime} 
+                          allSides={sides}
+                          isAdminView={true} 
+                        />
                       );
                     })()}
                     <div className="mt-3 text-xs sm:text-sm">
                       <p className="font-medium">Estado: {showMealDetails.status || 'Pendiente'}</p>
                       <p className="font-medium">Domiciliario: {showMealDetails.deliveryPerson || 'Sin asignar'}</p>
+                      
                  {showMealDetails?.type === 'breakfast' ? (
-                  <p className="font-medium">
-                    Total del pedido: ${
+                  <p className="font-medium mt-2">
+                    <strong>Total del pedido:</strong> ${
                       (() => {
                         console.log('🔍 [InteraccionesPedidos] === CALCULANDO TOTAL PARA MOSTRAR EN DETALLES ===');
                         const breakfasts = showMealDetails.breakfasts || [];
@@ -960,8 +1314,8 @@ const InteraccionesPedidos = ({
                   </p>
                 ) : (
   typeof showMealDetails.total === 'number' && (
- <p className="font-medium">
-  Total del pedido: ${
+ <p className="font-medium mt-2">
+  <strong>Total del pedido:</strong> ${
     (
       Array.isArray(showMealDetails?.meals)
         ? Number(calculateTotal(showMealDetails.meals) || 0)

@@ -1257,6 +1257,7 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
                                   }
                                   hydratedOrder.breakfasts = order.breakfasts.map((b) => ({
                                     ...b,
+                                    orderType: 'table', // Forzar orderType='table' para el cálculo correcto de precio
                                     type: byName(breakfastTypes, b.type),
                                     broth: byName(breakfastBroths, b.broth),
                                     eggs: byName(breakfastEggs, b.eggs),

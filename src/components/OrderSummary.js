@@ -208,7 +208,7 @@ const AddressSummary = ({ commonAddressFields = {}, mealAddress, isCommon = fals
     if (field === 'address' && value) {
       return <p key={field} className="text-xs sm:text-sm text-gray-600">📍 Dirección: {value}</p>;
     } else if (field === 'neighborhood' && value) {
-      return <p key={field} className="text-xs sm:text-sm text-gray-600">🏘️ Barrio: {value}</p>;
+      return <p key={field} className="text-xs sm:text-sm text-gray-600">�️ Barrio: {value}</p>;
     } else if (field === 'phoneNumber' && value) {
       return <p key={field} className="text-xs sm:text-sm text-gray-600 font-medium">📞 Teléfono: {value}</p>;
     } else if (field === 'details' && value) {
@@ -228,7 +228,7 @@ const AddressSummary = ({ commonAddressFields = {}, mealAddress, isCommon = fals
 };
 
 // Componente para renderizar campos de una comida
-const MealFields = ({ meal, commonFields, isWaiterView, allSides = [] }) => {
+const MealFields = ({ meal, commonFields, isWaiterView, isAdminView = false, allSides = [] }) => {
   const hasSpecialRice = meal?.principle?.some(p => specialRiceOptions.includes(p.name));
 
   const fields = [];
@@ -400,7 +400,7 @@ const MealFields = ({ meal, commonFields, isWaiterView, allSides = [] }) => {
       fields.push(<p key="drink" className="text-xs sm:text-sm text-gray-600">{drinkName}</p>);
     }
   }
-  if (commonFields.has('Cubiertos') || commonFields.has('all')) {
+  if (commonFields.has('Cubiertos') || commonFields.has('all') || isAdminView) {
     fields.push(<p key="cutlery" className="text-xs sm:text-sm text-gray-600">Cubiertos: {meal?.cutlery ? 'Sí' : 'No'}</p>);
   }
   if (commonFields.has('Acompañamientos') || commonFields.has('all')) {
@@ -447,6 +447,21 @@ const MealFields = ({ meal, commonFields, isWaiterView, allSides = [] }) => {
   if (commonFields.has('all')) {
     fields.push(<p key="notes" className="text-xs sm:text-sm text-gray-600">Notas: {formatNotes(meal.notes) || 'Ninguna'}</p>);
   }
+
+  // Añadir campos de dirección cuando esté en vista de admin o se solicite explícitamente
+  if ((commonFields.has('Dirección') || commonFields.has('all')) || isAdminView) {
+    if (meal?.address) {
+      fields.push(
+        <AddressSummary
+          key="address"
+          mealAddress={meal.address}
+          isCommon={false}
+          globalCommonAddressFields={{}}
+        />
+      );
+    }
+  }
+  
   if ((commonFields.has('Mesa') || commonFields.has('all')) && isWaiterView && meal.tableNumber) {
     fields.push(<p key="table" className="text-xs sm:text-sm text-gray-600">Mesa: {meal.tableNumber}</p>);
   }
@@ -459,7 +474,7 @@ const MealFields = ({ meal, commonFields, isWaiterView, allSides = [] }) => {
 };
 
 // Componente para un grupo de comidas
-const MealGroup = ({ group, globalCommonFields, globalCommonAddressFields, isWaiterView, isTableOrder, calculateTotal, allSides = [] }) => {
+const MealGroup = ({ group, globalCommonFields, globalCommonAddressFields, isWaiterView, isAdminView = false, isTableOrder, calculateTotal, allSides = [] }) => {
   const baseMeal = group.meals[0];
   const count = group.meals.length;
   // Usar calculateTotal para el total del grupo de manera consistente
@@ -523,7 +538,13 @@ const MealGroup = ({ group, globalCommonFields, globalCommonAddressFields, isWai
       <h3 className="font-medium text-gray-800 text-xs sm:text-sm">
         🍽 {count > 1 ? `${count} Almuerzos iguales – $${groupTotal.toLocaleString('es-CO')} ${paymentText}` : `${count} Almuerzo – $${groupTotal.toLocaleString('es-CO')} ${paymentText}`}
       </h3>
-  <MealFields meal={baseMeal} commonFields={count > 1 ? group.commonFieldsInGroup : new Set(['all', 'Mesa'])} isWaiterView={isWaiterView} allSides={allSides} />
+  <MealFields 
+    meal={baseMeal} 
+    commonFields={count > 1 ? group.commonFieldsInGroup : new Set(['all', 'Mesa'])} 
+    isWaiterView={isWaiterView} 
+    isAdminView={isAdminView}
+    allSides={allSides} 
+  />
       {count === 1 && !globalCommonFields.has('Dirección') && baseMeal.address && (
         <AddressSummary
           mealAddress={baseMeal.address}
@@ -626,7 +647,7 @@ const PaymentSummary = ({ paymentSummary, total, isWaiterView, isTableOrder }) =
 };
 
 // Componente principal
-const OrderSummary = ({ meals, onSendOrder, calculateTotal, preCalculatedTotal, isTableOrder = false, isWaiterView = false, statusClass = '', allSides = [], deliveryTime = null }) => {
+const OrderSummary = ({ meals, onSendOrder, calculateTotal, preCalculatedTotal, isTableOrder = false, isWaiterView = false, isAdminView = false, statusClass = '', allSides = [], deliveryTime = null }) => {
   const {
     groupedMeals,
     total,
@@ -674,6 +695,7 @@ const OrderSummary = ({ meals, onSendOrder, calculateTotal, preCalculatedTotal, 
               globalCommonFields={globalCommonFields}
               globalCommonAddressFields={commonAddressFields}
               isWaiterView={isWaiterView}
+              isAdminView={isAdminView}
               isTableOrder={isTableOrder}
               calculateTotal={calculateTotal}
               allSides={allSides}

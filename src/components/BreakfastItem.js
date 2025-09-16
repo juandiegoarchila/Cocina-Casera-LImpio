@@ -8,7 +8,7 @@ import PaymentSelector from './PaymentSelector';
 import CutlerySelector from './CutlerySelector';
 import ProgressBar from './ProgressBar';
 import ErrorMessage from './ErrorMessage';
-import { calculateBreakfastPrice, calculateBreakfastProgress } from '../utils/BreakfastCalculations';
+import { calculateBreakfastPrice, calculateBreakfastProgress } from '../utils/BreakfastLogic';
 import { db } from '../config/firebase';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 

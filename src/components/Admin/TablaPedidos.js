@@ -3,8 +3,10 @@ import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { classNames } from '../../utils/classNames.js';
 import { cleanText, getAddressDisplay } from './utils.js';
 import { calculateMealPrice } from '../../utils/MealCalculations';
+import { calculateBreakfastPrice } from '../../utils/BreakfastLogic';
 import PaymentSplitEditor from '../common/PaymentSplitEditor';
 import { summarizePayments, sumPaymentsByMethod, defaultPaymentsForOrder } from '../../utils/payments';
+import QRCode from 'qrcode';
 import {
   ArrowDownTrayIcon,
   ChevronLeftIcon,
@@ -17,6 +19,83 @@ import {
   MagnifyingGlassIcon,
   PrinterIcon
 } from '@heroicons/react/24/outline';
+// Función para determinar si dos comidas son idénticas
+const areMealsIdentical = (meal1, meal2) => {
+  // Comparar propiedades principales de las comidas
+  if (meal1.soup?.name !== meal2.soup?.name) return false;
+  if (meal1.soupReplacement?.name !== meal2.soupReplacement?.name) return false;
+  if (meal1.principleReplacement?.name !== meal2.principleReplacement?.name) return false;
+  if (meal1.protein?.name !== meal2.protein?.name) return false;
+  if (meal1.drink?.name !== meal2.drink?.name) return false;
+  if (meal1.cutlery !== meal2.cutlery) return false;
+  if (meal1.notes !== meal2.notes) return false;
+  
+  // Comparar arreglos (principle, sides, additions)
+  // Comparar principios
+  if (Array.isArray(meal1.principle) && Array.isArray(meal2.principle)) {
+    if (meal1.principle.length !== meal2.principle.length) return false;
+    // Crear arrays de nombres y ordenarlos para comparación
+    const principles1 = meal1.principle.map(p => p.name).sort();
+    const principles2 = meal2.principle.map(p => p.name).sort();
+    for (let i = 0; i < principles1.length; i++) {
+      if (principles1[i] !== principles2[i]) return false;
+    }
+  } else if (meal1.principle || meal2.principle) {
+    return false;
+  }
+  
+  // Comparar acompañamientos
+  if (Array.isArray(meal1.sides) && Array.isArray(meal2.sides)) {
+    if (meal1.sides.length !== meal2.sides.length) return false;
+    // Crear arrays de nombres y ordenarlos para comparación
+    const sides1 = meal1.sides.map(s => s.name).sort();
+    const sides2 = meal2.sides.map(s => s.name).sort();
+    for (let i = 0; i < sides1.length; i++) {
+      if (sides1[i] !== sides2[i]) return false;
+    }
+  } else if (meal1.sides || meal2.sides) {
+    return false;
+  }
+  
+  // Comparar adiciones (más complejo debido a quantity y protein)
+  if (Array.isArray(meal1.additions) && Array.isArray(meal2.additions)) {
+    if (meal1.additions.length !== meal2.additions.length) return false;
+    
+    // Crear copias ordenadas por nombre para comparar
+    const additions1 = [...meal1.additions].sort((a, b) => a.name.localeCompare(b.name));
+    const additions2 = [...meal2.additions].sort((a, b) => a.name.localeCompare(b.name));
+    
+    for (let i = 0; i < additions1.length; i++) {
+      if (additions1[i].name !== additions2[i].name) return false;
+      if (additions1[i].protein !== additions2[i].protein) return false;
+      if (additions1[i].quantity !== additions2[i].quantity) return false;
+    }
+  } else if (meal1.additions || meal2.additions) {
+    return false;
+  }
+  
+  // Si pasa todas las comparaciones, son idénticas
+  return true;
+};
+
+// Función para recalcular el total correcto para desayunos
+const calculateCorrectBreakfastTotal = (order) => {
+  if (order.type !== 'breakfast' || !Array.isArray(order.breakfasts) || order.breakfasts.length === 0) {
+    return order.total || 0;
+  }
+  
+  // Crear copias de los desayunos con orderType='table'
+  const breakfastsWithTableType = order.breakfasts.map(b => ({
+    ...b,
+    orderType: 'table'
+  }));
+  
+  // Calcular el total usando la función correcta
+  return breakfastsWithTableType.reduce((sum, breakfast) => {
+    return sum + calculateBreakfastPrice(breakfast, 3);
+  }, 0);
+};
+
 // Función para imprimir recibo de domicilio (idéntica a la de InteraccionesPedidos.js)
 const handlePrintDeliveryReceipt = (order) => {
   // SOLO imprime el recibo, NO abre la caja registradora
@@ -24,7 +103,11 @@ const handlePrintDeliveryReceipt = (order) => {
   if (!win) return;
   const isBreakfast = order.type === 'breakfast';
   const pago = order.payment || order.paymentMethod || 'N/A';
-  const total = order.total?.toLocaleString('es-CO') || 'N/A';
+  
+  // Calcular el total correcto para desayunos
+  const totalValue = isBreakfast ? calculateCorrectBreakfastTotal(order) : order.total || 0;
+  const total = totalValue.toLocaleString('es-CO') || 'N/A';
+  
   const tipo = isBreakfast ? 'Desayuno' : 'Almuerzo';
   const address = (isBreakfast ? order.breakfasts?.[0]?.address : order.meals?.[0]?.address) || order.address || {};
   const direccion = address.address || '';
@@ -61,104 +144,358 @@ const handlePrintDeliveryReceipt = (order) => {
   if (!isBreakfast && Array.isArray(order.meals)) {
     resumen += `<div style='font-weight:bold;margin-bottom:4px;'>✅ Resumen del Pedido</div>`;
     resumen += `<div>🍽 ${order.meals.length} almuerzos en total</div>`;
-    order.meals.forEach((m, idx) => {
-      resumen += `<div style='margin-top:10px;'><b>🍽 Almuerzo ${idx + 1} – ${(m.price || order.total || '').toLocaleString('es-CO')} (${pago})</b></div>`;
-      if (m.soup?.name === 'Solo bandeja') resumen += '<div>solo bandeja</div>';
-      else if (m.soupReplacement?.name) resumen += `<div>${m.soupReplacement.name} (por sopa)</div>`;
-      else if (m.soup?.name && m.soup.name !== 'Sin sopa') resumen += `<div>${m.soup.name}</div>`;
-      if (m.principleReplacement?.name) resumen += `<div>${m.principleReplacement.name} (por principio)</div>`;
-      else if (Array.isArray(m.principle) && m.principle.length > 0) {
-        const principles = m.principle.map(p => p.name).join(', ');
-        // Agregar (mixto) si hay más de un principio
-        const mixtoLabel = m.principle.length > 1 ? ' (mixto)' : '';
-        resumen += `<div>${principles}${mixtoLabel}</div>`;
-      }
-      const specialRice = Array.isArray(m.principle) && m.principle.some(p => ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'].includes(p.name));
-      if (specialRice) resumen += `<div>Proteína: Ya incluida en el arroz</div>`;
-      else if (m.protein?.name) resumen += `<div>Proteína: ${m.protein.name}</div>`;
-      if (m.drink?.name) resumen += `<div>${m.drink.name === 'Juego de mango' ? 'Jugo de mango' : m.drink.name}</div>`;
-      resumen += `<div>Cubiertos: ${m.cutlery ? 'Sí' : 'No'}</div>`;
-      if (specialRice) resumen += `<div>Acompañamientos: Ya incluidos</div>`;
-      else if (Array.isArray(m.sides) && m.sides.length > 0) {
-        // Mostrar los acompañamientos seleccionados sin etiqueta mixto
-        const sides = m.sides.map(s => s.name).join(', ');
-        resumen += `<div>Acompañamientos: ${sides}</div>`;
-      }
-      else resumen += `<div>Acompañamientos: Ninguno</div>`;
+    
+    // Nueva lógica de agrupación mejorada
+    // 1. Agrupar comidas idénticas
+    const groupedMeals = [];
+    order.meals.forEach(meal => {
+      // Buscar si ya existe un grupo con comidas idénticas
+      const existingGroup = groupedMeals.find(group => areMealsIdentical(group.meal, meal));
       
-      // Agregar la sección "No Incluir" solo con acompañamientos disponibles para ese día
-      // Asumir que estos son los acompañamientos disponibles reales, no inventados
-      const availableSidesForToday = ['Arroz', 'Ensalada', 'Papa', 'Tajadas'];
-      const selectedSides = Array.isArray(m.sides) ? m.sides.map(s => s.name) : [];
-      
-      // Filtrar los acompañamientos no seleccionados pero disponibles hoy
-      const excludedItems = availableSidesForToday.filter(side => 
-        !selectedSides.some(s => s.includes(side))
-      );
-      
-      // Solo mostrar "No Incluir" si hay elementos para excluir
-      if (excludedItems.length > 0) {
-        resumen += `<div>No Incluir: ${excludedItems.join(', ')}</div>`;
-      }
-      
-      if (Array.isArray(m.additions) && m.additions.length > 0) {
-        resumen += `<div>Adiciones:</div>`;
-        m.additions.forEach(a => {
-          resumen += `<div style='margin-left:10px;'>- ${a.name}${a.protein ? ' (' + a.protein + ')' : ''} (${a.quantity || 1})</div>`;
+      if (existingGroup) {
+        // Si existe, incrementar el contador e identificar el índice
+        existingGroup.count++;
+        existingGroup.indices.push(order.meals.indexOf(meal) + 1);
+      } else {
+        // Si no existe, crear un nuevo grupo
+        groupedMeals.push({ 
+          meal, 
+          count: 1,
+          indices: [order.meals.indexOf(meal) + 1]
         });
       }
-      resumen += `<div>Notas: ${m.notes || 'Ninguna'}</div>`;
     });
+    
+    // 2. Verificar si todos los almuerzos tienen elementos comunes
+    if (groupedMeals.length > 1) {
+      // Buscar propiedades comunes entre todos los grupos
+      const commonProperties = {};
+      const allMeals = groupedMeals.map(g => g.meal);
+      
+      // Verificar principio común
+      if (allMeals.every(m => 
+          Array.isArray(m.principle) && 
+          allMeals[0].principle.some(p1 => 
+            m.principle.some(p2 => p1.name === p2.name)
+          )
+      )) {
+        const commonPrinciple = allMeals[0].principle.find(p1 => 
+          allMeals.every(m => m.principle.some(p2 => p1.name === p2.name))
+        );
+        if (commonPrinciple) commonProperties.principle = commonPrinciple.name;
+      }
+      
+      // Verificar bebida común
+      if (allMeals.every(m => m.drink?.name === allMeals[0].drink?.name)) {
+        commonProperties.drink = allMeals[0].drink?.name;
+      }
+      
+      // Verificar cubiertos
+      if (allMeals.every(m => m.cutlery === allMeals[0].cutlery)) {
+        commonProperties.cutlery = allMeals[0].cutlery;
+      }
+      
+      // Verificar acompañamientos comunes
+      if (allMeals.every(m => Array.isArray(m.sides))) {
+        const commonSides = allMeals[0].sides.filter(side1 => 
+          allMeals.every(m => m.sides.some(side2 => side1.name === side2.name))
+        );
+        if (commonSides.length > 0) {
+          commonProperties.sides = commonSides.map(s => s.name);
+        }
+      }
+      
+      // Calcular precio total de todos los almuerzos
+      const totalPrice = order.total || groupedMeals.reduce((sum, g) => {
+        const unitPrice = g.meal.price || 0;
+        return sum + (unitPrice * g.count);
+      }, 0);
+      
+      // Mostrar la parte común primero
+      resumen += `<div style='margin-top:10px;'><b>🍽 ${order.meals.length} Almuerzos – $${totalPrice.toLocaleString('es-CO')} (${pago})</b></div>`;
+      
+      // Mostrar propiedades comunes
+      if (commonProperties.principle) {
+        resumen += `<div>${commonProperties.principle}</div>`;
+      }
+      
+      if (commonProperties.drink) {
+        const drinkName = commonProperties.drink === 'Juego de mango' ? 'Jugo de mango' : commonProperties.drink;
+        resumen += `<div>${drinkName}</div>`;
+      }
+      
+      resumen += `<div>Cubiertos: ${commonProperties.cutlery ? 'Sí' : 'No'}</div>`;
+      
+      if (commonProperties.sides && commonProperties.sides.length > 0) {
+        resumen += `<div>Acompañamientos: ${commonProperties.sides.join(', ')}</div>`;
+      }
+      
+      // Mostrar las diferencias
+      resumen += `<div style='margin-top:10px;'><b>🔄 Diferencias:</b></div>`;
+      
+      groupedMeals.forEach(group => {
+        const m = group.meal;
+        resumen += `<div style='margin-top:5px;'><b>* Almuerzos ${group.indices.join(', ')}:</b></div>`;
+        
+        if (m.soup?.name === 'Solo bandeja') resumen += '<div>solo bandeja</div>';
+        else if (m.soupReplacement?.name) resumen += `<div>${m.soupReplacement.name} (por sopa)</div>`;
+        else if (m.soup?.name && m.soup.name !== 'Sin sopa') resumen += `<div>${m.soup.name}</div>`;
+        
+        if (m.principleReplacement?.name) resumen += `<div>${m.principleReplacement.name} (por principio)</div>`;
+        else if (!commonProperties.principle && Array.isArray(m.principle) && m.principle.length > 0) {
+          const principles = m.principle.map(p => p.name).join(', ');
+          // Agregar (mixto) si hay más de un principio
+          const mixtoLabel = m.principle.length > 1 ? ' (mixto)' : '';
+          resumen += `<div>${principles}${mixtoLabel}</div>`;
+        }
+      
+      const specialRice = Array.isArray(m.principle) && m.principle.some(p => ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'].includes(p.name));
+        if (specialRice) resumen += `<div>Ya incluida en el arroz</div>`;
+        else if (m.protein?.name) resumen += `<div>${m.protein.name}</div>`;
+        
+        // Solo mostrar bebida si no es común
+        if (!commonProperties.drink && m.drink?.name) {
+          resumen += `<div>${m.drink.name === 'Juego de mango' ? 'Jugo de mango' : m.drink.name}</div>`;
+        }
+        
+        // Solo mostrar cubiertos si no son comunes
+        if (commonProperties.cutlery === undefined) {
+          resumen += `<div>Cubiertos: ${m.cutlery ? 'Sí' : 'No'}</div>`;
+        }
+        
+        // Solo mostrar acompañamientos si no son comunes
+        if (specialRice) {
+          resumen += `<div>Acompañamientos: Ya incluidos</div>`;
+        } else if (!commonProperties.sides && Array.isArray(m.sides) && m.sides.length > 0) {
+          const sides = m.sides.map(s => s.name).join(', ');
+          resumen += `<div>Acompañamientos: ${sides}</div>`;
+        } else if (!commonProperties.sides) {
+          resumen += `<div>Acompañamientos: Ninguno</div>`;
+        }
+        
+        if (Array.isArray(m.additions) && m.additions.length > 0) {
+          resumen += `<div>Adiciones:</div>`;
+          m.additions.forEach(a => {
+            resumen += `<div style='margin-left:10px;'>- ${a.name}${a.protein ? ' (' + a.protein + ')' : ''} (${a.quantity || 1})</div>`;
+          });
+        }
+        
+        if (m.notes) resumen += `<div>Notas: ${m.notes}</div>`;
+      });
+    } else {
+      // Si solo hay un grupo, mostrar como antes
+      groupedMeals.forEach((group, idx) => {
+        const m = group.meal;
+        const countText = group.count > 1 ? `${group.count} Almuerzos iguales` : '1 Almuerzo';
+        
+        // Mostrar precio total del grupo (precio unitario * cantidad)
+        const unitPrice = m.price || (order.total / order.meals.length) || 0;
+        const groupTotal = (unitPrice * group.count).toLocaleString('es-CO');
+        
+        resumen += `<div style='margin-top:10px;'><b>🍽 ${countText} – $${groupTotal} (${pago})</b></div>`;
+        
+        if (m.soup?.name === 'Solo bandeja') resumen += '<div>solo bandeja</div>';
+        else if (m.soupReplacement?.name) resumen += `<div>${m.soupReplacement.name} (por sopa)</div>`;
+        else if (m.soup?.name && m.soup.name !== 'Sin sopa') resumen += `<div>${m.soup.name}</div>`;
+        
+        if (m.principleReplacement?.name) resumen += `<div>${m.principleReplacement.name} (por principio)</div>`;
+        else if (Array.isArray(m.principle) && m.principle.length > 0) {
+          const principles = m.principle.map(p => p.name).join(', ');
+          // Agregar (mixto) si hay más de un principio
+          const mixtoLabel = m.principle.length > 1 ? ' (mixto)' : '';
+          resumen += `<div>${principles}${mixtoLabel}</div>`;
+        }
+        
+        const specialRice = Array.isArray(m.principle) && m.principle.some(p => ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'].includes(p.name));
+        if (specialRice) resumen += `<div>Ya incluida en el arroz</div>`;
+        else if (m.protein?.name) resumen += `<div>${m.protein.name}</div>`;
+        
+        if (m.drink?.name) resumen += `<div>${m.drink.name === 'Juego de mango' ? 'Jugo de mango' : m.drink.name}</div>`;
+        
+        resumen += `<div>Cubiertos: ${m.cutlery ? 'Sí' : 'No'}</div>`;
+        
+        if (specialRice) resumen += `<div>Acompañamientos: Ya incluidos</div>`;
+        else if (Array.isArray(m.sides) && m.sides.length > 0) {
+          // Mostrar los acompañamientos seleccionados sin etiqueta mixto
+          const sides = m.sides.map(s => s.name).join(', ');
+          resumen += `<div>Acompañamientos: ${sides}</div>`;
+        }
+        else resumen += `<div>Acompañamientos: Ninguno</div>`;
+        
+        // No incluimos la dirección aquí porque ya se muestra arriba en el recibo
+        
+        if (Array.isArray(m.additions) && m.additions.length > 0) {
+          resumen += `<div>Adiciones:</div>`;
+          m.additions.forEach(a => {
+            resumen += `<div style='margin-left:10px;'>- ${a.name}${a.protein ? ' (' + a.protein + ')' : ''} (${a.quantity || 1})</div>`;
+          });
+        }
+        resumen += `<div>Notas: ${m.notes || 'Ninguna'}</div>`;
+      });
+    }
   } else if (isBreakfast && Array.isArray(order.breakfasts)) {
+    // Calcular el total general de desayunos (con orderType='table')
+    const totalBreakfast = calculateCorrectBreakfastTotal(order);
+    
     resumen += `<div style='font-weight:bold;margin-bottom:4px;'>✅ Resumen del Pedido</div>`;
     resumen += `<div>🍽 ${order.breakfasts.length} desayunos en total</div>`;
-    order.breakfasts.forEach((b, idx) => {
-      resumen += `<div style='margin-top:10px;'><b>🍽 Desayuno ${idx + 1} – ${(b.price || order.total || '').toLocaleString('es-CO')} (${pago})</b></div>`;
+    resumen += `<div style='font-weight:bold;'>Total: $${totalBreakfast.toLocaleString('es-CO')}</div>`;
+    
+    // Función para determinar si dos desayunos son idénticos
+    const areBreakfastsIdentical = (b1, b2) => {
+      if (typeof b1.type !== typeof b2.type) return false;
+      if (typeof b1.type === 'string' && b1.type !== b2.type) return false;
+      if (typeof b1.type === 'object' && b1.type?.name !== b2.type?.name) return false;
+      
+      if (typeof b1.protein !== typeof b2.protein) return false;
+      if (typeof b1.protein === 'string' && b1.protein !== b2.protein) return false;
+      if (typeof b1.protein === 'object' && b1.protein?.name !== b2.protein?.name) return false;
+      
+      if (typeof b1.drink !== typeof b2.drink) return false;
+      if (typeof b1.drink === 'string' && b1.drink !== b2.drink) return false;
+      if (typeof b1.drink === 'object' && b1.drink?.name !== b2.drink?.name) return false;
+      
+      if (b1.notes !== b2.notes) return false;
+      
+      // Comparar adiciones
+      if (Array.isArray(b1.additions) && Array.isArray(b2.additions)) {
+        if (b1.additions.length !== b2.additions.length) return false;
+        
+        const additions1 = [...b1.additions].sort((a, b) => a.name.localeCompare(b.name));
+        const additions2 = [...b2.additions].sort((a, b) => a.name.localeCompare(b.name));
+        
+        for (let i = 0; i < additions1.length; i++) {
+          if (additions1[i].name !== additions2[i].name) return false;
+          if (additions1[i].quantity !== additions2[i].quantity) return false;
+        }
+      } else if (b1.additions || b2.additions) {
+        return false;
+      }
+      
+      return true;
+    };
+    
+    // Agrupar desayunos idénticos
+    const groupedBreakfasts = [];
+    order.breakfasts.forEach(breakfast => {
+      // Buscar si ya existe un grupo con desayunos idénticos
+      const existingGroup = groupedBreakfasts.find(group => areBreakfastsIdentical(group.breakfast, breakfast));
+      
+      if (existingGroup) {
+        // Si existe, incrementar el contador
+        existingGroup.count++;
+      } else {
+        // Si no existe, crear un nuevo grupo
+        groupedBreakfasts.push({ breakfast, count: 1 });
+      }
+    });
+    
+    // Mostrar los desayunos agrupados
+    groupedBreakfasts.forEach((group, idx) => {
+      const b = group.breakfast;
+      const countText = group.count > 1 ? `${group.count} Desayunos iguales` : '1 Desayuno';
+      
+      // Forzar orderType='table' para calcular el precio correcto
+      const breakfastForPricing = { ...b, orderType: 'table' };
+      
+      // Calcular precio usando la función correcta
+      const unitPrice = calculateBreakfastPrice(breakfastForPricing, 3);
+      const groupTotal = (unitPrice * group.count).toLocaleString('es-CO');
+      
+      resumen += `<div style='margin-top:10px;'><b>🍽 ${countText} – $${groupTotal} (${pago})</b></div>`;
+      
       if (b.type) resumen += `<div>${typeof b.type === 'string' ? b.type : b.type?.name || ''}</div>`;
-      if (b.protein) resumen += `<div>Proteína: ${typeof b.protein === 'string' ? b.protein : b.protein?.name || ''}</div>`;
-      if (b.drink) resumen += `<div>Bebida: ${typeof b.drink === 'string' ? b.drink : b.drink?.name || ''}</div>`;
+      if (b.broth) resumen += `<div>Caldo: ${typeof b.broth === 'string' ? b.broth : b.broth?.name || ''}</div>`;
+      if (b.protein) resumen += `<div>${typeof b.protein === 'string' ? b.protein : b.protein?.name || ''}</div>`;
+      if (b.drink) resumen += `<div>${typeof b.drink === 'string' ? b.drink : b.drink?.name || ''}</div>`;
       if (b.additions && b.additions.length > 0) {
         resumen += `<div>Adiciones:</div>`;
         b.additions.forEach(a => {
           resumen += `<div style='margin-left:10px;'>- ${a.name} (${a.quantity || 1})</div>`;
         });
       }
+      resumen += `<div>Cubiertos: ${b.cutlery === true ? 'Sí' : 'No'}</div>`;
       resumen += `<div>Notas: ${b.notes || 'Ninguna'}</div>`;
+      
+      // No incluimos la dirección aquí porque ya se muestra arriba en el recibo
     });
   }
-  win.document.write(`
-    <html><head><title>Recibo Domicilio</title>
-    <style>
-      body { font-family: monospace; font-size: 14px; margin: 0; padding: 0; }
-      h2 { margin: 0 0 8px 0; font-size: 18px; }
-      .line { border-bottom: 1px dashed #888; margin: 8px 0; }
-    </style>
-    </head><body>
-    <h2>RECIBO DE DOMICILIO</h2>
-    <div class='line'></div>
-    <div><b>Tipo:</b> ${tipo}</div>
-    <div><b>Pago:</b> ${pago}</div>
-    <div><b>Total:</b> ${total}</div>
-    <div><b>Fecha:</b> ${fecha}</div>
-    ${deliveryTime ? `<div><b>Entrega:</b> ${deliveryTime}</div>` : ''}
-    <div class='line'></div>
-    <div><b>Dirección:</b> ${direccion}</div>
-    <div><b>Barrio:</b> ${barrio}</div>
-    <div><b>Teléfono:</b> ${telefono}</div>
-    <div><b>Detalles:</b> ${detalles}</div>
-    <div class='line'></div>
-    ${resumen}
-    <div class='line'></div>
-    <div style='text-align:center;margin-top:16px;'>¡Gracias por su compra!</div>
-<br><br><br><br><br><br>
-    </body></html>
-  `);
-  win.document.close();
-  win.focus();
-  setTimeout(() => {
-    win.print();
-    win.close();
-  }, 500);
+  // Generar código QR para el canal de WhatsApp
+  const whatsappChannelUrl = 'https://whatsapp.com/channel/0029VafyYdVAe5VskWujmK0C';
+  let qrCodeDataUrl = '';
+
+  // Crear el código QR para incluirlo en el recibo
+  const generateQRCode = () => {
+    return new Promise((resolve) => {
+      QRCode.toDataURL(whatsappChannelUrl, { 
+        width: 150,
+        margin: 1,
+        errorCorrectionLevel: 'M'
+      }, (err, url) => {
+        if (err) {
+          console.error('Error al generar código QR:', err);
+          resolve(''); // Devolver cadena vacía en caso de error
+        } else {
+          resolve(url);
+        }
+      });
+    });
+  };
+
+  // Generar el código QR y luego abrir la ventana de impresión
+  generateQRCode().then(qrUrl => {
+    qrCodeDataUrl = qrUrl;
+    
+    win.document.write(`
+      <html><head><title>Recibo Domicilio</title>
+      <style>
+        body { font-family: monospace; font-size: 14px; margin: 0; padding: 0 10px; }
+        h2 { margin: 5px 0 8px 0; font-size: 18px; text-align: center; }
+        .line { border-bottom: 1px dashed #888; margin: 8px 0; }
+        .qr-container { text-align: center; margin-top: 15px; }
+        .qr-text { font-size: 12px; margin-bottom: 5px; text-align: center; }
+        .logo { text-align: center; margin-bottom: 8px; }
+        .thanks { text-align: center; margin-top: 16px; font-weight: bold; }
+        .contact { text-align: center; margin-top: 8px; }
+        div { padding-left: 5px; padding-right: 5px; }
+      </style>
+      </head><body>
+      <div class='logo'>
+        <img src="/formato finak.png" alt="Logo" style="width:100px; height:auto; display:block; margin:0 auto; filter:brightness(0);" />
+        <h2>Cocina Casera</h2>
+      </div>
+      <div class='line'></div>
+      <div><b>Tipo:</b> ${tipo}</div>
+      <div><b>Pago:</b> ${pago}</div>
+      <div><b>Total:</b> <strong>$${total}</strong></div>
+      <div><b>Fecha:</b> ${fecha}</div>
+      ${deliveryTime ? `<div><b>Entrega:</b> ${deliveryTime}</div>` : ''}
+      <div class='line'></div>
+      <div><b>Dirección:</b> <strong>${direccion}</strong></div>
+      <div><b>Barrio:</b> <strong>${barrio}</strong></div>
+      <div><b>Teléfono:</b> <strong>${telefono}</strong></div>
+      <div><b>Detalles:</b> ${detalles}</div>
+      <div class='line'></div>
+      ${resumen}
+      <div class='line'></div>
+      <div class='thanks'>Gracias por pedir en Cocina Casera</div>
+      <div class='contact'>Te esperamos mañana con un nuevo menú.<br>Escríbenos al <strong>301 6476916</strong></div>
+      
+      <div class='qr-container'>
+        <div class='qr-text'>Escanea este código QR para unirte a nuestro canal de WhatsApp<br>y recibir nuestro menú diario:</div>
+        ${qrCodeDataUrl ? `<img src="${qrCodeDataUrl}" width="150" height="150" alt="QR Code" />` : ''}
+      </div>
+      <br><br>
+      </body></html>
+    `);
+    
+    win.document.close();
+    win.focus();
+    setTimeout(() => {
+      win.print();
+      win.close();
+    }, 500);
+  });
 };
 
 // Firestore para persistir pagos
@@ -1003,7 +1340,9 @@ const TablaPedidos = ({
                             <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">{displayTime}</td>
                             <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">{paymentDisplay}</td>
                             <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">
-                              ${order.total?.toLocaleString('es-CO') || '0'}
+                              ${order.type === 'breakfast' 
+                                ? calculateCorrectBreakfastTotal(order).toLocaleString('es-CO') 
+                                : (order.total?.toLocaleString('es-CO') || '0')}
                             </td>
                             <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">
                               {editingDeliveryId === order.id ? (

@@ -755,3 +755,38 @@ export const generateMessageFromBreakfasts = (breakfasts, calculateBreakfastPric
   message += `\n¡Gracias por tu pedido! 😊`;
   return message;
 };
+
+export const calculateBreakfastProgress = (breakfast, isTableOrder, isWaitress, breakfastTypes = []) => {
+  if (!breakfast || !breakfast.type) {
+    return 0;
+  }
+
+  const breakfastType = breakfastTypes.find(bt => bt.id === breakfast.type?.id) || { steps: [], requiresProtein: false };
+  const currentSteps = breakfastType.steps || [];
+
+  const mandatorySteps = ['type'];
+  if (currentSteps.includes('broth')) mandatorySteps.push('broth');
+  if (currentSteps.includes('eggs')) mandatorySteps.push('eggs');
+  if (currentSteps.includes('riceBread')) mandatorySteps.push('riceBread');
+  if (currentSteps.includes('drink')) mandatorySteps.push('drink');
+  if (currentSteps.includes('protein') && breakfastType.requiresProtein) mandatorySteps.push('protein');
+
+  if (isTableOrder) {
+    mandatorySteps.push('tableNumber', 'payment');
+    if (isWaitress) mandatorySteps.push('orderType');
+  } else {
+    mandatorySteps.push('cutlery', 'time', 'address', 'payment');
+  }
+
+  const completedSteps = mandatorySteps.filter(step => {
+    if (step === 'address') {
+      return breakfast.address && breakfast.address.address;
+    } else if (step === 'payment') {
+      return breakfast.paymentMethod;
+    } else {
+      return breakfast[step];
+    }
+  });
+
+  return Math.round((completedSteps.length / mandatorySteps.length) * 100);
+};
