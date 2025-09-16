@@ -96,6 +96,11 @@ const calculateCorrectBreakfastTotal = (order) => {
   }, 0);
 };
 
+// Exportar la función al objeto window para poder usarla desde otros archivos
+if (typeof window !== 'undefined') {
+  window.calculateCorrectBreakfastTotal = calculateCorrectBreakfastTotal;
+}
+
 // Función para imprimir recibo de domicilio (idéntica a la de InteraccionesPedidos.js)
 const handlePrintDeliveryReceipt = (order) => {
   // SOLO imprime el recibo, NO abre la caja registradora
@@ -524,17 +529,38 @@ const normalizePaymentMethodKey = (method) => {
 };
 
 const paymentsRowsFromOrder = (order, fallbackBuilder) => {
-  const total = Math.floor(Number(order?.total || 0)) || 0;
+  // Verificar si es un pedido de desayuno para usar calculateCorrectBreakfastTotal
+  const isBreakfast = order.type === 'breakfast' || Array.isArray(order?.breakfasts);
+  
+  // Usar calculateCorrectBreakfastTotal para pedidos de desayuno
+  const total = isBreakfast 
+    ? Math.floor(calculateCorrectBreakfastTotal(order)) 
+    : Math.floor(Number(order?.total || 0)) || 0;
 
   console.log('🔍 DEBUG paymentsRowsFromOrder:', {
     orderId: order?.id?.slice(-4),
     hasPayments: Array.isArray(order?.payments),
     paymentsLength: order?.payments?.length,
     payments: order?.payments,
-    total: total
+    total: total,
+    isBreakfast: isBreakfast
   });
 
   if (Array.isArray(order?.payments) && order.payments.length) {
+    // Si es un pedido de desayuno, ajustar los montos proporcionalmente al total correcto
+    if (isBreakfast) {
+      const originalTotal = order.payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+      if (originalTotal > 0 && originalTotal !== total) {
+        const ratio = total / originalTotal;
+        const result = order.payments.map((p) => ({
+          methodKey: normalizePaymentMethodKey(p.method),
+          amount: Math.floor((Number(p.amount || 0) * ratio)) || 0,
+        }));
+        console.log('✅ Using adjusted order.payments for breakfast:', result);
+        return result;
+      }
+    }
+    
     const result = order.payments.map((p) => ({
       methodKey: normalizePaymentMethodKey(p.method),
       amount: Math.floor(Number(p.amount || 0)) || 0,
@@ -913,20 +939,57 @@ const TablaPedidos = ({
     const isActive = (o) => !/(cancel|canelad)/i.test((o?.status || '')); // ignora cancelados
 
     (orders || []).filter(isActive).forEach((order) => {
+      // Detectar si es un pedido de desayuno
+      const isBreakfast = order.type === 'breakfast' || Array.isArray(order?.breakfasts);
+      
       // Para los métodos específicos
       if (order.payments && Array.isArray(order.payments)) {
-        order.payments.forEach(payment => {
-          const methodKey = normalizePaymentMethodKey(payment.method);
-          const amount = Math.floor(Number(payment.amount || 0)) || 0;
-          if (amount <= 0) return;
-          
-          acc[methodKey] = (acc[methodKey] || 0) + amount;
-          acc.total += amount;
-        });
+        // Si es un pedido de desayuno, recalculamos el total usando la función correcta
+        let totalAmount = 0;
+        if (isBreakfast) {
+          totalAmount = calculateCorrectBreakfastTotal(order);
+          // Si el total actual es diferente del recalculado, ajustamos proporcionalmente
+          const currentTotal = order.payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+          if (currentTotal > 0 && currentTotal !== totalAmount) {
+            const ratio = totalAmount / currentTotal;
+            order.payments.forEach(payment => {
+              const methodKey = normalizePaymentMethodKey(payment.method);
+              const amount = Math.floor((Number(payment.amount || 0) * ratio)) || 0;
+              if (amount <= 0) return;
+              
+              acc[methodKey] = (acc[methodKey] || 0) + amount;
+              acc.total += amount;
+            });
+          } else {
+            // Si no hay diferencia, procesamos normalmente
+            order.payments.forEach(payment => {
+              const methodKey = normalizePaymentMethodKey(payment.method);
+              const amount = Math.floor(Number(payment.amount || 0)) || 0;
+              if (amount <= 0) return;
+              
+              acc[methodKey] = (acc[methodKey] || 0) + amount;
+              acc.total += amount;
+            });
+          }
+        } else {
+          // No es desayuno, procesamos normalmente
+          order.payments.forEach(payment => {
+            const methodKey = normalizePaymentMethodKey(payment.method);
+            const amount = Math.floor(Number(payment.amount || 0)) || 0;
+            if (amount <= 0) return;
+            
+            acc[methodKey] = (acc[methodKey] || 0) + amount;
+            acc.total += amount;
+          });
+        }
       } else {
         // Estructura antigua
         const methodKey = normalizePaymentMethodKey(order.payment || order.paymentMethod);
-        const amount = Math.floor(Number(order.total || 0)) || 0;
+        // Si es desayuno, calculamos el total correcto
+        const amount = isBreakfast 
+          ? Math.floor(calculateCorrectBreakfastTotal(order)) || 0
+          : Math.floor(Number(order.total || 0)) || 0;
+        
         if (amount <= 0) return;
         
         acc[methodKey] = (acc[methodKey] || 0) + amount;
