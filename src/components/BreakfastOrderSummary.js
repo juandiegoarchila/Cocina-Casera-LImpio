@@ -282,7 +282,15 @@ const AddressSummary = ({ commonAddressFields = {}, breakfastAddress, isCommon =
   );
 };
 
-const BreakfastFields = ({ breakfast, commonFields, isWaiterView, isAdminView = false, breakfastTypes = [] }) => {
+const BreakfastFields = ({ 
+  breakfast, 
+  commonFields, 
+  isWaiterView, 
+  isAdminView = false, 
+  breakfastTypes = [],
+  isLastItem = false,
+  hasCommonAddress = false
+}) => {
   const fields = [];
   // Variable para rastrear si se muestra la dirección en los campos
   let showAddressInFields = false;
@@ -351,7 +359,11 @@ const BreakfastFields = ({ breakfast, commonFields, isWaiterView, isAdminView = 
   
   // Mostrar dirección en Admin View y cuando se solicite explícitamente
   if (((commonFields.has('Dirección') || commonFields.has('all')) && !isWaiterView) || isAdminView) {
-    if (breakfast.address) {
+    // Verificar si es un ticket
+    const isTicketView = typeof document !== 'undefined' && document.title && document.title.includes('Ticket');
+    
+    // Si hay una dirección y no estamos en un ticket, mostrarla solo si es el último item o no hay dirección común
+    if (breakfast.address && !isTicketView && (isLastItem || !hasCommonAddress)) {
       // Marcar que se mostrará la dirección en los campos
       showAddressInFields = true;
       fields.push(
@@ -378,7 +390,15 @@ const BreakfastFields = ({ breakfast, commonFields, isWaiterView, isAdminView = 
   return { fields, showAddressInFields };
 };
 
-const BreakfastGroup = ({ group, globalCommonFields, isWaiterView, isAdminView = false, breakfastTypes = [] }) => {
+const BreakfastGroup = ({ 
+  group, 
+  globalCommonFields, 
+  isWaiterView, 
+  isAdminView = false, 
+  breakfastTypes = [],
+  isLastGroup = false,
+  hasCommonAddress = false
+}) => {
   const baseBreakfast = group.items[0];
   const count = group.items.length;
   
@@ -474,9 +494,15 @@ const BreakfastGroup = ({ group, globalCommonFields, isWaiterView, isAdminView =
         🍽 {count > 1 ? `${count} Desayunos iguales – $${groupTotal.toLocaleString('es-CO')} ${paymentText}` : `${count} Desayuno – $${groupTotal.toLocaleString('es-CO')} ${paymentText}`}
       </h3>
       {(() => {
-        const result = BreakfastFields(
-          { breakfast: baseBreakfast, commonFields: count > 1 ? group.commonFieldsInGroup : new Set(['all']), isWaiterView, isAdminView, breakfastTypes }
-        );
+        const result = BreakfastFields({
+          breakfast: baseBreakfast, 
+          commonFields: count > 1 ? group.commonFieldsInGroup : new Set(['all']), 
+          isWaiterView, 
+          isAdminView, 
+          breakfastTypes,
+          isLastItem: isLastGroup,
+          hasCommonAddress
+        });
         return (
           <>
             {result.fields}
@@ -603,13 +629,30 @@ const BreakfastOrderSummary = ({ items, onSendOrder, user, breakfastTypes, statu
   const isWaiterView = propIsWaiterView !== undefined ? propIsWaiterView : user?.role === 3;
   const selectedPaymentNameFallback = selectedPayment?.name; // si el padre lo envía, lo usamos como fallback
 
+  // Determinar si todos los desayunos tienen la misma dirección
+  const allSameAddress = useMemo(() => {
+    if (!items || items.length <= 1) return false;
+    
+    const firstAddress = items[0]?.address;
+    if (!firstAddress) return false;
+    
+    return items.every(item => {
+      if (!item.address) return false;
+      
+      return item.address.address === firstAddress.address &&
+        item.address.phoneNumber === firstAddress.phoneNumber &&
+        item.address.neighborhood === firstAddress.neighborhood &&
+        item.address.details === firstAddress.details;
+    });
+  }, [items]);
+
   const {
     groupedItems,
     total,
     paymentSummary,
     globalCommonFields,
     commonAddressFields,
-    areAddressesGloballyCommon, // (no usado, se mantiene para compat)
+    areAddressesGloballyCommon,
   } = useBreakfastOrderSummary(items, isWaiterView, selectedPaymentNameFallback, breakfastTypes);
 
   // Aplicar el color de estado en la vista de "Ver Órdenes" (cuando isWaiterView=true) 
@@ -660,14 +703,16 @@ const BreakfastOrderSummary = ({ items, onSendOrder, user, breakfastTypes, statu
 
           <hr className="border-t border-gray-300 my-2" />
 
-          {groupedItems.map((group, index) => (
+          {groupedItems.map((group, groupIndex) => (
             <BreakfastGroup
-              key={index}
+              key={groupIndex}
               group={group}
-              globalCommonFields={new Set()} // no necesitamos globales aquí
+              globalCommonFields={globalCommonFields}
               isWaiterView={isWaiterView}
               isAdminView={isAdminView}
               breakfastTypes={breakfastTypes}
+              isLastGroup={groupIndex === groupedItems.length - 1}
+              hasCommonAddress={allSameAddress}
             />
           ))}
 

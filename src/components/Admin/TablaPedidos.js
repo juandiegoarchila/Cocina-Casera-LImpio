@@ -406,6 +406,8 @@ const handlePrintDeliveryReceipt = (order) => {
       
       if (b.type) resumen += `<div>${typeof b.type === 'string' ? b.type : b.type?.name || ''}</div>`;
       if (b.broth) resumen += `<div>Caldo: ${typeof b.broth === 'string' ? b.broth : b.broth?.name || ''}</div>`;
+      if (b.eggs) resumen += `<div>Huevos: ${typeof b.eggs === 'string' ? b.eggs : b.eggs?.name || ''}</div>`;
+      if (b.riceBread) resumen += `<div>Arroz/Pan: ${typeof b.riceBread === 'string' ? b.riceBread : b.riceBread?.name || ''}</div>`;
       if (b.protein) resumen += `<div>${typeof b.protein === 'string' ? b.protein : b.protein?.name || ''}</div>`;
       if (b.drink) resumen += `<div>${typeof b.drink === 'string' ? b.drink : b.drink?.name || ''}</div>`;
       if (b.additions && b.additions.length > 0) {

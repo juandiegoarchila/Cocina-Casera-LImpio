@@ -1287,16 +1287,19 @@ const InteraccionesPedidos = ({
                         });
 
                         const total = breakfasts.reduce((sum, b, index) => {
+                          // Crear una copia con orderType='table' para el cálculo
+                          const bForCalc = { ...b, orderType: 'table' };
+                          
                           console.log(`🔍 [InteraccionesPedidos] Calculando para mostrar desayuno ${index + 1}:`, {
                             breakfast: {
                               type: b.type?.name,
                               broth: b.broth?.name,
-                              orderType: b.orderType,
+                              orderType: 'table', // Forzamos 'table' para el cálculo
                               additions: b.additions
                             }
                           });
                           
-                          const itemPrice = Number(calculateBreakfastPrice(b, 3, breakfastTypes) || 0);
+                          const itemPrice = Number(calculateBreakfastPrice(bForCalc, 3, breakfastTypes) || 0);
                           console.log(`🔍 [InteraccionesPedidos] Precio para mostrar:`, {
                             itemPrice,
                             sumAnterior: sum,
