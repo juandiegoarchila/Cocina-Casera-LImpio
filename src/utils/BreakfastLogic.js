@@ -773,7 +773,8 @@ export const calculateBreakfastProgress = (breakfast, isTableOrder, isWaitress, 
 
   if (isTableOrder) {
     mandatorySteps.push('tableNumber', 'payment');
-    if (isWaitress) mandatorySteps.push('orderType');
+    // Para meseros, no requerir orderType como campo separado ya que isTableOrder=true implica table
+    // if (isWaitress) mandatorySteps.push('orderType');
   } else {
     mandatorySteps.push('cutlery', 'time', 'address', 'payment');
   }

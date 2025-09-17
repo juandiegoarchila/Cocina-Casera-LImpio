@@ -111,7 +111,7 @@ const BreakfastItem = ({
     cutlery: breakfast?.cutlery !== null,
     time: !!breakfast?.time,
     address: !!breakfast?.address?.address,
-    payment: !!breakfast?.payment,
+    payment: isTableOrder ? !!breakfast?.paymentMethod : !!breakfast?.payment,
     tableNumber: !!breakfast?.tableNumber,
     orderType: !!breakfast?.orderType,
     protein: !!breakfast?.protein,
@@ -484,11 +484,11 @@ const BreakfastItem = ({
                 ) : (
                   <PaymentSelector
                     paymentMethods={paymentMethods}
-                    selectedPayment={breakfast?.payment}
-                    setSelectedPayment={(payment) => handleImmediateChange('payment', payment)}
+                    selectedPayment={isTableOrder ? breakfast?.paymentMethod : breakfast?.payment}
+                    setSelectedPayment={(payment) => handleImmediateChange(isTableOrder ? 'paymentMethod' : 'payment', payment)}
                   />
                 )}
-                {!breakfast?.payment && (
+                {!(isTableOrder ? breakfast?.paymentMethod : breakfast?.payment) && (
                   <p className="text-sm font-semibold text-red-600 bg-red-50 p-2 rounded mt-2">
                     Por favor, selecciona un método de pago
                   </p>
@@ -603,11 +603,11 @@ const BreakfastItem = ({
                 ) : (
                   <PaymentSelector
                     paymentMethods={paymentMethods}
-                    selectedPayment={breakfast?.payment}
-                    setSelectedPayment={(payment) => handleImmediateChange('payment', payment)}
+                    selectedPayment={isTableOrder ? breakfast?.paymentMethod : breakfast?.payment}
+                    setSelectedPayment={(payment) => handleImmediateChange(isTableOrder ? 'paymentMethod' : 'payment', payment)}
                   />
                 )}
-                {!breakfast?.payment && (
+                {!(isTableOrder ? breakfast?.paymentMethod : breakfast?.payment) && (
                   <p className="text-sm font-semibold text-red-600 bg-red-50 p-2 rounded mt-2">
                     Por favor, selecciona un método de pago
                   </p>
