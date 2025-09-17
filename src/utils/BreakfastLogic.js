@@ -782,7 +782,8 @@ export const calculateBreakfastProgress = (breakfast, isTableOrder, isWaitress, 
     if (step === 'address') {
       return breakfast.address && breakfast.address.address;
     } else if (step === 'payment') {
-      return breakfast.paymentMethod;
+      // Para pedidos de mesa usar paymentMethod, para domicilio usar payment
+      return isTableOrder ? breakfast.paymentMethod : breakfast.payment;
     } else {
       return breakfast[step];
     }
