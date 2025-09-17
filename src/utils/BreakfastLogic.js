@@ -13,7 +13,7 @@ export const initializeBreakfastData = ({ address, phoneNumber, details, isWaitr
   notes: '',
   tableNumber: isWaitress ? '' : null,
   paymentMethod: isWaitress ? null : null,
-  orderType: isWaitress ? 'table' : 'takeaway',
+  orderType: isWaitress ? null : 'takeaway',
   ...(isWaitress ? {} : {
     time: null,
     address: {
@@ -773,8 +773,7 @@ export const calculateBreakfastProgress = (breakfast, isTableOrder, isWaitress, 
 
   if (isTableOrder) {
     mandatorySteps.push('tableNumber', 'payment');
-    // Para meseros, no requerir orderType como campo separado ya que isTableOrder=true implica table
-    // if (isWaitress) mandatorySteps.push('orderType');
+    if (isWaitress) mandatorySteps.push('orderType');
   } else {
     mandatorySteps.push('cutlery', 'time', 'address', 'payment');
   }

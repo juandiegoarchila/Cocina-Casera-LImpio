@@ -171,6 +171,7 @@ const BreakfastItem = ({
         currentSlideIsComplete = !!value?.address;
         break;
       case 'payment':
+      case 'paymentMethod':
         currentSlideIsComplete = !!value;
         break;
       case 'tableNumber':
