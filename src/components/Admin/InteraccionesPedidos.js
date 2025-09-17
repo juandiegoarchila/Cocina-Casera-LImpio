@@ -4,6 +4,30 @@ import { Dialog, Transition } from '@headlessui/react';
 import { XMarkIcon, TrashIcon, PencilIcon } from '@heroicons/react/24/outline';
 import { PrinterIcon } from '@heroicons/react/24/outline';
 import QRCode from 'qrcode';
+
+// Función para recalcular el total correcto para desayunos
+const calculateCorrectBreakfastTotal = (order) => {
+  if (order.type !== 'breakfast' || !Array.isArray(order.breakfasts) || order.breakfasts.length === 0) {
+    return order.total || 0;
+  }
+  
+  // Crear copias de los desayunos con orderType='table'
+  const breakfastsWithTableType = order.breakfasts.map(b => ({
+    ...b,
+    orderType: 'table'
+  }));
+  
+  // Calcular el total usando la función correcta
+  return breakfastsWithTableType.reduce((sum, breakfast) => {
+    return sum + calculateBreakfastPrice(breakfast, 3);
+  }, 0);
+};
+
+// Exportar la función al objeto window para poder usarla desde otros archivos
+if (typeof window !== 'undefined') {
+  window.calculateCorrectBreakfastTotal = calculateCorrectBreakfastTotal;
+}
+
 // Función para determinar si dos comidas son idénticas
 const areMealsIdentical = (meal1, meal2) => {
   // Comparar propiedades principales de las comidas
@@ -70,7 +94,13 @@ const handlePrintDeliveryReceipt = async (order) => {
   if (!win) return;
   const isBreakfast = order.type === 'breakfast';
   const pago = order.payment || order.paymentMethod || 'N/A';
-  const total = order.total?.toLocaleString('es-CO') || 'N/A';
+  
+  // Usar la función correcta para calcular el total de desayunos
+  const totalValue = isBreakfast 
+    ? calculateCorrectBreakfastTotal(order) 
+    : order.total || 0;
+  
+  const total = totalValue.toLocaleString('es-CO');
   const tipo = isBreakfast ? 'Desayuno' : 'Almuerzo';
   const address = (isBreakfast ? order.breakfasts?.[0]?.address : order.meals?.[0]?.address) || order.address || {};
   const direccion = address.address || '';

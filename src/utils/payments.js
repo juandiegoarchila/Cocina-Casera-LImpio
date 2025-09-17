@@ -35,9 +35,29 @@ const pickMethodLabel = (methodLike) => {
  * - Sino, cae en {other}.
  */
 export const extractOrderPayments = (order) => {
-  const total = Math.floor(Number(order?.total || 0)) || 0;
+  // Para pedidos de desayuno, calculamos correctamente el total
+  const isBreakfast = order.type === 'breakfast' || Array.isArray(order?.breakfasts);
+  const total = isBreakfast && typeof window !== 'undefined' && window.calculateCorrectBreakfastTotal
+    ? Math.floor(window.calculateCorrectBreakfastTotal(order)) || 0
+    : Math.floor(Number(order?.total || 0)) || 0;
 
   if (Array.isArray(order?.payments) && order.payments.length) {
+    // Si es un pedido de desayuno, ajustar los montos proporcionalmente al total correcto
+    if (isBreakfast) {
+      const originalTotal = order.payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+      if (originalTotal > 0 && originalTotal !== total) {
+        const ratio = total / originalTotal;
+        return order.payments.map((p) => {
+          const amount = Math.floor((Number(p?.amount || 0) * ratio)) || 0;
+          return {
+            methodKey: normalizePaymentMethodKey(p?.method),
+            amount,
+            rawLabel: pickMethodLabel(p?.method),
+          };
+        });
+      }
+    }
+    
     return order.payments.map((p) => {
       const amount = Math.floor(Number(p?.amount || 0)) || 0;
       return {

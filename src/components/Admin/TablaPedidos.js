@@ -177,7 +177,7 @@ const handlePrintDeliveryReceipt = (order) => {
       const commonProperties = {};
       const allMeals = groupedMeals.map(g => g.meal);
       
-      // Verificar principio común
+      // Verificar principio común - pero excluir indicadores de reemplazo
       if (allMeals.every(m => 
           Array.isArray(m.principle) && 
           allMeals[0].principle.some(p1 => 
@@ -187,7 +187,39 @@ const handlePrintDeliveryReceipt = (order) => {
         const commonPrinciple = allMeals[0].principle.find(p1 => 
           allMeals.every(m => m.principle.some(p2 => p1.name === p2.name))
         );
-        if (commonPrinciple) commonProperties.principle = commonPrinciple.name;
+        // Debug: ver qué principios están llegando
+        console.log('DEBUG - commonPrinciple encontrado:', commonPrinciple?.name);
+        console.log('DEBUG - todos los principios del primer almuerzo:', allMeals[0].principle.map(p => p.name));
+        
+        // Solo asignar si no es un indicador de reemplazo
+        if (commonPrinciple && 
+            !commonPrinciple.name.includes('Remplazo') && 
+            !commonPrinciple.name.includes('remplazo')) {
+          commonProperties.principle = commonPrinciple.name;
+          console.log('DEBUG - principio común asignado:', commonPrinciple.name);
+        } else {
+          console.log('DEBUG - principio común filtrado:', commonPrinciple?.name);
+        }
+      }
+      
+      // Verificar sopa común
+      if (allMeals.every(m => m.soup?.name === allMeals[0].soup?.name && m.soup?.name !== 'Sin sopa')) {
+        commonProperties.soup = allMeals[0].soup?.name;
+      }
+      
+      // Verificar soupReplacement común
+      if (allMeals.every(m => m.soupReplacement?.name === allMeals[0].soupReplacement?.name && m.soupReplacement?.name)) {
+        commonProperties.soupReplacement = allMeals[0].soupReplacement?.name;
+      }
+      
+      // Verificar principleReplacement común
+      if (allMeals.every(m => m.principleReplacement?.name === allMeals[0].principleReplacement?.name && m.principleReplacement?.name)) {
+        commonProperties.principleReplacement = allMeals[0].principleReplacement?.name;
+      }
+      
+      // Verificar proteína común
+      if (allMeals.every(m => m.protein?.name === allMeals[0].protein?.name)) {
+        commonProperties.protein = allMeals[0].protein?.name;
       }
       
       // Verificar bebida común
@@ -220,8 +252,31 @@ const handlePrintDeliveryReceipt = (order) => {
       resumen += `<div style='margin-top:10px;'><b>🍽 ${order.meals.length} Almuerzos – $${totalPrice.toLocaleString('es-CO')} (${pago})</b></div>`;
       
       // Mostrar propiedades comunes
-      if (commonProperties.principle) {
+      if (commonProperties.soup) {
+        resumen += `<div>${commonProperties.soup}</div>`;
+      }
+      
+      if (commonProperties.soupReplacement) {
+        resumen += `<div>${commonProperties.soupReplacement} (por sopa)</div>`;
+      }
+      
+      // Mostrar principio común si existe y no es un indicador de reemplazo
+      console.log('DEBUG - commonProperties.principle antes de mostrar:', commonProperties.principle);
+      if (commonProperties.principle && 
+          !commonProperties.principle.includes('Remplazo') && 
+          !commonProperties.principle.includes('remplazo')) {
+        console.log('DEBUG - Mostrando principio común:', commonProperties.principle);
         resumen += `<div>${commonProperties.principle}</div>`;
+      } else if (commonProperties.principle) {
+        console.log('DEBUG - Principio común filtrado en visualización:', commonProperties.principle);
+      }
+      
+      if (commonProperties.principleReplacement) {
+        resumen += `<div>${commonProperties.principleReplacement} (por principio)</div>`;
+      }
+      
+      if (commonProperties.protein) {
+        resumen += `<div>${commonProperties.protein}</div>`;
       }
       
       if (commonProperties.drink) {
@@ -235,57 +290,130 @@ const handlePrintDeliveryReceipt = (order) => {
         resumen += `<div>Acompañamientos: ${commonProperties.sides.join(', ')}</div>`;
       }
       
-      // Mostrar las diferencias
+      // Mostrar las diferencias - solo elementos que varían entre almuerzos
       resumen += `<div style='margin-top:10px;'><b>🔄 Diferencias:</b></div>`;
+      
+      // Función para determinar si un elemento es común a todos los almuerzos
+      const isCommonElement = (element, property, allMeals) => {
+        if (!element) return false;
+        return allMeals.every(meal => {
+          if (property === 'soup') {
+            return meal.soup?.name === element;
+          } else if (property === 'protein') {
+            return meal.protein?.name === element;
+          } else if (property === 'principle') {
+            return Array.isArray(meal.principle) && meal.principle.some(p => p.name === element);
+          } else if (property === 'soupReplacement') {
+            return meal.soupReplacement?.name === element;
+          } else if (property === 'principleReplacement') {
+            return meal.principleReplacement?.name === element;
+          }
+          return false;
+        });
+      };
       
       groupedMeals.forEach(group => {
         const m = group.meal;
-        resumen += `<div style='margin-top:5px;'><b>* Almuerzos ${group.indices.join(', ')}:</b></div>`;
+        const differences = [];
         
-        if (m.soup?.name === 'Solo bandeja') resumen += '<div>solo bandeja</div>';
-        else if (m.soupReplacement?.name) resumen += `<div>${m.soupReplacement.name} (por sopa)</div>`;
-        else if (m.soup?.name && m.soup.name !== 'Sin sopa') resumen += `<div>${m.soup.name}</div>`;
-        
-        if (m.principleReplacement?.name) resumen += `<div>${m.principleReplacement.name} (por principio)</div>`;
-        else if (!commonProperties.principle && Array.isArray(m.principle) && m.principle.length > 0) {
-          const principles = m.principle.map(p => p.name).join(', ');
-          // Agregar (mixto) si hay más de un principio
-          const mixtoLabel = m.principle.length > 1 ? ' (mixto)' : '';
-          resumen += `<div>${principles}${mixtoLabel}</div>`;
-        }
-      
-      const specialRice = Array.isArray(m.principle) && m.principle.some(p => ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'].includes(p.name));
-        if (specialRice) resumen += `<div>Ya incluida en el arroz</div>`;
-        else if (m.protein?.name) resumen += `<div>${m.protein.name}</div>`;
-        
-        // Solo mostrar bebida si no es común
-        if (!commonProperties.drink && m.drink?.name) {
-          resumen += `<div>${m.drink.name === 'Juego de mango' ? 'Jugo de mango' : m.drink.name}</div>`;
+        // Verificar sopa - solo si no es común a todos
+        if (m.soup?.name === 'Solo bandeja') {
+          differences.push('solo bandeja');
+        } else if (m.soupReplacement?.name && !isCommonElement(m.soupReplacement.name, 'soupReplacement', allMeals)) {
+          differences.push(`${m.soupReplacement.name} (por sopa)`);
+        } else if (m.soup?.name && m.soup.name !== 'Sin sopa' && !isCommonElement(m.soup.name, 'soup', allMeals)) {
+          differences.push(m.soup.name);
         }
         
-        // Solo mostrar cubiertos si no son comunes
-        if (commonProperties.cutlery === undefined) {
-          resumen += `<div>Cubiertos: ${m.cutlery ? 'Sí' : 'No'}</div>`;
+        // Verificar principleReplacement - solo si no es común
+        if (m.principleReplacement?.name && !isCommonElement(m.principleReplacement.name, 'principleReplacement', allMeals)) {
+          differences.push(`${m.principleReplacement.name} (por principio)`);
         }
         
-        // Solo mostrar acompañamientos si no son comunes
-        if (specialRice) {
-          resumen += `<div>Acompañamientos: Ya incluidos</div>`;
-        } else if (!commonProperties.sides && Array.isArray(m.sides) && m.sides.length > 0) {
-          const sides = m.sides.map(s => s.name).join(', ');
-          resumen += `<div>Acompañamientos: ${sides}</div>`;
-        } else if (!commonProperties.sides) {
-          resumen += `<div>Acompañamientos: Ninguno</div>`;
+        // Verificar principios - solo mostrar si son diferentes a otros almuerzos
+        if (Array.isArray(m.principle) && m.principle.length > 0) {
+          // Verificar si los principios de este almuerzo son diferentes a otros
+          const otherMeals = allMeals.filter(meal => meal !== m);
+          const arePrinciplesDifferent = otherMeals.some(otherMeal => {
+            if (!Array.isArray(otherMeal.principle)) return true;
+            if (otherMeal.principle.length !== m.principle.length) return true;
+            
+            const thisPrinciples = m.principle.map(p => p.name).sort();
+            const otherPrinciples = otherMeal.principle.map(p => p.name).sort();
+            
+            for (let i = 0; i < thisPrinciples.length; i++) {
+              if (thisPrinciples[i] !== otherPrinciples[i]) return true;
+            }
+            return false;
+          });
+          
+          if (arePrinciplesDifferent) {
+            const principles = m.principle.map(p => p.name).join(', ');
+            const mixtoLabel = m.principle.length > 1 ? ' (mixto)' : '';
+            differences.push(`${principles}${mixtoLabel}`);
+          }
         }
         
+        // Verificar proteína - solo si no es común
+        const specialRice = Array.isArray(m.principle) && m.principle.some(p => ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'].includes(p.name));
+        if (!specialRice && m.protein?.name && !isCommonElement(m.protein.name, 'protein', allMeals)) {
+          differences.push(m.protein.name);
+        }
+        
+        // Verificar acompañamientos - mostrar solo si son diferentes a otros almuerzos
+        if (Array.isArray(m.sides) && m.sides.length > 0) {
+          // Verificar si los acompañamientos de este almuerzo son diferentes a otros
+          const otherMeals = allMeals.filter(meal => meal !== m);
+          const areSidesDifferent = otherMeals.some(otherMeal => {
+            if (!Array.isArray(otherMeal.sides)) return true;
+            if (otherMeal.sides.length !== m.sides.length) return true;
+            
+            const thisSides = m.sides.map(s => s.name).sort();
+            const otherSides = otherMeal.sides.map(s => s.name).sort();
+            
+            for (let i = 0; i < thisSides.length; i++) {
+              if (thisSides[i] !== otherSides[i]) return true;
+            }
+            return false;
+          });
+          
+          if (areSidesDifferent) {
+            const sides = m.sides.map(s => s.name).join(', ');
+            differences.push(`Acompañamientos: ${sides}`);
+          }
+        }
+        
+        // Verificar adiciones - mostrar solo si tiene adiciones diferentes a otros almuerzos
         if (Array.isArray(m.additions) && m.additions.length > 0) {
-          resumen += `<div>Adiciones:</div>`;
-          m.additions.forEach(a => {
-            resumen += `<div style='margin-left:10px;'>- ${a.name}${a.protein ? ' (' + a.protein + ')' : ''} (${a.quantity || 1})</div>`;
+          // Verificar si las adiciones de este almuerzo son diferentes a otros
+          const otherMeals = allMeals.filter(meal => meal !== m);
+          const areAdditionsDifferent = otherMeals.some(otherMeal => {
+            if (!Array.isArray(otherMeal.additions)) return true;
+            if (otherMeal.additions.length !== m.additions.length) return true;
+            
+            const thisAdditions = m.additions.map(a => `${a.name} (${a.quantity || 1})`).sort();
+            const otherAdditions = otherMeal.additions.map(a => `${a.name} (${a.quantity || 1})`).sort();
+            
+            for (let i = 0; i < thisAdditions.length; i++) {
+              if (thisAdditions[i] !== otherAdditions[i]) return true;
+            }
+            return false;
+          });
+          
+          if (areAdditionsDifferent) {
+            m.additions.forEach(addition => {
+              differences.push(`+ ${addition.name} (${addition.quantity || 1})`);
+            });
+          }
+        }
+        
+        // Solo mostrar si hay diferencias reales
+        if (differences.length > 0) {
+          resumen += `<div style='margin-top:5px;'><b>* Almuerzo ${group.indices.join(', ')}:</b></div>`;
+          differences.forEach(diff => {
+            resumen += `<div>${diff}</div>`;
           });
         }
-        
-        if (m.notes) resumen += `<div>Notas: ${m.notes}</div>`;
       });
     } else {
       // Si solo hay un grupo, mostrar como antes
@@ -305,10 +433,16 @@ const handlePrintDeliveryReceipt = (order) => {
         
         if (m.principleReplacement?.name) resumen += `<div>${m.principleReplacement.name} (por principio)</div>`;
         else if (Array.isArray(m.principle) && m.principle.length > 0) {
-          const principles = m.principle.map(p => p.name).join(', ');
-          // Agregar (mixto) si hay más de un principio
-          const mixtoLabel = m.principle.length > 1 ? ' (mixto)' : '';
-          resumen += `<div>${principles}${mixtoLabel}</div>`;
+          // Filtrar principios que sean indicadores de reemplazo
+          const filteredPrinciples = m.principle.filter(p => 
+            !p.name.includes('Remplazo') && !p.name.includes('remplazo')
+          );
+          if (filteredPrinciples.length > 0) {
+            const principles = filteredPrinciples.map(p => p.name).join(', ');
+            // Agregar (mixto) si hay más de un principio
+            const mixtoLabel = filteredPrinciples.length > 1 ? ' (mixto)' : '';
+            resumen += `<div>${principles}${mixtoLabel}</div>`;
+          }
         }
         
         const specialRice = Array.isArray(m.principle) && m.principle.some(p => ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'].includes(p.name));
@@ -458,7 +592,7 @@ const handlePrintDeliveryReceipt = (order) => {
       <style>
         body { font-family: monospace; font-size: 14px; margin: 0; padding: 0 10px; }
         h2 { margin: 5px 0 8px 0; font-size: 18px; text-align: center; }
-        .line { border-bottom: 1px dashed #888; margin: 8px 0; }
+        .line { border-bottom: 2px solid #000; margin: 10px 0; height: 0; }
         .qr-container { text-align: center; margin-top: 15px; }
         .qr-text { font-size: 12px; margin-bottom: 5px; text-align: center; }
         .logo { text-align: center; margin-bottom: 8px; }
@@ -470,6 +604,7 @@ const handlePrintDeliveryReceipt = (order) => {
       <div class='logo'>
         <img src="/formato finak.png" alt="Logo" style="width:100px; height:auto; display:block; margin:0 auto; filter:brightness(0);" />
         <h2>Cocina Casera</h2>
+        <div style='text-align:center; font-size:12px; color:#000; margin-top:5px; font-weight:bold;'>(Uso interno - No es factura DIAN)</div>
       </div>
       <div class='line'></div>
       <div><b>Tipo:</b> ${tipo}</div>
@@ -486,7 +621,7 @@ const handlePrintDeliveryReceipt = (order) => {
       ${resumen}
       <div class='line'></div>
       <div class='thanks'>Gracias por pedir en Cocina Casera</div>
-      <div class='contact'>Te esperamos mañana con un nuevo menú.<br>Escríbenos al <strong>301 6476916</strong></div>
+      <div class='contact'>Te esperamos mañana con un nuevo menú.<br>Escríbenos al <strong>301 6476916</strong><br><strong>Calle 133#126c-09</strong></div>
       
       <div class='qr-container'>
         <div class='qr-text'>Escanea este código QR para unirte a nuestro canal de WhatsApp<br>y recibir nuestro menú diario:</div>

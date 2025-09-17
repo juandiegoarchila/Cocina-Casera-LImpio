@@ -10,6 +10,7 @@ import { useAuth } from '../Auth/AuthProvider';
 import { db } from '../../config/firebase';
 import { collection, onSnapshot, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { classNames } from '../../utils/classNames';
+import QRCode from 'qrcode';
 import {
   ArrowDownTrayIcon,
   ChevronLeftIcon,
@@ -170,6 +171,28 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
       // Mostrar fecha y hora actual en formato local
       const now = new Date();
       const fecha = now.toLocaleDateString('es-CO') + ' ' + now.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+      
+      // Variable para almacenar el QR code data URL
+      let qrCodeDataUrl = null;
+
+      // Función para generar el código QR
+      const generateQRCode = async () => {
+        try {
+          const qrText = 'https://whatsapp.com/channel/0029VaAqM9CFGUzJgcRJj93w';
+          const qrDataUrl = await QRCode.toDataURL(qrText, {
+            width: 150,
+            margin: 2,
+            color: {
+              dark: '#000000',
+              light: '#FFFFFF'
+            }
+          });
+          return qrDataUrl;
+        } catch (err) {
+          console.error('Error generating QR code:', err);
+          return null;
+        }
+      };
       let resumen = '';
       if (!isBreakfast && Array.isArray(order.meals)) {
         resumen += `<div style='font-weight:bold;margin-bottom:4px;'>✅ Resumen del Pedido</div>`;
@@ -234,35 +257,56 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
         // ESC p m t1 t2  => \x1B\x70\x00\x19\xFA
         openDrawerCmd = '<script>function openDrawer(){try{var w=window;w.document.write("<pre>\x1B\x70\x00\x19\xFA</pre>");}catch(e){}}</script><script>openDrawer();</script>';
       }
-      win.document.write(`
-        <html><head><title>Recibo</title>
-        <style>
-          body { font-family: monospace; font-size: 14px; margin: 0; padding: 0; }
-          h2 { margin: 0 0 8px 0; font-size: 18px; }
-          .line { border-bottom: 1px dashed #888; margin: 8px 0; }
-        </style>
-        </head><body>
-        <h2>RECIBO DE ORDEN</h2>
-        <div class='line'></div>
-        <div><b>Tipo:</b> ${tipo}</div>
-        <div><b>Mesa:</b> ${table}</div>
-        <div><b>Pago:</b> ${pago}</div>
-        <div><b>Total:</b> $${total}</div>
-        <div><b>Fecha:</b> ${fecha}</div>
-        <div class='line'></div>
-        ${resumen}
-        <div class='line'></div>
-        <div style='text-align:center;margin-top:16px;'>¡Gracias por su compra!</div>
-  <br><br><br><br><br><br>
-        ${openDrawerCmd}
-        </body></html>
-      `);
-      win.document.close();
-      win.focus();
-      setTimeout(() => {
-        win.print();
-        win.close();
-      }, 500);
+
+      // Generar el código QR y luego abrir la ventana de impresión
+      generateQRCode().then(qrUrl => {
+        qrCodeDataUrl = qrUrl;
+        
+        win.document.write(`
+          <html><head><title>Recibo</title>
+          <style>
+            body { font-family: monospace; font-size: 14px; margin: 0; padding: 0 10px; }
+            h2 { margin: 5px 0 8px 0; font-size: 18px; text-align: center; }
+            .line { border-bottom: 2px solid #000; margin: 10px 0; height: 0; }
+            .logo { text-align: center; margin-bottom: 8px; }
+            .thanks { text-align: center; margin-top: 16px; font-weight: bold; }
+            .contact { text-align: center; margin-top: 8px; }
+            .qr-container { text-align: center; margin-top: 15px; }
+            .qr-text { font-size: 12px; margin-bottom: 5px; text-align: center; }
+            div { padding-left: 5px; padding-right: 5px; }
+          </style>
+          </head><body>
+          <div class='logo'>
+            <img src="/formato finak.png" alt="Logo" style="width:100px; height:auto; display:block; margin:0 auto; filter:brightness(0);" />
+            <h2>Cocina Casera</h2>
+            <div style='text-align:center; font-size:12px; color:#000; margin-top:5px; font-weight:bold;'>(Uso interno - No es factura DIAN)</div>
+          </div>
+          <div class='line'></div>
+          <div><b>Tipo:</b> ${tipo}</div>
+          <div><b>Mesa:</b> ${table}</div>
+          <div><b>Pago:</b> ${pago}</div>
+          <div><b>Total:</b> $${total}</div>
+          <div><b>Fecha:</b> ${fecha}</div>
+          <div class='line'></div>
+          ${resumen}
+          <div class='line'></div>
+          <div class='thanks'>¡Gracias por su compra!</div>
+          <div class='contact'>Te esperamos mañana con un nuevo menú.<br>Escríbenos al <strong>301 6476916</strong><br><strong>Calle 133#126c-09</strong></div>
+          
+          <div class='qr-container'>
+            <div class='qr-text'>Escanea este código QR para unirte a nuestro canal de WhatsApp<br>y recibir nuestro menú diario:</div>
+            ${qrCodeDataUrl ? `<img src="${qrCodeDataUrl}" width="150" height="150" alt="QR Code" />` : ''}
+          </div>
+          <br><br><br><br><br><br>
+          </body></html>
+        `);
+        win.document.close();
+        win.focus();
+        setTimeout(() => {
+          win.print();
+          win.close();
+        }, 500);
+      });
     };
 
   // Catálogos almuerzo
