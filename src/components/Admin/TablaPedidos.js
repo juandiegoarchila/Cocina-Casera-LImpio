@@ -84,14 +84,20 @@ const calculateCorrectBreakfastTotal = (order) => {
     return order.total || 0;
   }
   
-  // Crear copias de los desayunos con orderType='table'
-  const breakfastsWithTableType = order.breakfasts.map(b => ({
+  // Determinar el orderType correcto basándose en el contexto del pedido
+  // Si tiene address (dirección) es domicilio, entonces orderType='takeaway'
+  // Si no tiene address o es para mesa, entonces orderType='table'
+  const isDeliveryOrder = order.breakfasts.some(b => b.address && (b.address.address || b.address.phoneNumber));
+  const correctOrderType = isDeliveryOrder ? 'takeaway' : 'table';
+  
+  // Crear copias de los desayunos con el orderType correcto
+  const breakfastsWithCorrectType = order.breakfasts.map(b => ({
     ...b,
-    orderType: 'table'
+    orderType: b.orderType || correctOrderType
   }));
   
   // Calcular el total usando la función correcta
-  return breakfastsWithTableType.reduce((sum, breakfast) => {
+  return breakfastsWithCorrectType.reduce((sum, breakfast) => {
     return sum + calculateBreakfastPrice(breakfast, 3);
   }, 0);
 };

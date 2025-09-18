@@ -340,7 +340,10 @@ return () => {
       if (process.env.NODE_ENV === 'development') console.log('Guardando pedido en colección:', collectionName);
 
 const total = isBreakfast
-  ? calculateTotalBreakfastPrice(orders, breakfastTypes)
+  ? calculateTotalBreakfastPrice(orders.map(item => ({
+      ...item,
+      orderType: isTableOrder ? 'table' : 'takeaway'
+    })), breakfastTypes)
   : calculateTotal(orders);
 
 // 👉 calcular paymentSummary correctamente para DESAYUNO
@@ -349,8 +352,13 @@ if (isBreakfast) {
   const acc = { Efectivo: 0, Daviplata: 0, Nequi: 0 };
   orders.forEach((item) => {
     const method = (item?.payment?.name || 'Efectivo').trim().toLowerCase();
+    // Crear una copia del item con orderType correcto para el cálculo
+    const itemWithOrderType = {
+      ...item,
+      orderType: isTableOrder ? 'table' : 'takeaway'
+    };
     // precio por desayuno usando la misma lógica pero por ítem
-    const price = calculateTotalBreakfastPrice([item], breakfastTypes) || 0;
+    const price = calculateTotalBreakfastPrice([itemWithOrderType], breakfastTypes) || 0;
     if (method === 'daviplata') acc.Daviplata += price;
     else if (method === 'nequi') acc.Nequi += price;
     else acc.Efectivo += price;
@@ -382,6 +390,7 @@ const order = {
         quantity: addition.quantity || 1,
       })) || [],
       cutlery: item.cutlery || false,
+      orderType: isTableOrder ? 'table' : 'takeaway', // Agregar orderType correcto
       address: {
         address: item.address?.address || '',
         neighborhood: item.address?.neighborhood || neighborhood || '',
