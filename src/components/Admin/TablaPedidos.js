@@ -7,6 +7,8 @@ import { calculateBreakfastPrice } from '../../utils/BreakfastLogic';
 import PaymentSplitEditor from '../common/PaymentSplitEditor';
 import { summarizePayments, sumPaymentsByMethod, defaultPaymentsForOrder } from '../../utils/payments';
 import QRCode from 'qrcode';
+import { db } from '../../config/firebase';
+import { collection, onSnapshot, updateDoc, doc, getDoc, query, where, getDocs, addDoc, serverTimestamp, increment } from 'firebase/firestore';
 import {
   ArrowDownTrayIcon,
   ChevronLeftIcon,
@@ -107,8 +109,24 @@ if (typeof window !== 'undefined') {
   window.calculateCorrectBreakfastTotal = calculateCorrectBreakfastTotal;
 }
 
+// Función para calcular acompañamientos excluidos ("No Incluir")
+const getExcludedSides = (meal, allSides) => {
+  if (!Array.isArray(meal.sides) || !Array.isArray(allSides)) return [];
+  
+  const selectedSides = meal.sides.map(s => s?.name).filter(Boolean);
+  const hasNinguno = selectedSides.includes('Ninguno');
+  
+  if (selectedSides.length > 0 && !hasNinguno) {
+    const allAvailableSides = allSides.map(s => s.name).filter(n => n && n !== 'Ninguno');
+    const excludedSides = allAvailableSides.filter(n => !selectedSides.includes(n));
+    return excludedSides;
+  }
+  
+  return [];
+};
+
 // Función para imprimir recibo de domicilio (idéntica a la de InteraccionesPedidos.js)
-const handlePrintDeliveryReceipt = (order) => {
+const handlePrintDeliveryReceipt = (order, allSides = []) => {
   // SOLO imprime el recibo, NO abre la caja registradora
   const win = window.open('', 'PRINT', 'height=700,width=400');
   if (!win) return;
@@ -386,6 +404,12 @@ const handlePrintDeliveryReceipt = (order) => {
           if (areSidesDifferent) {
             const sides = m.sides.map(s => s.name).join(', ');
             differences.push(`Acompañamientos: ${sides}`);
+            
+            // Agregar "No Incluir" si hay acompañamientos excluidos
+            const excludedSides = getExcludedSides(m, allSides);
+            if (excludedSides.length > 0) {
+              differences.push(`No Incluir: ${excludedSides.join(', ')}`);
+            }
           }
         }
         
@@ -464,6 +488,12 @@ const handlePrintDeliveryReceipt = (order) => {
           // Mostrar los acompañamientos seleccionados sin etiqueta mixto
           const sides = m.sides.map(s => s.name).join(', ');
           resumen += `<div>Acompañamientos: ${sides}</div>`;
+          
+          // Agregar "No Incluir" si hay acompañamientos excluidos
+          const excludedSides = getExcludedSides(m, allSides);
+          if (excludedSides.length > 0) {
+            resumen += `<div>No Incluir: ${excludedSides.join(', ')}</div>`;
+          }
         }
         else resumen += `<div>Acompañamientos: Ninguno</div>`;
         
@@ -647,8 +677,6 @@ const handlePrintDeliveryReceipt = (order) => {
 };
 
 // Firestore para persistir pagos
-import { db } from '../../config/firebase';
-import { updateDoc, doc, getDoc, collection, query, where, getDocs, addDoc, serverTimestamp, increment } from 'firebase/firestore';
 import { INGRESOS_COLLECTION } from './dashboardConstants';
 
 /* ===========================
@@ -925,6 +953,8 @@ const TablaPedidos = ({
 }) => {
   const menuRef = useRef(null);
   const [deliveryDraft, setDeliveryDraft] = useState('');
+  // Estado para cargar todos los acompañamientos disponibles
+  const [allSides, setAllSides] = useState([]);
   // El filtro de fecha y su setter ahora vienen del padre
   const lastAssignedRef = useRef('');
 
@@ -958,6 +988,14 @@ const TablaPedidos = ({
     if (isMenuOpen) document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isMenuOpen, setIsMenuOpen]);
+
+  // Cargar acompañamientos para poder derivar "No Incluir"
+  useEffect(() => {
+    const unsubSides = onSnapshot(collection(db, 'sides'), (snapshot) => {
+      setAllSides(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    return () => unsubSides();
+  }, []);
 
   /* ===== Toast flotante estilo “éxito” ===== */
   const [toast, setToast] = useState(null); // { type: 'success'|'warning'|'error', text: string }
@@ -1674,7 +1712,7 @@ const TablaPedidos = ({
                                   💳
                                 </button>
                                 <button
-                                  onClick={() => handlePrintDeliveryReceipt(order)}
+                                  onClick={() => handlePrintDeliveryReceipt(order, allSides)}
                                   className="text-green-600 hover:text-green-500 transition-colors duration-150 p-1 rounded-md border border-green-600"
                                   title="Imprimir recibo domicilio"
                                   aria-label={`Imprimir recibo domicilio ${displayNumber}`}
