@@ -950,6 +950,7 @@ const TablaPedidos = ({
   uniqueDeliveryPersons,
   selectedDate,
   setSelectedDate,
+  permissions,
 }) => {
   const menuRef = useRef(null);
   const [deliveryDraft, setDeliveryDraft] = useState('');
@@ -1009,6 +1010,22 @@ const TablaPedidos = ({
 
   // ====== Split de pagos: estado para modal local ======
   const [editingPaymentsOrder, setEditingPaymentsOrder] = useState(null);
+
+  // Permisos (por defecto: vista admin completa)
+  const perms = useMemo(() => ({
+    canEditOrder: true,
+    canDeleteOrder: true,
+    canEditPayments: true,
+    canPrint: true,
+    canLiquidate: true,
+    showProteinModalButton: true,
+    showMenuGenerateOrder: true,
+    showPreviews: true,
+    showExport: true,
+    showDeleteAll: true,
+    showResumen: true,
+    ...(permissions || {}),
+  }), [permissions]);
 
   // ✅ Incluye tus colecciones reales
   const EXTRA_COLLECTIONS = [
@@ -1387,16 +1404,18 @@ const TablaPedidos = ({
             </div>
           </div>
           <div className="flex flex-wrap items-center justify-center sm:justify-end gap-2">
-            <button
-              onClick={() => setShowProteinModal(true)}
-              className={classNames(
-                'flex items-center justify-center gap-2 px-3 py-2 sm:px-5 sm:py-3 rounded-lg text-xs sm:text-sm font-semibold transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 flex-shrink-0',
-                theme === 'dark' ? 'bg-gray-600 hover:bg-gray-500 text-white border border-gray-500' : 'bg-gray-200 hover:bg-gray-300 text-gray-900 border border-gray-400'
-              )}
-            >
-              <PlusIcon className="w-4 h-4" />
-              <span className="hidden md:inline">Proteínas del Día</span>
-            </button>
+            {perms.showProteinModalButton && (
+              <button
+                onClick={() => setShowProteinModal(true)}
+                className={classNames(
+                  'flex items-center justify-center gap-2 px-3 py-2 sm:px-5 sm:py-3 rounded-lg text-xs sm:text-sm font-semibold transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 flex-shrink-0',
+                  theme === 'dark' ? 'bg-gray-600 hover:bg-gray-500 text-white border border-gray-500' : 'bg-gray-200 hover:bg-gray-300 text-gray-900 border border-gray-400'
+                )}
+              >
+                <PlusIcon className="w-4 h-4" />
+                <span className="hidden md:inline">Proteínas del Día</span>
+              </button>
+            )}
             <label
               className={classNames(
                 'relative flex items-center justify-center gap-2 px-3 py-2 sm:px-5 sm:py-3 rounded-lg text-xs sm:text-sm font-semibold shadow-sm border transition-colors duration-200 flex-shrink-0 cursor-pointer',
@@ -1429,19 +1448,31 @@ const TablaPedidos = ({
                     <button onClick={() => { setOrderTypeFilter('breakfast'); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">Ver Desayunos</button>
                     <button onClick={() => { setOrderTypeFilter('lunch'); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">Ver Almuerzos</button>
                     <button onClick={() => { setOrderTypeFilter('all'); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">Ver Todos</button>
-                    <button onClick={() => { setShowAddOrderModal(true); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">Generar Orden</button>
-                    <button onClick={() => { handleOpenPreview(); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">Vista Previa PDF</button>
-                    <button onClick={() => { handleOpenExcelPreview(); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">Vista Previa Excel</button>
-                    <button onClick={() => { handleExport(exportToExcel, 'Excel'); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 flex items-center">
-                      <ArrowDownTrayIcon className="w-4 h-4 mr-2" /> Exportar Excel
-                    </button>
-                    <button onClick={() => { handleExport(exportToPDF, 'PDF'); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 flex items-center">
-                      <ArrowDownTrayIcon className="w-4 h-4 mr-2" /> Exportar PDF
-                    </button>
-                    <button onClick={() => { handleExport(exportToCSV, 'CSV'); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 flex items-center">
-                      <ArrowDownTrayIcon className="w-4 h-4 mr-2" /> Exportar CSV
-                    </button>
-                    <button onClick={() => { setShowConfirmDeleteAll(true); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 text-red-500">Eliminar Todos</button>
+                    {perms.showMenuGenerateOrder && (
+                      <button onClick={() => { setShowAddOrderModal(true); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">Generar Orden</button>
+                    )}
+                    {perms.showPreviews && (
+                      <>
+                        <button onClick={() => { handleOpenPreview(); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">Vista Previa PDF</button>
+                        <button onClick={() => { handleOpenExcelPreview(); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">Vista Previa Excel</button>
+                      </>
+                    )}
+                    {perms.showExport && (
+                      <>
+                        <button onClick={() => { handleExport(exportToExcel, 'Excel'); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 flex items-center">
+                          <ArrowDownTrayIcon className="w-4 h-4 mr-2" /> Exportar Excel
+                        </button>
+                        <button onClick={() => { handleExport(exportToPDF, 'PDF'); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 flex items-center">
+                          <ArrowDownTrayIcon className="w-4 h-4 mr-2" /> Exportar PDF
+                        </button>
+                        <button onClick={() => { handleExport(exportToCSV, 'CSV'); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 flex items-center">
+                          <ArrowDownTrayIcon className="w-4 h-4 mr-2" /> Exportar CSV
+                        </button>
+                      </>
+                    )}
+                    {perms.showDeleteAll && (
+                      <button onClick={() => { setShowConfirmDeleteAll(true); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 text-red-500">Eliminar Todos</button>
+                    )}
                   </div>
                 </div>
               )}
@@ -1695,38 +1726,46 @@ const TablaPedidos = ({
                             </td>
                             <td className="p-2 sm:p-3 whitespace-nowrap">
                               <div className="flex gap-2">
-                                <button
-                                  onClick={() => handleEditOrder(order)}
-                                  className="text-blue-500 hover:text-blue-400 transition-colors duration-150 p-1 rounded-md"
-                                  title="Editar pedido"
-                                  aria-label={`Editar pedido ${displayNumber}`}
-                                >
-                                  <PencilIcon className="w-5 h-5" />
-                                </button>
-                                <button
-                                  onClick={() => setEditingPaymentsOrder(order)}
-                                  className="text-indigo-500 hover:text-indigo-400 transition-colors duration-150 p-1 rounded-md"
-                                  title="Editar pagos (split)"
-                                  aria-label={`Editar pagos del pedido ${displayNumber}`}
-                                >
-                                  💳
-                                </button>
-                                <button
-                                  onClick={() => handlePrintDeliveryReceipt(order, allSides)}
-                                  className="text-green-600 hover:text-green-500 transition-colors duration-150 p-1 rounded-md border border-green-600"
-                                  title="Imprimir recibo domicilio"
-                                  aria-label={`Imprimir recibo domicilio ${displayNumber}`}
-                                >
-                                  <PrinterIcon className="w-5 h-5" />
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteOrder(order.id)}
-                                  className="text-red-500 hover:text-red-400 transition-colors duration-150 p-1 rounded-md"
-                                  title="Eliminar pedido"
-                                  aria-label={`Eliminar pedido ${displayNumber}`}
-                                >
-                                  <TrashIcon className="w-5 h-5" />
-                                </button>
+                                {perms.canEditOrder && (
+                                  <button
+                                    onClick={() => handleEditOrder(order)}
+                                    className="text-blue-500 hover:text-blue-400 transition-colors duration-150 p-1 rounded-md"
+                                    title="Editar pedido"
+                                    aria-label={`Editar pedido ${displayNumber}`}
+                                  >
+                                    <PencilIcon className="w-5 h-5" />
+                                  </button>
+                                )}
+                                {perms.canEditPayments && (
+                                  <button
+                                    onClick={() => setEditingPaymentsOrder(order)}
+                                    className="text-indigo-500 hover:text-indigo-400 transition-colors duration-150 p-1 rounded-md"
+                                    title="Editar pagos (split)"
+                                    aria-label={`Editar pagos del pedido ${displayNumber}`}
+                                  >
+                                    💳
+                                  </button>
+                                )}
+                                {perms.canPrint && (
+                                  <button
+                                    onClick={() => handlePrintDeliveryReceipt(order, allSides)}
+                                    className="text-green-600 hover:text-green-500 transition-colors duration-150 p-1 rounded-md border border-green-600"
+                                    title="Imprimir recibo domicilio"
+                                    aria-label={`Imprimir recibo domicilio ${displayNumber}`}
+                                  >
+                                    <PrinterIcon className="w-5 h-5" />
+                                  </button>
+                                )}
+                                {perms.canDeleteOrder && (
+                                  <button
+                                    onClick={() => handleDeleteOrder(order.id)}
+                                    className="text-red-500 hover:text-red-400 transition-colors duration-150 p-1 rounded-md"
+                                    title="Eliminar pedido"
+                                    aria-label={`Eliminar pedido ${displayNumber}`}
+                                  >
+                                    <TrashIcon className="w-5 h-5" />
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -1783,6 +1822,7 @@ const TablaPedidos = ({
         </div>
 
         {/* === Resumen por Domiciliarios (ÚNICO) === */}
+        {perms.showResumen && (
         <div className="mt-8 space-y-6">
           <h2 className="text-xl sm:text-2xl font-bold">Resumen por Domiciliarios</h2>
 
@@ -1808,12 +1848,14 @@ const TablaPedidos = ({
                   )}>
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="text-base sm:text-lg font-semibold">{person}</h3>
-                      <button
-                        onClick={() => handleSettle(person, buckets)}
-                        className="text-xs px-3 py-1.5 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white"
-                      >
-                        Liquidar ▸
-                      </button>
+                      {perms.canLiquidate && (
+                        <button
+                          onClick={() => handleSettle(person, buckets)}
+                          className="text-xs px-3 py-1.5 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white"
+                        >
+                          Liquidar ▸
+                        </button>
+                      )}
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1876,10 +1918,11 @@ const TablaPedidos = ({
             </div>
           )}
         </div>
+        )}
       </div>
 
           {/* Modal de edición de pagos (split) */}
-          {editingPaymentsOrder && (
+          {perms.canEditPayments && editingPaymentsOrder && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10001]">
               <div className={classNames('p-4 sm:p-6 rounded-lg max-w-xl w-full max-h-[80vh] overflow-y-auto', theme === 'dark' ? 'bg-gray-800 text-gray-200' : 'bg-white text-gray-900')}>
                 <h3 className="text-lg font-semibold mb-4">

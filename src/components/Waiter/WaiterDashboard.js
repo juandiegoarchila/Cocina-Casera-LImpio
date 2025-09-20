@@ -1,8 +1,11 @@
 //src/components/Waiter/WaiterDashboard.js
 import React, { useState, useEffect, useMemo } from 'react';
+import { Disclosure, Transition } from '@headlessui/react';
+import { Bars3Icon, XMarkIcon, SunIcon, MoonIcon, ArrowLeftOnRectangleIcon, ClipboardDocumentListIcon } from '@heroicons/react/24/outline';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../Auth/AuthProvider';
-import { db } from '../../config/firebase';
+import { db, auth } from '../../config/firebase';
+import { signOut } from 'firebase/auth';
 import { collection, onSnapshot, addDoc, doc, updateDoc } from 'firebase/firestore';
 import MealList from '../MealList';
 import BreakfastList from '../BreakfastList';
@@ -52,6 +55,8 @@ const WaiterDashboard = () => {
   const [menuType, setMenuType] = useState('closed');
   // Permitir override manual del menú
   const [manualMenuType, setManualMenuType] = useState(null);
+  const [theme, setTheme] = useState('dark');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [schedules, setSchedules] = useState({
     breakfastStart: 420, // 07:00
     breakfastEnd: 631,   // 10:31
@@ -82,6 +87,15 @@ const WaiterDashboard = () => {
       return;
     }
   }, [user, loading, role, navigate]);
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      navigate('/login');
+    } catch (e) {
+      setErrorMessage(`Error al cerrar sesión: ${e.message}`);
+    }
+  };
 
   useEffect(() => {
     const collections = [
@@ -914,11 +928,146 @@ const WaiterDashboard = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-200 flex flex-col">
-      <header className="bg-gray-800 text-white p-4">
-        <h1 className="text-lg font-bold">Gestión de Órdenes de Mesas</h1>
-      </header>
-      <main className="p-4 flex-grow w-full max-w-4xl mx-auto">
+    <div className={`min-h-screen ${theme === 'dark' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-900'} pb-4`}>
+      {/* Header con menú hamburguesa estilo Admin/Delivery */}
+      <Disclosure as="nav" className={`${theme === 'dark' ? 'bg-gray-800' : 'bg-gray-200'} shadow-lg fixed top-0 left-0 right-0 z-50`}>
+        {({ open }) => (
+          <>
+            <div className="max-w-full mx-auto px-2 sm:px-4 lg:px-8">
+              <div className="flex items-center justify-between h-16">
+                <div className="flex items-center">
+                  <button
+                    onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                    className="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-white hover:bg-gray-700 focus:outline-none -ml-2"
+                  >
+                    <span className="sr-only">Toggle sidebar</span>
+                    {isSidebarOpen ? (
+                      <XMarkIcon className="block h-6 w-6" aria-hidden="true" />
+                    ) : (
+                      <Bars3Icon className="block h-6 w-6" aria-hidden="true" />
+                    )}
+                  </button>
+                  <h1 className="text-base sm:text-lg font-semibold ml-2 sm:ml-4">Panel del Mesero</h1>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                    className={`p-2 rounded-full ${theme === 'dark' ? 'text-yellow-400 hover:bg-gray-700' : 'text-orange-500 hover:bg-gray-300'} focus:outline-none`}
+                    aria-label="Toggle theme"
+                  >
+                    {theme === 'dark' ? (
+                      <SunIcon className="h-6 w-6" />
+                    ) : (
+                      <MoonIcon className="h-6 w-6" />
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <Transition
+              show={isSidebarOpen}
+              enter="transition-all duration-300 ease-out"
+              enterFrom="-translate-x-full"
+              enterTo="translate-x-0"
+              leave="transition-all duration-300 ease-in"
+              leaveFrom="translate-x-0"
+              leaveTo="-translate-x-full"
+            >
+              <Disclosure.Panel className="sm:hidden fixed top-0 left-0 h-full w-full bg-black/50 z-[60]" onClick={() => setIsSidebarOpen(false)}>
+                <div className={`h-full ${isSidebarOpen ? 'w-64' : 'w-0'} ${theme === 'dark' ? 'bg-gray-800' : 'bg-gray-200'} p-4 transition-all duration-300 shadow-lg`} onClick={(e) => e.stopPropagation()}>
+                  <div className="flex justify-between items-center mb-6">
+                    <h2 className={`text-xl font-bold ${theme === 'dark' ? 'text-gray-100' : 'text-gray-800'}`}>Cocina Casera</h2>
+                    <button
+                      onClick={() => setIsSidebarOpen(false)}
+                      className="p-2 rounded-md text-gray-400 hover:text-white hover:bg-gray-700 focus:outline-none"
+                    >
+                      <XMarkIcon className="h-6 w-6" aria-hidden="true" />
+                    </button>
+                  </div>
+                  <nav className="space-y-2 flex flex-col h-[calc(100vh-8rem)]">
+                    <button
+                      onClick={() => { navigate('/waiter'); setIsSidebarOpen(false); }}
+                      className={`flex items-center px-4 py-2 rounded-md text-sm font-medium ${theme === 'dark' ? 'text-gray-300 hover:text-white hover:bg-gray-700' : 'text-gray-700 hover:text-black hover:bg-gray-300'} transition-all duration-200`}
+                    >
+                      <ClipboardDocumentListIcon className={`w-6 h-6 mr-2 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} />
+                      <span>Gestión de Órdenes de Mesas</span>
+                    </button>
+                    <button
+                      onClick={handleLogout}
+                      className={`mt-auto flex items-center px-4 py-2 rounded-md text-sm font-medium ${theme === 'dark' ? 'text-red-300 hover:text-white hover:bg-red-700' : 'text-red-600 hover:text-red-800 hover:bg-red-200'} transition-all duration-200`}
+                    >
+                      <ArrowLeftOnRectangleIcon className={`w-6 h-6 mr-2 ${theme === 'dark' ? 'text-red-300' : 'text-red-600'}`} />
+                      <span>Cerrar Sesión</span>
+                    </button>
+                  </nav>
+                </div>
+              </Disclosure.Panel>
+            </Transition>
+          </>
+        )}
+      </Disclosure>
+
+      {/* Sidebar de escritorio (hover/expansión) */}
+      <div
+        className={`hidden sm:block fixed top-16 bottom-0 left-0 ${
+          isSidebarOpen ? 'w-64' : 'w-16'
+        } ${theme === 'dark' ? 'bg-gray-800' : 'bg-gray-200'} p-4 transition-all duration-300 z-40`}
+        onMouseEnter={() => setIsSidebarOpen(true)}
+        onMouseLeave={() => setIsSidebarOpen(false)}
+      >
+        <div className="flex justify-between items-center mb-6">
+          <h2 className={`text-xl font-bold ${theme === 'dark' ? 'text-gray-100' : 'text-gray-800'} ${isSidebarOpen ? 'block' : 'hidden'}`}>
+            Cocina Casera
+          </h2>
+        </div>
+        <nav className="space-y-2 flex flex-col h-[calc(100vh-8rem)]">
+          <button
+            onClick={() => navigate('/waiter')}
+            className={`relative flex items-center px-4 py-2 rounded-md text-sm font-medium min-w-[48px]
+              ${
+                isSidebarOpen
+                  ? theme === 'dark'
+                    ? 'text-gray-300 hover:text-white hover:bg-gray-700'
+                    : 'text-gray-700 hover:text-black hover:bg-gray-300'
+                  : 'justify-center'
+              } transition-all duration-300`}
+          >
+            <ClipboardDocumentListIcon
+              className={`w-6 h-6 ${isSidebarOpen ? 'mr-2' : 'mr-0'} ${
+                theme === 'dark' ? 'text-gray-200' : 'text-gray-700'
+              }`}
+            />
+            <span className={`transition-opacity duration-200 ${isSidebarOpen ? 'opacity-100 block' : 'opacity-0 hidden'}`}>
+              Gestión de Órdenes de Mesas
+            </span>
+          </button>
+
+          <button
+            onClick={handleLogout}
+            className={`mt-auto flex items-center px-4 py-2 rounded-md text-sm font-medium min-w-[48px]
+              ${
+                isSidebarOpen
+                  ? theme === 'dark'
+                    ? 'text-red-300 hover:text-white hover:bg-red-700'
+                    : 'text-red-600 hover:text-red-800 hover:bg-red-200'
+                  : 'justify-center'
+              } transition-all duration-300`}
+          >
+            <ArrowLeftOnRectangleIcon
+              className={`w-6 h-6 ${isSidebarOpen ? 'mr-2' : 'mr-0'} ${
+                theme === 'dark' ? 'text-red-300' : 'text-red-600'
+              }`}
+            />
+            <span className={`transition-opacity duration-200 ${isSidebarOpen ? 'opacity-100 block' : 'opacity-0 hidden'}`}>
+              Cerrar Sesión
+            </span>
+          </button>
+        </nav>
+      </div>
+
+      {/* Contenido principal */}
+      <div className={`flex-1 p-4 pt-20 sm:pt-20 ${isSidebarOpen ? 'sm:ml-64' : 'sm:ml-16'} transition-all duration-300 min-h-screen`}>
         <div className="flex border-b border-gray-300 mb-4">
           <button
             className={`px-4 py-2 text-sm font-medium ${activeTab === 'create' ? 'border-b-2 border-blue-500 text-blue-500' : 'text-gray-600'}`}
@@ -934,7 +1083,7 @@ const WaiterDashboard = () => {
           </button>
         </div>
   {/* Eliminado el selector anterior para evitar duplicidad */}
-        {activeTab === 'create' ? (
+  {activeTab === 'create' ? (
           isOrderingDisabled || menuType === 'closed' ? (
             <div className="flex flex-col items-center justify-center text-center bg-red-50 text-red-700 p-4 rounded-lg shadow-md">
               <h2 className="text-xl font-bold">🚫 Restaurante cerrado</h2>
@@ -1233,8 +1382,8 @@ const WaiterDashboard = () => {
               </>
             )}
           </div>
-        )}
-        {editingOrder && (
+    )}
+  {editingOrder && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white p-4 rounded-lg shadow-lg max-w-md w-full mx-4 overflow-y-auto" style={{ maxHeight: '80vh' }}>
               <h2 className="text-lg font-bold mb-4">Editar Orden #{editingOrder.id.slice(-4)}</h2>
@@ -1655,15 +1804,17 @@ const WaiterDashboard = () => {
             </div>
           </div>
         )}
-      </main>
-      <div className="fixed top-16 right-4 z-[10002] space-y-2 w-80 max-w-xs">
-        {isLoading && <LoadingIndicator />}
-        {errorMessage && (
-          <ErrorMessage message={errorMessage} onClose={() => setErrorMessage(null)} />
-        )}
-        {successMessage && (
-          <SuccessMessage message={successMessage} onClose={() => setSuccessMessage(null)} />
-        )}
+        <div>
+          <div className="fixed top-16 right-4 z-[10002] space-y-2 w-80 max-w-xs">
+            {isLoading && <LoadingIndicator />}
+            {errorMessage && (
+              <ErrorMessage message={errorMessage} onClose={() => setErrorMessage(null)} />
+            )}
+            {successMessage && (
+              <SuccessMessage message={successMessage} onClose={() => setSuccessMessage(null)} />
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

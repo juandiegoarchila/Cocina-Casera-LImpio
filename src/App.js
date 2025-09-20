@@ -29,6 +29,7 @@ const AdminPage = lazy(() => import('./components/Admin/AdminPage'));
 const Login = lazy(() => import('./components/Auth/Login'));
 const ForgotPassword = lazy(() => import('./components/Auth/ForgotPassword'));
 const WaiterOrderPage = lazy(() => import('./components/Waiter/WaiterDashboard'));
+const DeliveryOrdersPage = lazy(() => import('./components/Delivery/DeliveryOrdersPage'));
 
 const App = () => {
   const { user, loading } = useAuth();
@@ -714,6 +715,10 @@ await sendToWhatsApp(
         <Route
           path="/waiter"
           element={<ProtectedRoute allowedRole={3}><WaiterOrderPage /></ProtectedRoute>}
+        />
+        <Route
+          path="/delivery"
+          element={<ProtectedRoute allowedRole={4}><DeliveryOrdersPage /></ProtectedRoute>}
         />
         <Route path="/" element={
           <div className="min-h-screen bg-gray-200 flex flex-col relative">
