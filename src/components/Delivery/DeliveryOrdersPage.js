@@ -10,6 +10,7 @@ import { Bars3Icon, XMarkIcon, SunIcon, MoonIcon, ArrowLeftOnRectangleIcon, Clip
 import { signOut } from 'firebase/auth';
 import { auth } from '../../config/firebase';
 import { useNavigate } from 'react-router-dom';
+import { openWhatsApp } from '../../utils/whatsapp';
 
 const DeliveryOrdersPage = () => {
   const { user, loading, role } = useAuth();
@@ -168,14 +169,33 @@ const DeliveryOrdersPage = () => {
     );
   };
 
+  // Al cambiar estado a "En Camino", abrimos WhatsApp al cliente.
+  // Supuestos: teléfonos colombianos; se normaliza a 57 + 10 dígitos cuando aplica.
   const handleStatusChange = async (orderId, newStatus) => {
     try {
       const order = orders.find((o) => o.id === orderId);
+      // Si el domiciliario marca "En Camino", abrir WhatsApp al cliente con mensaje predefinido
+  if (newStatus && /en\s*camino/i.test(newStatus)) {
+        // Obtener el teléfono del pedido (almuerzo o desayuno)
+        const addr = order?.meals?.[0]?.address || order?.breakfasts?.[0]?.address || order?.address || {};
+        const phone = addr?.phoneNumber || addr?.phone || '';
+  const msg = 'hola soy el domiciliario de cocina casera, llegare de 10 a 15 minutos gracias por su espera';
+        // Abrimos WhatsApp en nueva pestaña; si falla, mostramos alerta pero continuamos
+        const opened = openWhatsApp(phone, msg);
+        if (!opened) {
+          setError('No se pudo abrir WhatsApp: teléfono inválido o ausente.');
+        }
+      }
       const collectionName = order?.type === 'breakfast' ? 'deliveryBreakfastOrders' : 'orders';
       await updateDoc(doc(db, collectionName, orderId), { status: newStatus, updatedAt: new Date() });
       setSuccess('Estado actualizado correctamente.');
     } catch (e) {
-      setError(`Error al actualizar estado: ${e.message}`);
+      console.error('[Estado] actualización fallida', e);
+      if (e && /Missing or insufficient permissions/i.test(String(e.message || e))) {
+        setError('Error al actualizar estado: permisos insuficientes. Verifica que tu usuario tenga rol 4 en la colección "users" del proyecto prubeas-b510c y que las reglas estén desplegadas.');
+      } else {
+        setError(`Error al actualizar estado: ${e.message}`);
+      }
     }
   };
 
