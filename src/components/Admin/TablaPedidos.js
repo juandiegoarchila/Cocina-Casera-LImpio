@@ -19,7 +19,8 @@ import {
   EllipsisVerticalIcon,
   PlusIcon,
   MagnifyingGlassIcon,
-  PrinterIcon
+  PrinterIcon,
+  CreditCardIcon
 } from '@heroicons/react/24/outline';
 // Función para determinar si dos comidas son idénticas
 const areMealsIdentical = (meal1, meal2) => {
@@ -1739,11 +1740,11 @@ const TablaPedidos = ({
                                 {perms.canEditPayments && (
                                   <button
                                     onClick={() => setEditingPaymentsOrder(order)}
-                                    className="text-indigo-500 hover:text-indigo-400 transition-colors duration-150 p-1 rounded-md"
+                                    className="text-indigo-500 hover:text-indigo-400 transition-colors duration-150 p-1 rounded-md border border-indigo-500"
                                     title="Editar pagos (split)"
                                     aria-label={`Editar pagos del pedido ${displayNumber}`}
                                   >
-                                    💳
+                                    <CreditCardIcon className="w-5 h-5" />
                                   </button>
                                 )}
                                 {perms.canPrint && (
