@@ -4,13 +4,17 @@ import { useAuth } from '../Auth/AuthProvider';
 import { db } from '../../config/firebase';
 import { collection, onSnapshot, updateDoc, doc } from 'firebase/firestore';
 import TablaPedidos from '../Admin/TablaPedidos';
-import { cleanText, getAddressDisplay } from '../Admin/utils';
+import { cleanText, getAddressDisplay, getMealDetailsDisplay } from '../Admin/utils';
 import { Disclosure, Transition } from '@headlessui/react';
 import { Bars3Icon, XMarkIcon, SunIcon, MoonIcon, ArrowLeftOnRectangleIcon, ClipboardDocumentListIcon } from '@heroicons/react/24/outline';
 import { signOut } from 'firebase/auth';
 import { auth } from '../../config/firebase';
 import { useNavigate } from 'react-router-dom';
 import { openWhatsApp } from '../../utils/whatsapp';
+import PaymentSplitEditor from '../common/PaymentSplitEditor';
+import { defaultPaymentsForOrder } from '../../utils/payments';
+import OrderSummary from '../OrderSummary';
+import BreakfastOrderSummary from '../BreakfastOrderSummary';
 
 const DeliveryOrdersPage = () => {
   const { user, loading, role } = useAuth();
@@ -24,13 +28,15 @@ const DeliveryOrdersPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(20);
-  const [sortBy, setSortBy] = useState('createdAt.seconds');
+  const [sortBy, setSortBy] = useState('orderNumber');
   const [sortOrder, setSortOrder] = useState('desc');
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [orderTypeFilter, setOrderTypeFilter] = useState('all');
+  const [showMealDetails, setShowMealDetails] = useState(null);
 
+  const [editingPaymentsOrder, setEditingPaymentsOrder] = useState(null);
   const [deliveryPersons, setDeliveryPersons] = useState({});
   const [editingDeliveryId, setEditingDeliveryId] = useState(null);
 
@@ -123,7 +129,11 @@ const DeliveryOrdersPage = () => {
 
   const sortedOrders = useMemo(() => {
     const getValue = (obj, key) => {
-      if (key === 'orderNumber') return filteredOrders.indexOf(obj);
+      if (key === 'orderNumber') {
+        // Calcular un número de pedido en orden inverso para que los más recientes aparezcan primero
+        // Esto crea un orden similar al de la vista de admin
+        return filteredOrders.length - filteredOrders.indexOf(obj);
+      }
       if (key === 'address') return cleanText(obj?.meals?.[0]?.address?.address || obj?.breakfasts?.[0]?.address?.address || '');
       if (key === 'phone') return cleanText(obj?.meals?.[0]?.address?.phoneNumber || obj?.breakfasts?.[0]?.address?.phoneNumber || '');
       if (key === 'time') return cleanText(obj?.meals?.[0]?.time?.name || obj?.breakfasts?.[0]?.time?.name || '');
@@ -131,6 +141,7 @@ const DeliveryOrdersPage = () => {
       if (key === 'total') return Number(obj?.total || 0);
       if (key === 'deliveryPerson') return cleanText(obj?.deliveryPerson || '');
       if (key === 'status') return cleanText(obj?.status || '');
+      if (key === 'createdAt.seconds' && obj.createdAt && obj.createdAt.seconds) return obj.createdAt.seconds;
       return 0;
     };
     return [...filteredOrders].sort((a, b) => {
@@ -224,8 +235,8 @@ const DeliveryOrdersPage = () => {
   const permissions = useMemo(() => ({
     canEditOrder: false,
     canDeleteOrder: false,
-    canEditPayments: false,
-    canPrint: true,
+    canEditPayments: true,
+    canPrint: false,
     canLiquidate: false,
     showProteinModalButton: false,
     showMenuGenerateOrder: false,
@@ -233,6 +244,8 @@ const DeliveryOrdersPage = () => {
     showExport: false,
     showDeleteAll: false,
     showResumen: false,
+    showMealDetails: true,
+    canViewOrderDetails: true
   }), []);
 
   const uniqueDeliveryPersons = useMemo(() => {
@@ -413,7 +426,6 @@ const DeliveryOrdersPage = () => {
         handleStatusChange={handleStatusChange}
         handleSort={handleSort}
         getSortIcon={getSortIcon}
-        setShowMealDetails={() => {}}
         editingDeliveryId={editingDeliveryId}
         setEditingDeliveryId={setEditingDeliveryId}
         editForm={{}}
@@ -423,6 +435,8 @@ const DeliveryOrdersPage = () => {
         totalOrders={filteredOrders.length}
         showProteinModal={false}
         setShowProteinModal={() => {}}
+        showMealDetails={showMealDetails}
+        setShowMealDetails={setShowMealDetails}
         isMenuOpen={isMenuOpen}
         setIsMenuOpen={setIsMenuOpen}
         handleOpenPreview={() => {}}
@@ -440,8 +454,83 @@ const DeliveryOrdersPage = () => {
         selectedDate={selectedDate}
         setSelectedDate={setSelectedDate}
         permissions={permissions}
+        editingPaymentsOrder={editingPaymentsOrder}
+        setEditingPaymentsOrder={setEditingPaymentsOrder}
         />
       </div>
+
+      {/* Modal para mostrar detalles del pedido */}
+      {showMealDetails && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10001] modal-backdrop" onClick={(e) => {
+          if (e.target.classList.contains('modal-backdrop')) {
+            setShowMealDetails(null);
+          }
+        }}>
+          <div className={`p-4 sm:p-6 rounded-lg max-w-4xl w-full max-h-[80vh] overflow-y-auto ${theme === 'dark' ? 'bg-gray-800 text-gray-200' : 'bg-white text-gray-900'}`}>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold">
+                Detalles del Pedido
+              </h3>
+              <button onClick={() => setShowMealDetails(null)} className="text-gray-500 hover:text-gray-700">
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-4">
+              {showMealDetails.type === 'breakfast' ? (
+                <BreakfastOrderSummary
+                  items={showMealDetails.breakfasts}
+                  user={{ role: 4 }}
+                  breakfastTypes={[]}
+                  isWaiterView={true}
+                  statusClass={''}
+                  showSaveButton={false}
+                />
+              ) : (
+                <OrderSummary
+                  meals={showMealDetails.meals || []}
+                  isDeliveryView={true}
+                  calculateTotal={() => showMealDetails.total || 0}
+                  isWaiterView={false}
+                  statusClass={''}
+                  userRole={4}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal para editar pagos */}
+      {editingPaymentsOrder && (
+        <PaymentSplitEditor
+          isOpen={!!editingPaymentsOrder}
+          onClose={() => setEditingPaymentsOrder(null)}
+          order={editingPaymentsOrder}
+          onSave={async (payments) => {
+            try {
+              // Determinar el tipo de colección (breakfast o regular)
+              const collectionName = editingPaymentsOrder.type === 'breakfast'
+                ? 'deliveryBreakfastOrders'
+                : 'orders';
+              
+              // Actualizar solo los pagos, manteniendo el resto del documento igual
+              await updateDoc(doc(db, collectionName, editingPaymentsOrder.id), {
+                payments,
+                paymentUpdatedAt: new Date(),
+                paymentUpdatedBy: user?.email || 'domiciliario'
+              });
+              
+              setSuccess('Pagos actualizados correctamente');
+              setEditingPaymentsOrder(null);
+            } catch (err) {
+              console.error('Error al guardar pagos:', err);
+              setError(`Error al guardar pagos: ${err.message}`);
+            }
+          }}
+          defaultPayments={editingPaymentsOrder.payments || defaultPaymentsForOrder(editingPaymentsOrder)}
+        />
+      )}
     </div>
   );
 };
