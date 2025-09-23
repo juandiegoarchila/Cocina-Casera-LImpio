@@ -169,17 +169,27 @@ const DeliveryOrdersPage = () => {
     );
   };
 
-  // Al cambiar estado a "En Camino", abrimos WhatsApp al cliente.
+  // Al cambiar estado a "Entregado", enviamos WhatsApp al cliente.
   // Supuestos: teléfonos colombianos; se normaliza a 57 + 10 dígitos cuando aplica.
   const handleStatusChange = async (orderId, newStatus) => {
     try {
       const order = orders.find((o) => o.id === orderId);
-      // Si el domiciliario marca "En Camino", abrir WhatsApp al cliente con mensaje predefinido
-  if (newStatus && /en\s*camino/i.test(newStatus)) {
+      // Si el domiciliario marca "Entregado", enviar WhatsApp al cliente con mensaje predefinido
+  if (newStatus && /entregado/i.test(newStatus)) {
         // Obtener el teléfono del pedido (almuerzo o desayuno)
         const addr = order?.meals?.[0]?.address || order?.breakfasts?.[0]?.address || order?.address || {};
         const phone = addr?.phoneNumber || addr?.phone || '';
-  const msg = 'hola soy el domiciliario de cocina casera, llegare de 10 a 15 minutos gracias por su espera';
+        
+        // Obtener la dirección completa con detalles entre paréntesis si existen
+        let fullAddress = addr?.address || '';
+        if (addr?.details && addr.details.trim()) {
+          fullAddress += ` (${addr.details.trim()})`;
+        }
+        
+        // Construir el mensaje con la dirección completa
+        let msg = 'Tu pedido de Cocina Casera ya está en camino.\nLlega en 10-15 min. ¡Gracias por tu espera!';
+        msg += '\n\nDirección: ' + fullAddress;
+        
         // Abrimos WhatsApp en nueva pestaña; si falla, mostramos alerta pero continuamos
         const opened = openWhatsApp(phone, msg);
         if (!opened) {
