@@ -1,7 +1,7 @@
 //src/components/Waiter/WaiterDashboard.js
 import React, { useState, useEffect, useMemo } from 'react';
 import { Disclosure, Transition } from '@headlessui/react';
-import { Bars3Icon, XMarkIcon, SunIcon, MoonIcon, ArrowLeftOnRectangleIcon, ClipboardDocumentListIcon } from '@heroicons/react/24/outline';
+import { Bars3Icon, XMarkIcon, SunIcon, MoonIcon, ArrowLeftOnRectangleIcon, ClipboardDocumentListIcon, CreditCardIcon } from '@heroicons/react/24/outline';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../Auth/AuthProvider';
 import { db, auth } from '../../config/firebase';
@@ -15,6 +15,7 @@ import LoadingIndicator from '../LoadingIndicator';
 import ErrorMessage from '../ErrorMessage';
 import SuccessMessage from '../SuccessMessage';
 import OptionSelector from '../OptionSelector';
+import WaiterPayments from './WaiterPayments';
 import { initializeMealData, handleMealChange, addMeal, duplicateMeal, removeMeal } from '../../utils/MealLogic';
 import { calculateTotal, calculateMealPrice } from '../../utils/MealCalculations';
 import { initializeBreakfastData, handleBreakfastChange, addBreakfast, duplicateBreakfast, removeBreakfast, calculateBreakfastPrice, calculateTotalBreakfastPrice } from '../../utils/BreakfastLogic';
@@ -57,6 +58,7 @@ const WaiterDashboard = () => {
   const [manualMenuType, setManualMenuType] = useState(null);
   const [theme, setTheme] = useState('dark');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [currentView, setCurrentView] = useState('orders'); // 'orders' o 'payments'
   const [schedules, setSchedules] = useState({
     breakfastStart: 420, // 07:00
     breakfastEnd: 631,   // 10:31
@@ -987,11 +989,34 @@ const WaiterDashboard = () => {
                   </div>
                   <nav className="space-y-2 flex flex-col h-[calc(100vh-8rem)]">
                     <button
-                      onClick={() => { navigate('/waiter'); setIsSidebarOpen(false); }}
-                      className={`flex items-center px-4 py-2 rounded-md text-sm font-medium ${theme === 'dark' ? 'text-gray-300 hover:text-white hover:bg-gray-700' : 'text-gray-700 hover:text-black hover:bg-gray-300'} transition-all duration-200`}
+                      onClick={() => { setCurrentView('orders'); setIsSidebarOpen(false); }}
+                      className={`flex items-center px-4 py-2 rounded-md text-sm font-medium ${
+                        currentView === 'orders' 
+                          ? theme === 'dark' 
+                            ? 'bg-blue-700 text-white' 
+                            : 'bg-blue-200 text-blue-800'
+                          : theme === 'dark' 
+                            ? 'text-gray-300 hover:text-white hover:bg-gray-700' 
+                            : 'text-gray-700 hover:text-black hover:bg-gray-300'
+                      } transition-all duration-200`}
                     >
                       <ClipboardDocumentListIcon className={`w-6 h-6 mr-2 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} />
                       <span>Gestión de Órdenes de Mesas</span>
+                    </button>
+                    <button
+                      onClick={() => { setCurrentView('payments'); setIsSidebarOpen(false); }}
+                      className={`flex items-center px-4 py-2 rounded-md text-sm font-medium ${
+                        currentView === 'payments' 
+                          ? theme === 'dark' 
+                            ? 'bg-blue-700 text-white' 
+                            : 'bg-blue-200 text-blue-800'
+                          : theme === 'dark' 
+                            ? 'text-gray-300 hover:text-white hover:bg-gray-700' 
+                            : 'text-gray-700 hover:text-black hover:bg-gray-300'
+                      } transition-all duration-200`}
+                    >
+                      <CreditCardIcon className={`w-6 h-6 mr-2 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} />
+                      <span>Pagos</span>
                     </button>
                     <button
                       onClick={handleLogout}
@@ -1023,14 +1048,18 @@ const WaiterDashboard = () => {
         </div>
         <nav className="space-y-2 flex flex-col h-[calc(100vh-8rem)]">
           <button
-            onClick={() => navigate('/waiter')}
+            onClick={() => setCurrentView('orders')}
             className={`relative flex items-center px-4 py-2 rounded-md text-sm font-medium min-w-[48px]
               ${
-                isSidebarOpen
-                  ? theme === 'dark'
-                    ? 'text-gray-300 hover:text-white hover:bg-gray-700'
-                    : 'text-gray-700 hover:text-black hover:bg-gray-300'
-                  : 'justify-center'
+                currentView === 'orders' 
+                  ? theme === 'dark' 
+                    ? 'bg-blue-700 text-white' 
+                    : 'bg-blue-200 text-blue-800'
+                  : isSidebarOpen
+                    ? theme === 'dark'
+                      ? 'text-gray-300 hover:text-white hover:bg-gray-700'
+                      : 'text-gray-700 hover:text-black hover:bg-gray-300'
+                    : 'justify-center'
               } transition-all duration-300`}
           >
             <ClipboardDocumentListIcon
@@ -1040,6 +1069,31 @@ const WaiterDashboard = () => {
             />
             <span className={`transition-opacity duration-200 ${isSidebarOpen ? 'opacity-100 block' : 'opacity-0 hidden'}`}>
               Gestión de Órdenes de Mesas
+            </span>
+          </button>
+
+          <button
+            onClick={() => setCurrentView('payments')}
+            className={`relative flex items-center px-4 py-2 rounded-md text-sm font-medium min-w-[48px]
+              ${
+                currentView === 'payments' 
+                  ? theme === 'dark' 
+                    ? 'bg-blue-700 text-white' 
+                    : 'bg-blue-200 text-blue-800'
+                  : isSidebarOpen
+                    ? theme === 'dark'
+                      ? 'text-gray-300 hover:text-white hover:bg-gray-700'
+                      : 'text-gray-700 hover:text-black hover:bg-gray-300'
+                    : 'justify-center'
+              } transition-all duration-300`}
+          >
+            <CreditCardIcon
+              className={`w-6 h-6 ${isSidebarOpen ? 'mr-2' : 'mr-0'} ${
+                theme === 'dark' ? 'text-gray-200' : 'text-gray-700'
+              }`}
+            />
+            <span className={`transition-opacity duration-200 ${isSidebarOpen ? 'opacity-100 block' : 'opacity-0 hidden'}`}>
+              Pagos
             </span>
           </button>
 
@@ -1068,20 +1122,30 @@ const WaiterDashboard = () => {
 
       {/* Contenido principal */}
       <div className={`flex-1 p-4 pt-20 sm:pt-20 ${isSidebarOpen ? 'sm:ml-64' : 'sm:ml-16'} transition-all duration-300 min-h-screen`}>
-        <div className="flex border-b border-gray-300 mb-4">
-          <button
-            className={`px-4 py-2 text-sm font-medium ${activeTab === 'create' ? 'border-b-2 border-blue-500 text-blue-500' : 'text-gray-600'}`}
-            onClick={() => setActiveTab('create')}
-          >
-            Crear Orden
-          </button>
-          <button
-            className={`px-4 py-2 text-sm font-medium ${activeTab === 'view' ? 'border-b-2 border-blue-500 text-blue-500' : 'text-gray-600'}`}
-            onClick={() => setActiveTab('view')}
-          >
-            Ver Órdenes
-          </button>
-        </div>
+        {currentView === 'payments' ? (
+          // Vista de Pagos
+          <WaiterPayments 
+            setError={setErrorMessage} 
+            setSuccess={setSuccessMessage} 
+            theme={theme} 
+          />
+        ) : (
+          // Vista de Órdenes (contenido original)
+          <>
+            <div className="flex border-b border-gray-300 mb-4">
+              <button
+                className={`px-4 py-2 text-sm font-medium ${activeTab === 'create' ? 'border-b-2 border-blue-500 text-blue-500' : 'text-gray-600'}`}
+                onClick={() => setActiveTab('create')}
+              >
+                Crear Orden
+              </button>
+              <button
+                className={`px-4 py-2 text-sm font-medium ${activeTab === 'view' ? 'border-b-2 border-blue-500 text-blue-500' : 'text-gray-600'}`}
+                onClick={() => setActiveTab('view')}
+              >
+                Ver Órdenes
+              </button>
+            </div>
   {/* Eliminado el selector anterior para evitar duplicidad */}
   {activeTab === 'create' ? (
           isOrderingDisabled || menuType === 'closed' ? (
@@ -1803,6 +1867,8 @@ const WaiterDashboard = () => {
               </div>
             </div>
           </div>
+        )}
+          </>
         )}
         <div>
           <div className="fixed top-16 right-4 z-[10002] space-y-2 w-80 max-w-xs">

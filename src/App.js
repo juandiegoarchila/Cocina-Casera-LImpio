@@ -717,7 +717,7 @@ await sendToWhatsApp(
           element={<ProtectedRoute allowedRole={3}><WaiterOrderPage /></ProtectedRoute>}
         />
         <Route
-          path="/delivery"
+          path="/delivery/*"
           element={<ProtectedRoute allowedRole={4}><DeliveryOrdersPage /></ProtectedRoute>}
         />
         <Route path="/" element={

@@ -6,15 +6,16 @@ import { collection, onSnapshot, updateDoc, doc } from 'firebase/firestore';
 import TablaPedidos from '../Admin/TablaPedidos';
 import { cleanText, getAddressDisplay, getMealDetailsDisplay } from '../Admin/utils';
 import { Disclosure, Transition } from '@headlessui/react';
-import { Bars3Icon, XMarkIcon, SunIcon, MoonIcon, ArrowLeftOnRectangleIcon, ClipboardDocumentListIcon } from '@heroicons/react/24/outline';
+import { Bars3Icon, XMarkIcon, SunIcon, MoonIcon, ArrowLeftOnRectangleIcon, ClipboardDocumentListIcon, CreditCardIcon } from '@heroicons/react/24/outline';
 import { signOut } from 'firebase/auth';
 import { auth } from '../../config/firebase';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Routes, Route, Navigate } from 'react-router-dom';
 import { openWhatsApp } from '../../utils/whatsapp';
 import PaymentSplitEditor from '../common/PaymentSplitEditor';
 import { defaultPaymentsForOrder } from '../../utils/payments';
 import OrderSummary from '../OrderSummary';
 import BreakfastOrderSummary from '../BreakfastOrderSummary';
+import DeliveryPayments from './DeliveryPayments';
 
 const DeliveryOrdersPage = () => {
   const { user, loading, role } = useAuth();
@@ -330,6 +331,15 @@ const DeliveryOrdersPage = () => {
                       <ClipboardDocumentListIcon className={`w-6 h-6 mr-2 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} />
                       <span>Gestión de Pedidos</span>
                     </button>
+
+                    <button
+                      onClick={() => { navigate('/delivery/payments'); setIsSidebarOpen(false); }}
+                      className={`flex items-center px-4 py-2 rounded-md text-sm font-medium ${theme === 'dark' ? 'text-gray-300 hover:text-white hover:bg-gray-700' : 'text-gray-700 hover:text-black hover:bg-gray-300'} transition-all duration-200`}
+                    >
+                      <CreditCardIcon className={`w-6 h-6 mr-2 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} />
+                      <span>Registro de Pagos</span>
+                    </button>
+
                     <button
                       onClick={handleLogout}
                       className={`mt-auto flex items-center px-4 py-2 rounded-md text-sm font-medium ${theme === 'dark' ? 'text-red-300 hover:text-white hover:bg-red-700' : 'text-red-600 hover:text-red-800 hover:bg-red-200'} transition-all duration-200`}
@@ -381,6 +391,27 @@ const DeliveryOrdersPage = () => {
           </button>
 
           <button
+            onClick={() => navigate('/delivery/payments')}
+            className={`relative flex items-center px-4 py-2 rounded-md text-sm font-medium min-w-[48px]
+              ${
+                isSidebarOpen
+                  ? theme === 'dark'
+                    ? 'text-gray-300 hover:text-white hover:bg-gray-700'
+                    : 'text-gray-700 hover:text-black hover:bg-gray-300'
+                  : 'justify-center'
+              } transition-all duration-300`}
+          >
+            <CreditCardIcon
+              className={`w-6 h-6 ${isSidebarOpen ? 'mr-2' : 'mr-0'} ${
+                theme === 'dark' ? 'text-gray-200' : 'text-gray-700'
+              }`}
+            />
+            <span className={`transition-opacity duration-200 ${isSidebarOpen ? 'opacity-100 block' : 'opacity-0 hidden'}`}>
+              Registro de Pagos
+            </span>
+          </button>
+
+          <button
             onClick={handleLogout}
             className={`mt-auto flex items-center px-4 py-2 rounded-md text-sm font-medium min-w-[48px]
               ${
@@ -408,55 +439,67 @@ const DeliveryOrdersPage = () => {
         {error && <div className="mb-3 p-2 bg-red-600 text-white rounded">{error}</div>}
         {success && <div className="mb-3 p-2 bg-green-600 text-white rounded">{success}</div>}
 
-        <TablaPedidos
-        theme={theme}
-        orders={paginatedOrders}
-        searchTerm={searchTerm}
-        setSearchTerm={setSearchTerm}
-        totals={{}}
-        isLoading={isLoading}
-        currentPage={currentPage}
-        totalPages={totalPages}
-        setCurrentPage={setCurrentPage}
-        itemsPerPage={itemsPerPage}
-        setItemsPerPage={setItemsPerPage}
-        deliveryPersons={{}}
-        handleEditOrder={() => {}}
-        handleDeleteOrder={() => {}}
-        handleStatusChange={handleStatusChange}
-        handleSort={handleSort}
-        getSortIcon={getSortIcon}
-        editingDeliveryId={editingDeliveryId}
-        setEditingDeliveryId={setEditingDeliveryId}
-        editForm={{}}
-        setEditForm={() => {}}
-        handleDeliveryChange={handleDeliveryChange}
-        sortOrder={sortOrder}
-        totalOrders={filteredOrders.length}
-        showProteinModal={false}
-        setShowProteinModal={() => {}}
-        showMealDetails={showMealDetails}
-        setShowMealDetails={setShowMealDetails}
-        isMenuOpen={isMenuOpen}
-        setIsMenuOpen={setIsMenuOpen}
-        handleOpenPreview={() => {}}
-        handleOpenExcelPreview={() => {}}
-        handleExport={() => {}}
-        handleDeleteAllOrders={() => {}}
-        setShowConfirmDeleteAll={() => {}}
-        exportToExcel={() => {}}
-        exportToPDF={() => {}}
-        exportToCSV={() => {}}
-        setShowAddOrderModal={() => {}}
-        orderTypeFilter={orderTypeFilter}
-        setOrderTypeFilter={setOrderTypeFilter}
-        uniqueDeliveryPersons={uniqueDeliveryPersons}
-        selectedDate={selectedDate}
-        setSelectedDate={setSelectedDate}
-        permissions={permissions}
-        editingPaymentsOrder={editingPaymentsOrder}
-        setEditingPaymentsOrder={setEditingPaymentsOrder}
-        />
+        <Routes>
+          <Route path="/" element={
+            <TablaPedidos
+              theme={theme}
+              orders={paginatedOrders}
+              searchTerm={searchTerm}
+              setSearchTerm={setSearchTerm}
+              totals={{}}
+              isLoading={isLoading}
+              currentPage={currentPage}
+              totalPages={totalPages}
+              setCurrentPage={setCurrentPage}
+              itemsPerPage={itemsPerPage}
+              setItemsPerPage={setItemsPerPage}
+              deliveryPersons={{}}
+              handleEditOrder={() => {}}
+              handleDeleteOrder={() => {}}
+              handleStatusChange={handleStatusChange}
+              handleSort={handleSort}
+              getSortIcon={getSortIcon}
+              editingDeliveryId={editingDeliveryId}
+              setEditingDeliveryId={setEditingDeliveryId}
+              editForm={{}}
+              setEditForm={() => {}}
+              handleDeliveryChange={handleDeliveryChange}
+              sortOrder={sortOrder}
+              totalOrders={filteredOrders.length}
+              showProteinModal={false}
+              setShowProteinModal={() => {}}
+              showMealDetails={showMealDetails}
+              setShowMealDetails={setShowMealDetails}
+              isMenuOpen={isMenuOpen}
+              setIsMenuOpen={setIsMenuOpen}
+              handleOpenPreview={() => {}}
+              handleOpenExcelPreview={() => {}}
+              handleExport={() => {}}
+              handleDeleteAllOrders={() => {}}
+              setShowConfirmDeleteAll={() => {}}
+              exportToExcel={() => {}}
+              exportToPDF={() => {}}
+              exportToCSV={() => {}}
+              setShowAddOrderModal={() => {}}
+              orderTypeFilter={orderTypeFilter}
+              setOrderTypeFilter={setOrderTypeFilter}
+              uniqueDeliveryPersons={uniqueDeliveryPersons}
+              selectedDate={selectedDate}
+              setSelectedDate={setSelectedDate}
+              permissions={permissions}
+              editingPaymentsOrder={editingPaymentsOrder}
+              setEditingPaymentsOrder={setEditingPaymentsOrder}
+            />
+          } />
+          <Route path="/payments" element={
+            <DeliveryPayments 
+              setError={setError}
+              setSuccess={setSuccess}
+              theme={theme}
+            />
+          } />
+          <Route path="*" element={<Navigate to="/delivery" replace />} />
+        </Routes>
       </div>
 
       {/* Modal para mostrar detalles del pedido */}

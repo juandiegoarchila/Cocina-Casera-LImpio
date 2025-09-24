@@ -23,6 +23,7 @@ service cloud.firestore {
       // Permitir que domiciliario toque únicamente estado, domiciliario asignado y updatedAt
       return changedKeys().hasOnly(['status', 'deliveryPerson', 'updatedAt']);
     }
+    
     // Usuarios: Solo el propio usuario puede leer/escribir sus datos
     match /users/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
@@ -66,30 +67,21 @@ service cloud.firestore {
       );
     }
 
-    // MODIFICADO: Pagos - Los domiciliarios pueden leer y actualizar sus propios pagos
+    // NUEVO: Pagos - Los domiciliarios también pueden leer y escribir
     match /payments/{paymentId} {
       allow read: if isAuthenticated();
-      // Cualquier usuario autenticado con role 2 (admin), 3 (mesero) o 4 (domiciliario) puede crear pagos
       allow create: if isAuthenticated() && (isAdmin() || isWaiter() || isCourier());
-      // Para actualizar, los administradores pueden actualizar cualquier pago
-      // Los domiciliarios pueden actualizar pagos si:
-      // 1. Son administradores O
-      // 2. Son meseros O
-      // 3. Son domiciliarios Y el pago es suyo (createdBy == email)
-      allow update: if isAuthenticated() && (
-        isAdmin() || isWaiter() || isCourier()
+      allow update, delete: if isAuthenticated() && (
+        isAdmin() || 
+        // Domiciliarios solo pueden modificar pagos creados por ellos
+        (isCourier() && resource.data.createdBy == request.auth.email)
       );
-      // Solo admin puede eliminar pagos
-      allow delete: if isAuthenticated() && isAdmin();
     }
 
-    // NUEVO: Snapshots de pagos por día - Los domiciliarios pueden leer y escribir completamente
+    // NUEVO: Snapshots de pagos por día - Los domiciliarios pueden leer, pero solo admin puede escribir
     match /paymentsByDay/{dayId} {
       allow read: if isAuthenticated();
-      // Permitimos explícitamente a los domiciliarios escribir en esta colección sin restricciones
-      // ya que es necesario para mantener las estadísticas actualizadas
-      allow create, update: if isAuthenticated() && (isAdmin() || isCourier());
-      allow delete: if isAuthenticated() && isAdmin();
+      allow write: if isAuthenticated() && (isAdmin() || isCourier());
     }
 
     // Configuraciones: Solo administradores (rol 2) pueden escribir
