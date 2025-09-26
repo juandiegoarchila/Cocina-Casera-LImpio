@@ -542,7 +542,7 @@ const DeliveryPayments = ({ setError, setSuccess, theme }) => {
                             </p>
                           </div>
                           <div className="flex space-x-2 mt-2 sm:mt-0">
-                            {(payment.createdBy === user?.email || !payment.createdBy) && (
+                            {(payment.createdBy === user?.email && payment.createdBy !== "" && payment.createdBy) && (
                               <button
                                 onClick={() => handleEdit(payment)}
                                 className="text-yellow-500 hover:text-yellow-400 p-1.5 sm:p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"

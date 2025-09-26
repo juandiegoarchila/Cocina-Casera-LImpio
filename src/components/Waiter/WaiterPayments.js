@@ -308,53 +308,36 @@ const WaiterPayments = ({ setError, setSuccess, theme }) => {
         </div>
       </div>
 
-      <div className="space-y-6">
-        {/* Botón para mostrar/ocultar formulario */}
-        {!showForm && (
-          <div className="flex justify-center">
-            <button
-              onClick={() => setShowForm(true)}
-              className={`px-6 py-3 rounded-lg flex items-center space-x-2 text-white font-medium shadow-lg transition-all duration-200 hover:shadow-xl transform hover:scale-[1.02]
-                ${theme === 'dark' ? 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700' : 'bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600'}`}
-            >
-              <PlusCircle className="w-5 h-5" />
-              <span>Registrar Nuevo Pago</span>
-            </button>
-          </div>
-        )}
+      {/* Botón para mostrar/ocultar formulario */}
+      <button
+        onClick={() => {
+          setShowForm(!showForm);
+          setEditingPaymentId(null);
+          setFormFields([{ name: '', units: '', amount: '', store: '' }]);
+          setInitialStore('');
+          setShowStoreDetails(false);
+        }}
+        className={`mb-4 sm:mb-6 px-4 py-2 sm:px-6 sm:py-3 rounded-full flex items-center justify-center space-x-2 transition-all duration-300 ease-in-out w-full sm:w-auto mx-auto
+          ${showForm ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'} text-white shadow-lg
+          transform hover:scale-105 text-sm sm:text-base`}
+      >
+        {showForm ? <XCircle className="w-4 h-4 sm:w-5 sm:h-5" /> : <PlusCircle className="w-4 h-4 sm:w-5 sm:h-5" />}
+        <span>{showForm ? 'Cerrar Formulario' : 'Registrar Nuevo Pago'}</span>
+      </button>
 
-      {/* Formulario de registro de pagos */}
+      {/* Formularios Dinámicos */}
       {showForm && (
-        <div className={`p-4 sm:p-6 rounded-xl shadow-xl max-h-[70vh] overflow-y-auto custom-scrollbar ${
+        <div className={`p-4 sm:p-6 rounded-xl shadow-xl transform transition-all duration-500 ease-in-out ${
           theme === 'dark' ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-200'
-        }`}>
-          <div className="flex justify-between items-center mb-4 sm:mb-6">
-            <h3 className={`text-lg sm:text-xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-              {editingPaymentId ? 'Editar Pago' : 'Registrar Nuevo Pago'}
-            </h3>
-            <button
-              onClick={() => {
-                setShowForm(false);
-                setEditingPaymentId(null);
-                setFormFields([{ name: '', units: '', amount: '', store: '' }]);
-              }}
-              className={`p-2 rounded-full transition-colors duration-200 ${
-                theme === 'dark' ? 'text-gray-400 hover:text-white hover:bg-gray-700' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'
-              }`}
-            >
-              <XCircle className="w-5 h-5" />
-            </button>
-          </div>
+        } ${showForm ? 'scale-100 opacity-100' : 'scale-95 opacity-0'} mb-6`}>
+          <h3 className={`text-xl sm:text-2xl font-bold mb-4 sm:mb-6 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+            {editingPaymentId ? 'Editar Pago' : 'Registrar Nuevos Pagos'}
+          </h3>
 
-          <form onSubmit={(e) => { e.preventDefault(); handleSaveAllForms(); }} className="space-y-4 sm:space-y-6">
+          <form onSubmit={(e) => { e.preventDefault(); handleSaveAllForms(); }}>
             {formFields.map((field, index) => (
-              <div key={index} className={`p-4 sm:p-5 rounded-lg space-y-4 ${
-                theme === 'dark' ? 'bg-gray-700 border border-gray-600' : 'bg-gray-50 border border-gray-200'
-              } shadow-sm`}>
-                <h4 className={`text-base sm:text-lg font-semibold mb-3 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                  Pago #{index + 1}
-                </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
+              <div key={index} className={`p-3 sm:p-4 rounded-lg border mb-4 ${theme === 'dark' ? 'border-gray-600 bg-gray-700' : 'border-gray-200 bg-gray-50'}`}>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
                   <div>
                     <label htmlFor={`name-${index}`} className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Producto/Gasto
@@ -367,7 +350,7 @@ const WaiterPayments = ({ setError, setSuccess, theme }) => {
                       onChange={(e) => handleFormInputChange(index, e)}
                       className={`mt-1 p-2 sm:p-3 w-full rounded-lg border focus:ring-blue-500 focus:border-blue-500 transition-colors text-sm sm:text-base
                         ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'bg-gray-50 border-gray-300 text-gray-900'} shadow-sm`}
-                      placeholder="Ej: Coca Cola"
+                      placeholder="Ej: Leche, Almuerzo"
                       required
                     />
                   </div>
@@ -514,7 +497,7 @@ const WaiterPayments = ({ setError, setSuccess, theme }) => {
                             </p>
                           </div>
                           <div className="flex space-x-2 mt-2 sm:mt-0">
-                            {(payment.createdBy === user?.email || !payment.createdBy) && (
+                            {(payment.createdBy === user?.email && payment.createdBy !== "" && payment.createdBy) && (
                               <button
                                 onClick={() => handleEdit(payment)}
                                 className="text-yellow-500 hover:text-yellow-400 p-1.5 sm:p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
@@ -573,7 +556,6 @@ const WaiterPayments = ({ setError, setSuccess, theme }) => {
           )}
         </div>
       )}
-      </div>
     </div>
   );
 };

@@ -129,11 +129,31 @@ const DeliveryOrdersPage = () => {
   }, [orders, searchTerm, orderTypeFilter, selectedDate]);
 
   const sortedOrders = useMemo(() => {
+    // Primero ordenar por fecha de creación descendente (más recientes primero)
+    const ordersByCreation = [...filteredOrders].sort((a, b) => {
+      const getCreationTime = (order) => {
+        if (order.createdAt && order.createdAt.seconds) {
+          return order.createdAt.seconds;
+        }
+        if (order.createdAt instanceof Date) {
+          return order.createdAt.getTime() / 1000;
+        }
+        if (typeof order.createdAt === 'string') {
+          return new Date(order.createdAt).getTime() / 1000;
+        }
+        return 0;
+      };
+      
+      const timeA = getCreationTime(a);
+      const timeB = getCreationTime(b);
+      return timeB - timeA; // Descendente: más recientes primero
+    });
+
     const getValue = (obj, key) => {
       if (key === 'orderNumber') {
-        // Calcular un número de pedido en orden inverso para que los más recientes aparezcan primero
-        // Esto crea un orden similar al de la vista de admin
-        return filteredOrders.length - filteredOrders.indexOf(obj);
+        // Usar el índice en el array ordenado por creación para mantener consistencia
+        const index = ordersByCreation.findIndex(order => order.id === obj.id);
+        return index + 1; // Número de orden basado en posición (1, 2, 3, etc.)
       }
       if (key === 'address') return cleanText(obj?.meals?.[0]?.address?.address || obj?.breakfasts?.[0]?.address?.address || '');
       if (key === 'phone') return cleanText(obj?.meals?.[0]?.address?.phoneNumber || obj?.breakfasts?.[0]?.address?.phoneNumber || '');
@@ -145,7 +165,14 @@ const DeliveryOrdersPage = () => {
       if (key === 'createdAt.seconds' && obj.createdAt && obj.createdAt.seconds) return obj.createdAt.seconds;
       return 0;
     };
-    return [...filteredOrders].sort((a, b) => {
+
+    // Si se está ordenando por orderNumber, usar el array ya ordenado por creación
+    if (sortBy === 'orderNumber') {
+      return sortOrder === 'desc' ? ordersByCreation : [...ordersByCreation].reverse();
+    }
+
+    // Para otros campos, aplicar ordenamiento normal
+    return ordersByCreation.sort((a, b) => {
       const va = getValue(a, sortBy);
       const vb = getValue(b, sortBy);
       if (typeof va === 'string' && typeof vb === 'string') {
