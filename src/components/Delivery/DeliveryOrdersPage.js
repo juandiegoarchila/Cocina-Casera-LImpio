@@ -248,9 +248,25 @@ const DeliveryOrdersPage = () => {
           fullAddress += ` (${addr.details.trim()})`;
         }
         
-        // Construir el mensaje con la dirección completa
+        // Obtener método de pago y total
+        const paymentMethod = order?.meals?.[0]?.paymentMethod?.name || 
+                             order?.breakfasts?.[0]?.paymentMethod?.name || 
+                             order?.paymentMethod?.name || 
+                             order?.paymentMethod || 
+                             'Efectivo';
+        
+        const total = order?.total || 0;
+        const formattedTotal = new Intl.NumberFormat('es-CO', {
+          style: 'currency',
+          currency: 'COP',
+          minimumFractionDigits: 0,
+        }).format(total);
+        
+        // Construir el mensaje completo
         let msg = 'Tu pedido de Cocina Casera ya está en camino.\nLlega en 10-15 min. ¡Gracias por tu espera!';
         msg += '\n\nDirección: ' + fullAddress;
+        msg += '\nMétodo de pago: ' + paymentMethod;
+        msg += '\nTotal: ' + formattedTotal;
         
         // Abrimos WhatsApp en nueva pestaña; si falla, mostramos alerta pero continuamos
         const opened = openWhatsApp(phone, msg);
