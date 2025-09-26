@@ -208,13 +208,36 @@ const DeliveryOrdersPage = () => {
     );
   };
 
-  // Al cambiar estado a "Entregado", enviamos WhatsApp al cliente.
+  // Función helper para extraer el primer nombre del email
+  const extractFirstNameFromEmail = (email) => {
+    if (!email) return '';
+    const username = email.split('@')[0];
+    // Capitalizar primera letra y limpiar caracteres especiales
+    return username.charAt(0).toUpperCase() + username.slice(1).toLowerCase().replace(/[^a-zA-Z]/g, '');
+  };
+
+  // Al cambiar estado a "Entregado", enviamos WhatsApp al cliente y asignamos domiciliario.
   // Supuestos: teléfonos colombianos; se normaliza a 57 + 10 dígitos cuando aplica.
   const handleStatusChange = async (orderId, newStatus) => {
     try {
       const order = orders.find((o) => o.id === orderId);
-      // Si el domiciliario marca "Entregado", enviar WhatsApp al cliente con mensaje predefinido
-  if (newStatus && /entregado/i.test(newStatus)) {
+      
+      // Preparar objeto de actualización
+      const updateData = { 
+        status: newStatus, 
+        updatedAt: new Date() 
+      };
+
+      // Si el domiciliario marca "Entregado", asignar automáticamente su nombre y enviar WhatsApp
+      if (newStatus && /entregado/i.test(newStatus)) {
+        // Auto-asignar domiciliario si no está asignado o está como "Sin asignar"
+        const currentDeliveryPerson = order?.deliveryPerson || '';
+        if (!currentDeliveryPerson || currentDeliveryPerson === 'Sin asignar' || currentDeliveryPerson.trim() === '') {
+          const deliveryPersonName = extractFirstNameFromEmail(user?.email);
+          if (deliveryPersonName) {
+            updateData.deliveryPerson = deliveryPersonName;
+          }
+        }
         // Obtener el teléfono del pedido (almuerzo o desayuno)
         const addr = order?.meals?.[0]?.address || order?.breakfasts?.[0]?.address || order?.address || {};
         const phone = addr?.phoneNumber || addr?.phone || '';
@@ -235,9 +258,15 @@ const DeliveryOrdersPage = () => {
           setError('No se pudo abrir WhatsApp: teléfono inválido o ausente.');
         }
       }
+      
       const collectionName = order?.type === 'breakfast' ? 'deliveryBreakfastOrders' : 'orders';
-      await updateDoc(doc(db, collectionName, orderId), { status: newStatus, updatedAt: new Date() });
-      setSuccess('Estado actualizado correctamente.');
+      await updateDoc(doc(db, collectionName, orderId), updateData);
+      
+      // Mensaje de éxito personalizado
+      const successMsg = updateData.deliveryPerson 
+        ? `Estado actualizado y asignado a ${updateData.deliveryPerson} correctamente.`
+        : 'Estado actualizado correctamente.';
+      setSuccess(successMsg);
     } catch (e) {
       console.error('[Estado] actualización fallida', e);
       if (e && /Missing or insufficient permissions/i.test(String(e.message || e))) {
