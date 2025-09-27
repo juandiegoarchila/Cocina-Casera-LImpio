@@ -6,12 +6,13 @@ import { PlusIcon, TrashIcon, CheckIcon, ClockIcon, PencilIcon } from '@heroicon
 
 const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
   const [tasks, setTasks] = useState([]);
-  const [newTask, setNewTask] = useState({ title: '', description: '', assignedTo: '', priority: 'media', dueDate: '', estimatedTime: '', videoUrl: '' });
+  const [newTask, setNewTask] = useState({ title: '', description: '', assignedTo: '', priority: 'media', dueDate: '', estimatedTime: '', videoUrl: '', isRecurringDaily: false });
   const [showAddForm, setShowAddForm] = useState(false);
   const [draggedTask, setDraggedTask] = useState(null);
   const [dragOverColumn, setDragOverColumn] = useState(null);
+  const [dragOverIndex, setDragOverIndex] = useState(null);
   const [editingTask, setEditingTask] = useState(null);
-  const [editForm, setEditForm] = useState({ title: '', description: '', assignedTo: '', priority: 'media', dueDate: '', estimatedTime: '', videoUrl: '' });
+  const [editForm, setEditForm] = useState({ title: '', description: '', assignedTo: '', priority: 'media', dueDate: '', estimatedTime: '', videoUrl: '', isRecurringDaily: false });
 
   // Perfiles disponibles para asignar tareas
   const profiles = [
@@ -35,6 +36,57 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
     return () => unsubscribe();
   }, [setError]);
 
+  // 🔄 SISTEMA DE RESET AUTOMÁTICO DE TAREAS RECURRENTES A LAS 6PM
+  useEffect(() => {
+    const checkAndResetRecurringTasks = async () => {
+      const now = new Date();
+      const currentHour = now.getHours();
+      const currentDate = now.toISOString().split('T')[0];
+      
+      // Solo ejecutar entre las 6:00pm (18) y 6:05pm (18:05) para evitar múltiples ejecuciones
+      if (currentHour === 18 && now.getMinutes() <= 5) {
+        console.log('🔄 Verificando tareas recurrentes para reset automático...');
+        
+        // Buscar tareas recurrentes completadas que necesiten reset
+        const recurringTasksToReset = tasks.filter(task => 
+          task.isRecurringDaily && 
+          task.status === 'completada' &&
+          task.lastCompletedDate === currentDate
+        );
+        
+        // Resetear cada tarea recurrente completada hoy
+        for (const task of recurringTasksToReset) {
+          try {
+            await updateDoc(doc(db, 'tasks', task.id), {
+              status: 'pendiente',
+              startedAt: null,
+              completedAt: null,
+              updatedAt: serverTimestamp(),
+              resetAt: serverTimestamp(),
+              dailyResetCount: (task.dailyResetCount || 0) + 1
+            });
+            
+            console.log(`✅ Tarea recurrente resetada: ${task.title}`);
+          } catch (error) {
+            console.error(`❌ Error reseteando tarea ${task.title}:`, error);
+          }
+        }
+        
+        if (recurringTasksToReset.length > 0) {
+          setSuccess(`🔄 ${recurringTasksToReset.length} tarea(s) recurrente(s) reiniciada(s) automáticamente`);
+        }
+      }
+    };
+    
+    // Verificar cada minuto si es hora de reset (6pm)
+    const interval = setInterval(checkAndResetRecurringTasks, 60000); // Cada minuto
+    
+    // Verificar inmediatamente al cargar el componente
+    checkAndResetRecurringTasks();
+    
+    return () => clearInterval(interval);
+  }, [tasks, setSuccess, setError]);
+
   // Crear nueva tarea
   const handleCreateTask = async () => {
     if (!newTask.title || !newTask.assignedTo) {
@@ -48,7 +100,7 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
         createdAt: new Date(),
         createdBy: 'admin'
       });
-      setNewTask({ title: '', description: '', assignedTo: '', priority: 'media', dueDate: '', estimatedTime: '', videoUrl: '' });
+      setNewTask({ title: '', description: '', assignedTo: '', priority: 'media', dueDate: '', estimatedTime: '', videoUrl: '', isRecurringDaily: false });
       setShowAddForm(false);
       setSuccess('Tarea creada exitosamente');
     } catch (error) {
@@ -64,7 +116,13 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
       // Validar dependencias y flujo correcto antes de cambiar estado
       if (newStatus === 'en_progreso') {
         const tasksForProfile = tasks.filter(t => t.assignedTo === currentTask.assignedTo)
-                                   .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+                                   .sort((a, b) => {
+                                     // Usar orden personalizado si existe, sino usar fecha de creación
+                                     const orderA = a.customOrder !== undefined ? a.customOrder : 999999;
+                                     const orderB = b.customOrder !== undefined ? b.customOrder : 999999;
+                                     if (orderA !== orderB) return orderA - orderB;
+                                     return new Date(a.createdAt) - new Date(b.createdAt);
+                                   });
         
         const currentIndex = tasksForProfile.findIndex(t => t.id === taskId);
         
@@ -94,6 +152,15 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
         updateData.completedAt = null; // Limpiar si existía
       } else if (newStatus === 'completada') {
         updateData.completedAt = serverTimestamp();
+        
+        // 🔄 LÓGICA PARA TAREAS RECURRENTES DIARIAS
+        // Solo marcar como completada, NO crear duplicados
+        // El reset automático se hará a las 6pm
+        if (currentTask.isRecurringDaily) {
+          // Marcar la fecha de cuando fue completada por última vez
+          updateData.lastCompletedDate = new Date().toISOString().split('T')[0];
+          setSuccess('🔄 Tarea recurrente completada - Se reiniciará automáticamente a las 6pm');
+        }
       } else if (newStatus === 'pendiente') {
         // Al regresar a pendiente, limpiar timestamps
         updateData.startedAt = null;
@@ -101,7 +168,13 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
       }
 
       await updateDoc(doc(db, 'tasks', taskId), updateData);
-      setSuccess('Estado actualizado');
+      
+      // Mensaje de éxito diferente si no es recurrente
+      if (newStatus === 'completada' && !currentTask.isRecurringDaily) {
+        setSuccess('Estado actualizado');
+      } else if (newStatus !== 'completada') {
+        setSuccess('Estado actualizado');
+      }
     } catch (error) {
       setError(`Error al actualizar estado: ${error.message}`);
     }
@@ -129,7 +202,8 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
       priority: task.priority || 'media',
       dueDate: task.dueDate || '',
       estimatedTime: task.estimatedTime || '',
-      videoUrl: task.videoUrl || ''
+      videoUrl: task.videoUrl || '',
+      isRecurringDaily: task.isRecurringDaily || false
     });
   };
 
@@ -145,7 +219,7 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
         updatedAt: serverTimestamp()
       });
       setEditingTask(null);
-      setEditForm({ title: '', description: '', assignedTo: '', priority: 'media', dueDate: '', estimatedTime: '', videoUrl: '' });
+      setEditForm({ title: '', description: '', assignedTo: '', priority: 'media', dueDate: '', estimatedTime: '', videoUrl: '', isRecurringDaily: false });
       setSuccess('Tarea actualizada exitosamente');
     } catch (error) {
       setError(`Error al actualizar tarea: ${error.message}`);
@@ -155,7 +229,7 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
   // Cancelar edición
   const handleCancelEdit = () => {
     setEditingTask(null);
-    setEditForm({ title: '', description: '', assignedTo: '', priority: 'media', dueDate: '', estimatedTime: '' });
+    setEditForm({ title: '', description: '', assignedTo: '', priority: 'media', dueDate: '', estimatedTime: '', videoUrl: '', isRecurringDaily: false });
   };
 
   // Obtener color del perfil
@@ -183,7 +257,14 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
 
   const isTaskBlocked = (task) => {
     const tasksForProfile = tasks.filter(t => t.assignedTo === task.assignedTo)
-                               .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+                               .sort((a, b) => {
+                                 // Primero por orden personalizado, luego por fecha de creación
+                                 const orderA = a.customOrder !== undefined ? a.customOrder : 999999;
+                                 const orderB = b.customOrder !== undefined ? b.customOrder : 999999;
+                                 if (orderA !== orderB) return orderA - orderB;
+                                 return new Date(a.createdAt) - new Date(b.createdAt);
+                               });
+    
     const currentIndex = tasksForProfile.findIndex(t => t.id === task.id);
     
     // Verificar si hay tareas anteriores sin completar
@@ -204,26 +285,80 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
   const handleDragEnd = () => {
     setDraggedTask(null);
     setDragOverColumn(null);
+    setDragOverIndex(null);
   };
 
-  const handleDragOver = (e, columnStatus) => {
+  const handleDragOver = (e, columnStatus, index = null) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     setDragOverColumn(columnStatus);
+    if (index !== null) {
+      setDragOverIndex(index);
+    }
   };
 
   const handleDragLeave = (e) => {
     // Solo limpiar si realmente salimos de la columna
     if (!e.currentTarget.contains(e.relatedTarget)) {
       setDragOverColumn(null);
+      setDragOverIndex(null);
     }
   };
 
-  const handleDrop = async (e, newStatus) => {
+  // Nueva función para reordenar tareas en pendientes
+  const handleReorderInPendientes = async (draggedTask, targetIndex) => {
+    try {
+      // Obtener TODAS las tareas pendientes (no filtrar por perfil)
+      const pendingTasks = tasks.filter(t => t.status === 'pendiente')
+                               .sort((a, b) => {
+                                 const orderA = a.customOrder !== undefined ? a.customOrder : 999999;
+                                 const orderB = b.customOrder !== undefined ? b.customOrder : 999999;
+                                 if (orderA !== orderB) return orderA - orderB;
+                                 return new Date(a.createdAt) - new Date(b.createdAt);
+                               });
+      
+      // Remover la tarea arrastrada de la lista
+      const filteredTasks = pendingTasks.filter(t => t.id !== draggedTask.id);
+      
+      // Insertar en la nueva posición
+      filteredTasks.splice(targetIndex, 0, draggedTask);
+      
+      // Actualizar el orden personalizado para TODAS las tareas
+      for (let i = 0; i < filteredTasks.length; i++) {
+        await updateDoc(doc(db, 'tasks', filteredTasks[i].id), {
+          customOrder: i,
+          updatedAt: serverTimestamp()
+        });
+      }
+      
+      setSuccess('✅ Orden de tareas actualizado exitosamente');
+    } catch (error) {
+      setError(`Error al reordenar tareas: ${error.message}`);
+    }
+  };
+
+  const handleDrop = async (e, newStatus, targetIndex = null) => {
     e.preventDefault();
     setDragOverColumn(null);
+    setDragOverIndex(null);
     
-    if (!draggedTask || draggedTask.status === newStatus) {
+    if (!draggedTask) {
+      return;
+    }
+
+    console.log('🔄 Drop:', { draggedTask: draggedTask.title, newStatus, targetIndex, currentStatus: draggedTask.status });
+
+    // 📋 REORDENAMIENTO DENTRO DE LA COLUMNA PENDIENTES
+    if (newStatus === 'pendiente' && draggedTask.status === 'pendiente' && targetIndex !== null) {
+      console.log('📋 Reordenando tarea:', draggedTask.title, 'a posición:', targetIndex);
+      await handleReorderInPendientes(draggedTask, targetIndex);
+      setDraggedTask(null);
+      return;
+    }
+
+    // 🔄 CAMBIO DE ESTADO ENTRE COLUMNAS
+    if (draggedTask.status === newStatus && targetIndex === null) {
+      console.log('❌ Mismo estado, no hacer nada');
       setDraggedTask(null);
       return;
     }
@@ -245,8 +380,12 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
       return;
     }
 
-    // Usar la función existente que ya maneja los timestamps
-    await handleStatusChange(draggedTask.id, newStatus);
+    // Cambiar estado solo si no es reordenamiento
+    if (targetIndex === null) {
+      console.log('🔄 Cambiando estado a:', newStatus);
+      await handleStatusChange(draggedTask.id, newStatus);
+    }
+    
     setDraggedTask(null);
   };
 
@@ -337,6 +476,21 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
                 placeholder="Ej: https://youtube.com/shorts/example"
                 className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
               />
+            </div>
+
+            <div className="md:col-span-2 flex items-center space-x-3 p-4 bg-gray-700 rounded-lg border border-gray-600">
+              <input
+                type="checkbox"
+                id="recurringDaily"
+                checked={newTask.isRecurringDaily}
+                onChange={(e) => setNewTask({...newTask, isRecurringDaily: e.target.checked})}
+                className="w-4 h-4 text-blue-600 bg-gray-600 border-gray-500 rounded focus:ring-blue-500 focus:ring-2"
+              />
+              <label htmlFor="recurringDaily" className="text-sm font-medium text-gray-300 flex items-center space-x-2">
+                <span>🔄</span>
+                <span>Tarea Recurrente Diaria</span>
+                <span className="text-xs text-gray-400">(Se recreará automáticamente cada día al completarse)</span>
+              </label>
             </div>
 
             <div className="md:col-span-2">
@@ -445,6 +599,21 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
                 />
               </div>
 
+              <div className="md:col-span-2 flex items-center space-x-3 p-4 bg-gray-700 rounded-lg border border-gray-600">
+                <input
+                  type="checkbox"
+                  id="editRecurringDaily"
+                  checked={editForm.isRecurringDaily}
+                  onChange={(e) => setEditForm({...editForm, isRecurringDaily: e.target.checked})}
+                  className="w-4 h-4 text-blue-600 bg-gray-600 border-gray-500 rounded focus:ring-blue-500 focus:ring-2"
+                />
+                <label htmlFor="editRecurringDaily" className="text-sm font-medium text-gray-300 flex items-center space-x-2">
+                  <span>🔄</span>
+                  <span>Tarea Recurrente Diaria</span>
+                  <span className="text-xs text-gray-400">(Se recreará automáticamente cada día al completarse)</span>
+                </label>
+              </div>
+
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-300 mb-2">Descripción</label>
                 <textarea
@@ -490,23 +659,75 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
             <ClockIcon className="w-5 h-5 mr-2" />
             Pendientes ({tasks.filter(t => t.status === 'pendiente').length})
           </h3>
-          {tasks.filter(t => t.status === 'pendiente').map(task => (
-            <TaskCard 
-              key={task.id} 
-              task={task} 
-              onStatusChange={handleStatusChange}
-              onDelete={handleDeleteTask}
-              onEdit={handleEditTask}
-              getProfileColor={getProfileColor}
-              getProfileName={getProfileName}
-              theme={theme}
-              isDragging={draggedTask?.id === task.id}
-              onDragStart={handleDragStart}
-              onDragEnd={handleDragEnd}
-              isTaskBlocked={isTaskBlocked}
-              formatEstimatedTime={formatEstimatedTime}
-            />
+          {tasks.filter(t => t.status === 'pendiente').length > 1 && (
+            <div className="bg-blue-900/30 border border-blue-500/50 rounded-lg p-3 mb-4 text-xs text-blue-300">
+              <div className="flex items-center space-x-2">
+                <span>📋</span>
+                <span><strong>Reordenar:</strong> Arrastra las tareas para cambiar su orden de ejecución</span>
+              </div>
+            </div>
+          )}
+          {tasks.filter(t => t.status === 'pendiente')
+                .sort((a, b) => {
+                  // Ordenar por orden personalizado, luego por fecha de creación
+                  const orderA = a.customOrder !== undefined ? a.customOrder : 999999;
+                  const orderB = b.customOrder !== undefined ? b.customOrder : 999999;
+                  if (orderA !== orderB) return orderA - orderB;
+                  return new Date(a.createdAt) - new Date(b.createdAt);
+                })
+                .map((task, index) => (
+            <div key={task.id}>
+              {/* Zona de drop superior */}
+              <div
+                className={`h-3 transition-all duration-200 mb-1 ${
+                  dragOverColumn === 'pendiente' && dragOverIndex === index && draggedTask?.id !== task.id && draggedTask?.status === 'pendiente'
+                    ? 'bg-blue-500 rounded-full mx-2 shadow-lg border-2 border-blue-300'
+                    : 'h-1'
+                }`}
+                onDragOver={(e) => handleDragOver(e, 'pendiente', index)}
+                onDrop={(e) => handleDrop(e, 'pendiente', index)}
+              >
+                {dragOverColumn === 'pendiente' && dragOverIndex === index && draggedTask?.id !== task.id && draggedTask?.status === 'pendiente' && (
+                  <div className="text-center text-xs text-blue-200 font-bold py-1">
+                    ⬇️ Soltar aquí (posición {index + 1})
+                  </div>
+                )}
+              </div>
+              
+              <TaskCard 
+                task={task} 
+                onStatusChange={handleStatusChange}
+                onDelete={handleDeleteTask}
+                onEdit={handleEditTask}
+                getProfileColor={getProfileColor}
+                getProfileName={getProfileName}
+                theme={theme}
+                isDragging={draggedTask?.id === task.id}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+                isTaskBlocked={isTaskBlocked}
+                formatEstimatedTime={formatEstimatedTime}
+                orderIndex={index + 1}
+              />
+            </div>
           ))}
+          
+          {/* Zona de drop al final para agregar al final de la lista */}
+          <div
+            className={`transition-all duration-200 mt-2 ${  
+              dragOverColumn === 'pendiente' && dragOverIndex === tasks.filter(t => t.status === 'pendiente').length && draggedTask?.status === 'pendiente'
+                ? 'h-12 bg-blue-500 rounded-lg mx-2 shadow-lg border-2 border-blue-300'
+                : 'h-2'
+            }`}
+            onDragOver={(e) => handleDragOver(e, 'pendiente', tasks.filter(t => t.status === 'pendiente').length)}
+            onDrop={(e) => handleDrop(e, 'pendiente', tasks.filter(t => t.status === 'pendiente').length)}
+          >
+            {dragOverColumn === 'pendiente' && dragOverIndex === tasks.filter(t => t.status === 'pendiente').length && draggedTask?.status === 'pendiente' && (
+              <div className="text-center text-xs text-blue-200 font-bold py-3">
+                ⬇️ Soltar al final (posición {tasks.filter(t => t.status === 'pendiente').length + 1})
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Columna: En Progreso */}
@@ -578,7 +799,7 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
 };
 
 // Componente para renderizar cada tarea individual
-const TaskCard = ({ task, onStatusChange, onDelete, onEdit, getProfileColor, getProfileName, theme, isDragging, onDragStart, onDragEnd, isTaskBlocked, formatEstimatedTime }) => {
+const TaskCard = ({ task, onStatusChange, onDelete, onEdit, getProfileColor, getProfileName, theme, isDragging, onDragStart, onDragEnd, isTaskBlocked, formatEstimatedTime, orderIndex }) => {
   const getPriorityEmoji = (priority) => {
     switch(priority) {
       case 'alta': return '🔴';
@@ -632,7 +853,31 @@ const TaskCard = ({ task, onStatusChange, onDelete, onEdit, getProfileColor, get
     >
       <div className="flex justify-between items-start mb-2">
         <div className="flex items-center space-x-1">
+          {task.status === 'pendiente' && orderIndex && (
+            <span 
+              className="text-xs bg-gray-600 text-gray-300 px-2 py-1 rounded-full font-bold min-w-[24px] text-center"
+              title="Orden de ejecución - Arrastra para reordenar"
+            >
+              {orderIndex}
+            </span>
+          )}
           <h4 className="font-semibold text-sm text-gray-100">{task.title}</h4>
+          {task.isRecurringDaily && (
+            <span 
+              className={`text-xs px-2 py-1 rounded-full font-medium ${
+                task.status === 'completada' 
+                  ? 'text-yellow-300 bg-yellow-900 animate-pulse' 
+                  : 'text-blue-400 bg-blue-900'
+              }`}
+              title={
+                task.status === 'completada' 
+                  ? 'Tarea Recurrente Completada - Se reiniciará automáticamente a las 6pm' 
+                  : 'Tarea Recurrente Diaria - Se reinicia automáticamente cada día a las 6pm'
+              }
+            >
+              {task.status === 'completada' ? '🔄⏰' : '🔄'}
+            </span>
+          )}
           {isTaskBlocked && isTaskBlocked(task) && (
             <span className="text-xs text-red-400" title={`Dependiente de: ${isTaskBlocked(task).title}`}>
               🔗
@@ -717,6 +962,16 @@ const TaskCard = ({ task, onStatusChange, onDelete, onEdit, getProfileColor, get
               ⏳ En progreso...
             </div>
           )}
+          {task.isRecurringDaily && (
+            <div className="text-purple-400 text-xs mt-1">
+              🔄 Recurrente - {task.dailyResetCount ? `Reset ${task.dailyResetCount} veces` : 'Primer ciclo'}
+              {task.status === 'completada' && (
+                <div className="text-yellow-400 animate-pulse">
+                  ⏰ Se reiniciará automáticamente a las 6pm
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
       
@@ -758,8 +1013,13 @@ const TaskCard = ({ task, onStatusChange, onDelete, onEdit, getProfileColor, get
             onClick={() => onStatusChange(task.id, 'pendiente')}
             className="px-2 py-1 bg-blue-600 hover:bg-blue-700 rounded text-xs transition-colors"
           >
-            Reabrir
+            {task.isRecurringDaily ? 'Reiniciar Ahora' : 'Reabrir'}
           </button>
+        )}
+        {task.isRecurringDaily && task.status === 'completada' && (
+          <div className="text-xs text-yellow-400 mt-1 animate-pulse">
+            ⏰ Auto-reset a las 6pm
+          </div>
         )}
       </div>
       
