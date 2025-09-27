@@ -1,13 +1,15 @@
 // src/components/Admin/Tasks.js
 import { useState, useEffect } from 'react';
 import { db } from '../../config/firebase';
-import { doc, setDoc, onSnapshot, collection, addDoc, deleteDoc, updateDoc } from 'firebase/firestore';
+import { doc, setDoc, onSnapshot, collection, addDoc, deleteDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { PlusIcon, TrashIcon, CheckIcon, ClockIcon } from '@heroicons/react/24/outline';
 
 const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
   const [tasks, setTasks] = useState([]);
   const [newTask, setNewTask] = useState({ title: '', description: '', assignedTo: '', priority: 'media', dueDate: '' });
   const [showAddForm, setShowAddForm] = useState(false);
+  const [draggedTask, setDraggedTask] = useState(null);
+  const [dragOverColumn, setDragOverColumn] = useState(null);
 
   // Perfiles disponibles para asignar tareas
   const profiles = [
@@ -55,10 +57,24 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
   // Cambiar estado de tarea
   const handleStatusChange = async (taskId, newStatus) => {
     try {
-      await updateDoc(doc(db, 'tasks', taskId), {
+      const updateData = {
         status: newStatus,
-        updatedAt: new Date()
-      });
+        updatedAt: serverTimestamp()
+      };
+
+      // Registrar timestamps según el estado
+      if (newStatus === 'en_progreso') {
+        updateData.startedAt = serverTimestamp();
+        updateData.completedAt = null; // Limpiar si existía
+      } else if (newStatus === 'completada') {
+        updateData.completedAt = serverTimestamp();
+      } else if (newStatus === 'pendiente') {
+        // Al regresar a pendiente, limpiar timestamps
+        updateData.startedAt = null;
+        updateData.completedAt = null;
+      }
+
+      await updateDoc(doc(db, 'tasks', taskId), updateData);
       setSuccess('Estado actualizado');
     } catch (error) {
       setError(`Error al actualizar estado: ${error.message}`);
@@ -87,6 +103,44 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
   const getProfileName = (profileId) => {
     const profile = profiles.find(p => p.id === profileId);
     return profile ? profile.name : profileId;
+  };
+
+  // Funciones para Drag & Drop
+  const handleDragStart = (e, task) => {
+    setDraggedTask(task);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragEnd = () => {
+    setDraggedTask(null);
+    setDragOverColumn(null);
+  };
+
+  const handleDragOver = (e, columnStatus) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverColumn(columnStatus);
+  };
+
+  const handleDragLeave = (e) => {
+    // Solo limpiar si realmente salimos de la columna
+    if (!e.currentTarget.contains(e.relatedTarget)) {
+      setDragOverColumn(null);
+    }
+  };
+
+  const handleDrop = async (e, newStatus) => {
+    e.preventDefault();
+    setDragOverColumn(null);
+    
+    if (!draggedTask || draggedTask.status === newStatus) {
+      setDraggedTask(null);
+      return;
+    }
+
+    // Usar la función existente que ya maneja los timestamps
+    await handleStatusChange(draggedTask.id, newStatus);
+    setDraggedTask(null);
   };
 
   return (
@@ -187,7 +241,14 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
       {/* Lista de tareas */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Columna: Pendientes */}
-        <div className={`bg-${theme === 'dark' ? 'gray-800' : 'white'} rounded-xl shadow-lg p-4`}>
+        <div 
+          className={`bg-${theme === 'dark' ? 'gray-800' : 'white'} rounded-xl shadow-lg p-4 transition-all duration-200 ${
+            dragOverColumn === 'pendiente' ? 'bg-red-500/10 border-2 border-dashed border-red-400' : ''
+          }`}
+          onDragOver={(e) => handleDragOver(e, 'pendiente')}
+          onDragLeave={handleDragLeave}
+          onDrop={(e) => handleDrop(e, 'pendiente')}
+        >
           <h3 className="text-lg font-semibold text-red-400 mb-4 flex items-center">
             <ClockIcon className="w-5 h-5 mr-2" />
             Pendientes ({tasks.filter(t => t.status === 'pendiente').length})
@@ -201,12 +262,22 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
               getProfileColor={getProfileColor}
               getProfileName={getProfileName}
               theme={theme}
+              isDragging={draggedTask?.id === task.id}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
             />
           ))}
         </div>
 
         {/* Columna: En Progreso */}
-        <div className={`bg-${theme === 'dark' ? 'gray-800' : 'white'} rounded-xl shadow-lg p-4`}>
+        <div 
+          className={`bg-${theme === 'dark' ? 'gray-800' : 'white'} rounded-xl shadow-lg p-4 transition-all duration-200 ${
+            dragOverColumn === 'en_progreso' ? 'bg-yellow-500/10 border-2 border-dashed border-yellow-400' : ''
+          }`}
+          onDragOver={(e) => handleDragOver(e, 'en_progreso')}
+          onDragLeave={handleDragLeave}
+          onDrop={(e) => handleDrop(e, 'en_progreso')}
+        >
           <h3 className="text-lg font-semibold text-yellow-400 mb-4 flex items-center">
             <ClockIcon className="w-5 h-5 mr-2" />
             En Progreso ({tasks.filter(t => t.status === 'en_progreso').length})
@@ -220,12 +291,22 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
               getProfileColor={getProfileColor}
               getProfileName={getProfileName}
               theme={theme}
+              isDragging={draggedTask?.id === task.id}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
             />
           ))}
         </div>
 
         {/* Columna: Completadas */}
-        <div className={`bg-${theme === 'dark' ? 'gray-800' : 'white'} rounded-xl shadow-lg p-4`}>
+        <div 
+          className={`bg-${theme === 'dark' ? 'gray-800' : 'white'} rounded-xl shadow-lg p-4 transition-all duration-200 ${
+            dragOverColumn === 'completada' ? 'bg-green-500/10 border-2 border-dashed border-green-400' : ''
+          }`}
+          onDragOver={(e) => handleDragOver(e, 'completada')}
+          onDragLeave={handleDragLeave}
+          onDrop={(e) => handleDrop(e, 'completada')}
+        >
           <h3 className="text-lg font-semibold text-green-400 mb-4 flex items-center">
             <CheckIcon className="w-5 h-5 mr-2" />
             Completadas ({tasks.filter(t => t.status === 'completada').length})
@@ -239,6 +320,9 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
               getProfileColor={getProfileColor}
               getProfileName={getProfileName}
               theme={theme}
+              isDragging={draggedTask?.id === task.id}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
             />
           ))}
         </div>
@@ -248,7 +332,7 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
 };
 
 // Componente para renderizar cada tarea individual
-const TaskCard = ({ task, onStatusChange, onDelete, getProfileColor, getProfileName, theme }) => {
+const TaskCard = ({ task, onStatusChange, onDelete, getProfileColor, getProfileName, theme, isDragging, onDragStart, onDragEnd }) => {
   const getPriorityEmoji = (priority) => {
     switch(priority) {
       case 'alta': return '🔴';
@@ -263,10 +347,43 @@ const TaskCard = ({ task, onStatusChange, onDelete, getProfileColor, getProfileN
     return new Date(dateString).toLocaleDateString('es-CO');
   };
 
+  const formatDateTime = (timestamp) => {
+    if (!timestamp) return '';
+    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+    return date.toLocaleString('es-CO', { 
+      dateStyle: 'short', 
+      timeStyle: 'short' 
+    });
+  };
+
+  const calculateDuration = (startedAt, completedAt) => {
+    if (!startedAt || !completedAt) return null;
+    
+    const start = startedAt.toDate ? startedAt.toDate() : new Date(startedAt);
+    const end = completedAt.toDate ? completedAt.toDate() : new Date(completedAt);
+    
+    const diffMs = end.getTime() - start.getTime();
+    const hours = Math.floor(diffMs / (1000 * 60 * 60));
+    const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+    
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    }
+    return `${minutes}m`;
+  };
+
   const profileColor = getProfileColor(task.assignedTo);
   
   return (
-    <div className={`bg-${theme === 'dark' ? 'gray-700' : 'gray-50'} p-4 rounded-lg mb-3 border-l-4 border-${profileColor}-500`}>
+    <div 
+      draggable
+      onDragStart={(e) => onDragStart(e, task)}
+      onDragEnd={onDragEnd}
+      className={`bg-${theme === 'dark' ? 'gray-700' : 'gray-50'} p-4 rounded-lg mb-3 border-l-4 border-${profileColor}-500 cursor-move transition-all duration-200 hover:shadow-lg ${
+        isDragging ? 'opacity-50 scale-95 rotate-2' : 'hover:scale-102'
+      }`}
+      title="Arrastra para cambiar de estado"
+    >
       <div className="flex justify-between items-start mb-2">
         <h4 className="font-semibold text-sm text-gray-100">{task.title}</h4>
         <button
@@ -293,6 +410,33 @@ const TaskCard = ({ task, onStatusChange, onDelete, getProfileColor, getProfileN
         <p className="text-xs text-yellow-400 mb-2">
           📅 Vence: {formatDate(task.dueDate)}
         </p>
+      )}
+      
+      {/* Historial de tiempo */}
+      {(task.startedAt || task.completedAt) && (
+        <div className="bg-gray-600 p-2 rounded text-xs mb-2">
+          <div className="text-blue-300 font-semibold mb-1">⏱️ Historial de Tiempo</div>
+          {task.startedAt && (
+            <div className="text-gray-300">
+              ▶️ Iniciado: {formatDateTime(task.startedAt)}
+            </div>
+          )}
+          {task.completedAt && (
+            <div className="text-gray-300">
+              ✅ Completado: {formatDateTime(task.completedAt)}
+            </div>
+          )}
+          {task.startedAt && task.completedAt && (
+            <div className="text-green-400 font-semibold mt-1">
+              🎯 Duración: {calculateDuration(task.startedAt, task.completedAt)}
+            </div>
+          )}
+          {task.startedAt && !task.completedAt && task.status === 'en_progreso' && (
+            <div className="text-yellow-400 font-semibold mt-1">
+              ⏳ En progreso...
+            </div>
+          )}
+        </div>
       )}
       
       <div className="flex space-x-1">
