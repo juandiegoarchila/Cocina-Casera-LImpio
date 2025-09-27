@@ -6,12 +6,12 @@ import { PlusIcon, TrashIcon, CheckIcon, ClockIcon, PencilIcon } from '@heroicon
 
 const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
   const [tasks, setTasks] = useState([]);
-  const [newTask, setNewTask] = useState({ title: '', description: '', assignedTo: '', priority: 'media', dueDate: '', estimatedTime: '' });
+  const [newTask, setNewTask] = useState({ title: '', description: '', assignedTo: '', priority: 'media', dueDate: '', estimatedTime: '', videoUrl: '' });
   const [showAddForm, setShowAddForm] = useState(false);
   const [draggedTask, setDraggedTask] = useState(null);
   const [dragOverColumn, setDragOverColumn] = useState(null);
   const [editingTask, setEditingTask] = useState(null);
-  const [editForm, setEditForm] = useState({ title: '', description: '', assignedTo: '', priority: 'media', dueDate: '', estimatedTime: '' });
+  const [editForm, setEditForm] = useState({ title: '', description: '', assignedTo: '', priority: 'media', dueDate: '', estimatedTime: '', videoUrl: '' });
 
   // Perfiles disponibles para asignar tareas
   const profiles = [
@@ -48,7 +48,7 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
         createdAt: new Date(),
         createdBy: 'admin'
       });
-      setNewTask({ title: '', description: '', assignedTo: '', priority: 'media', dueDate: '', estimatedTime: '' });
+      setNewTask({ title: '', description: '', assignedTo: '', priority: 'media', dueDate: '', estimatedTime: '', videoUrl: '' });
       setShowAddForm(false);
       setSuccess('Tarea creada exitosamente');
     } catch (error) {
@@ -128,7 +128,8 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
       assignedTo: task.assignedTo || '',
       priority: task.priority || 'media',
       dueDate: task.dueDate || '',
-      estimatedTime: task.estimatedTime || ''
+      estimatedTime: task.estimatedTime || '',
+      videoUrl: task.videoUrl || ''
     });
   };
 
@@ -144,7 +145,7 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
         updatedAt: serverTimestamp()
       });
       setEditingTask(null);
-      setEditForm({ title: '', description: '', assignedTo: '', priority: 'media', dueDate: '', estimatedTime: '' });
+      setEditForm({ title: '', description: '', assignedTo: '', priority: 'media', dueDate: '', estimatedTime: '', videoUrl: '' });
       setSuccess('Tarea actualizada exitosamente');
     } catch (error) {
       setError(`Error al actualizar tarea: ${error.message}`);
@@ -327,6 +328,17 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
               />
             </div>
 
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">📹 Video Tutorial (URL)</label>
+              <input
+                type="url"
+                value={newTask.videoUrl}
+                onChange={(e) => setNewTask({...newTask, videoUrl: e.target.value})}
+                placeholder="Ej: https://youtube.com/shorts/example"
+                className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-gray-300 mb-2">Descripción</label>
               <textarea
@@ -418,6 +430,17 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
                   onChange={(e) => setEditForm({...editForm, estimatedTime: e.target.value})}
                   placeholder="Ej: 90 (1h 30min)"
                   min="1"
+                  className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">📹 Video Tutorial (URL)</label>
+                <input
+                  type="url"
+                  value={editForm.videoUrl}
+                  onChange={(e) => setEditForm({...editForm, videoUrl: e.target.value})}
+                  placeholder="Ej: https://youtube.com/shorts/example"
                   className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -655,6 +678,19 @@ const TaskCard = ({ task, onStatusChange, onDelete, onEdit, getProfileColor, get
         <p className="text-xs text-blue-400 mb-2">
           ⏱️ Estimado: {formatEstimatedTime(task.estimatedTime)}
         </p>
+      )}
+      
+      {task.videoUrl && (
+        <div className="mb-2">
+          <button
+            onClick={() => window.open(task.videoUrl, '_blank')}
+            className="inline-flex items-center space-x-1 px-2 py-1 bg-red-600 hover:bg-red-700 rounded text-xs transition-colors"
+            title="Ver video tutorial"
+          >
+            <span>📹</span>
+            <span>Ver Tutorial</span>
+          </button>
+        </div>
       )}
       
       {/* Historial de tiempo */}
