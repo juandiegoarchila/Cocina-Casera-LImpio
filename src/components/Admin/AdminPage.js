@@ -8,7 +8,7 @@ import { Disclosure, Transition } from '@headlessui/react';
 import {
   Bars3Icon, XMarkIcon, ChartBarIcon, UserGroupIcon,
   ClockIcon, DocumentTextIcon, CogIcon, ArrowLeftOnRectangleIcon,
-  BellIcon, SunIcon, MoonIcon, TableCellsIcon
+  BellIcon, SunIcon, MoonIcon, TableCellsIcon, ClipboardDocumentListIcon
 } from '@heroicons/react/24/outline';
 
 // Lazy load components
@@ -17,7 +17,7 @@ const MenuManagement = lazy(() => import('./MenuManagement'));
 const ClosingTime = lazy(() => import('./ClosingTime'));
 const OrderManagement = lazy(() => import('./OrderManagement'));
 const UserManagement = lazy(() => import('./UserManagement'));
-const Settings = lazy(() => import('./Settings'));
+const Settings = lazy(() => import('./Tasks'));
 const Notifications = lazy(() => import('./Payments'));
 const TableOrdersAdmin = lazy(() => import('./TableOrdersAdmin'));
 
@@ -79,7 +79,7 @@ const AdminPage = () => {
     { name: 'Gestión de Pedidos', to: '/admin/orders', icon: DocumentTextIcon },
     { name: 'Órdenes de Mesas', to: '/admin/table-orders', icon: TableCellsIcon },
     { name: 'Gestión de Usuarios', to: '/admin/users', icon: UserGroupIcon },
-    { name: 'Configuración', to: '/admin/settings', icon: CogIcon },
+    { name: 'Tareas', to: '/admin/settings', icon: ClipboardDocumentListIcon },
     { name: 'Pagos', to: '/admin/Payments.js', icon: BellIcon },
   ];
 
