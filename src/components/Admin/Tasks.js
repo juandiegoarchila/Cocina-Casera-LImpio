@@ -13,6 +13,8 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
   const [dragOverIndex, setDragOverIndex] = useState(null);
   const [editingTask, setEditingTask] = useState(null);
   const [editForm, setEditForm] = useState({ title: '', description: '', assignedTo: '', priority: 'media', dueDate: '', estimatedTime: '', videoUrl: '', isRecurringDaily: false });
+  const [selectedProfileFilter, setSelectedProfileFilter] = useState('todos');
+  const [showProfileDropdown, setShowProfileDropdown] = useState(false);
 
   // Perfiles disponibles para asignar tareas
   const profiles = [
@@ -36,6 +38,18 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
     return () => unsubscribe();
   }, [setError]);
 
+  // Cerrar dropdown al hacer clic fuera
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showProfileDropdown && !event.target.closest('.profile-dropdown-container')) {
+        setShowProfileDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showProfileDropdown]);
+
   // 🔄 SISTEMA DE RESET AUTOMÁTICO DE TAREAS RECURRENTES A LAS 6PM
   useEffect(() => {
     const checkAndResetRecurringTasks = async () => {
@@ -57,14 +71,23 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
         // Resetear cada tarea recurrente completada hoy
         for (const task of recurringTasksToReset) {
           try {
-            await updateDoc(doc(db, 'tasks', task.id), {
+            // 🔒 PRESERVAR EL ORDEN PERSONALIZADO AL RESETEAR
+            const updateData = {
               status: 'pendiente',
               startedAt: null,
               completedAt: null,
               updatedAt: serverTimestamp(),
               resetAt: serverTimestamp(),
               dailyResetCount: (task.dailyResetCount || 0) + 1
-            });
+            };
+
+            // ⚠️ IMPORTANTE: Mantener el customOrder si existe para preservar el orden del admin
+            if (task.customOrder !== undefined && task.customOrder !== null) {
+              updateData.customOrder = task.customOrder;
+              console.log(`🔒 Preservando orden personalizado ${task.customOrder} para tarea: ${task.title}`);
+            }
+
+            await updateDoc(doc(db, 'tasks', task.id), updateData);
             
             console.log(`✅ Tarea recurrente resetada: ${task.title}`);
           } catch (error) {
@@ -253,6 +276,40 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
       return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
     }
     return `${mins}m`;
+  };
+
+  // Obtener tareas filtradas por perfil
+  const getFilteredPendingTasks = () => {
+    let filteredTasks = tasks.filter(t => t.status === 'pendiente');
+    
+    if (selectedProfileFilter !== 'todos') {
+      filteredTasks = filteredTasks.filter(t => t.assignedTo === selectedProfileFilter);
+    }
+    
+    return filteredTasks.sort((a, b) => {
+      const orderA = a.customOrder !== undefined ? a.customOrder : 999999;
+      const orderB = b.customOrder !== undefined ? b.customOrder : 999999;
+      if (orderA !== orderB) return orderA - orderB;
+      return new Date(a.createdAt) - new Date(b.createdAt);
+    });
+  };
+
+  // Calcular tiempo total estimado para el perfil seleccionado
+  const calculateTotalEstimatedTime = () => {
+    const filteredTasks = getFilteredPendingTasks();
+    const totalMinutes = filteredTasks.reduce((total, task) => {
+      return total + (parseInt(task.estimatedTime) || 0);
+    }, 0);
+    
+    if (totalMinutes === 0) return '';
+    
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    
+    if (hours > 0) {
+      return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+    }
+    return `${minutes}m`;
   };
 
   const isTaskBlocked = (task) => {
@@ -655,27 +712,87 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
           onDragLeave={handleDragLeave}
           onDrop={(e) => handleDrop(e, 'pendiente')}
         >
-          <h3 className="text-lg font-semibold text-red-400 mb-4 flex items-center">
-            <ClockIcon className="w-5 h-5 mr-2" />
-            Pendientes ({tasks.filter(t => t.status === 'pendiente').length})
-          </h3>
-          {tasks.filter(t => t.status === 'pendiente').length > 1 && (
-            <div className="bg-blue-900/30 border border-blue-500/50 rounded-lg p-3 mb-4 text-xs text-blue-300">
-              <div className="flex items-center space-x-2">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-red-400 flex items-center">
+              <ClockIcon className="w-5 h-5 mr-2" />
+              Pendientes ({getFilteredPendingTasks().length})
+            </h3>
+            
+            {/* Dropdown de filtros por perfil */}
+            <div className="relative profile-dropdown-container">
+              <button
+                onClick={() => setShowProfileDropdown(!showProfileDropdown)}
+                className="p-2 text-gray-400 hover:text-gray-200 transition-colors"
+                title="Filtrar por perfil"
+              >
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>
+                </svg>
+              </button>
+              
+              {showProfileDropdown && (
+                <div className="absolute right-0 mt-2 w-48 bg-gray-800 rounded-lg shadow-lg border border-gray-700 z-10">
+                  <div className="py-2">
+                    <button
+                      onClick={() => {
+                        setSelectedProfileFilter('todos');
+                        setShowProfileDropdown(false);
+                      }}
+                      className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-700 transition-colors ${
+                        selectedProfileFilter === 'todos' ? 'bg-gray-700 text-blue-400' : 'text-gray-300'
+                      }`}
+                    >
+                      👥 Ver Todos ({tasks.filter(t => t.status === 'pendiente').length})
+                    </button>
+                    {profiles.filter(p => p.id !== 'todos').map(profile => (
+                      <button
+                        key={profile.id}
+                        onClick={() => {
+                          setSelectedProfileFilter(profile.id);
+                          setShowProfileDropdown(false);
+                        }}
+                        className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-700 transition-colors ${
+                          selectedProfileFilter === profile.id ? 'bg-gray-700 text-blue-400' : 'text-gray-300'
+                        }`}
+                      >
+                        <span className={`inline-block w-3 h-3 rounded-full bg-${profile.color}-500 mr-2`}></span>
+                        {profile.name} ({tasks.filter(t => t.status === 'pendiente' && t.assignedTo === profile.id).length})
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          {/* Información del filtro actual */}
+          <div className="bg-blue-900/30 border border-blue-500/50 rounded-lg p-3 mb-4 text-xs">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center space-x-2 text-blue-300">
+                <span>👤</span>
+                <span><strong>Mostrando:</strong> {
+                  selectedProfileFilter === 'todos' 
+                    ? 'Todas las tareas pendientes' 
+                    : `Tareas de ${profiles.find(p => p.id === selectedProfileFilter)?.name || 'Desconocido'}`
+                }</span>
+              </div>
+            </div>
+            
+            {getFilteredPendingTasks().length > 1 && (
+              <div className="flex items-center space-x-2 text-blue-300 mb-2">
                 <span>📋</span>
                 <span><strong>Reordenar:</strong> Arrastra las tareas para cambiar su orden de ejecución</span>
               </div>
-            </div>
-          )}
-          {tasks.filter(t => t.status === 'pendiente')
-                .sort((a, b) => {
-                  // Ordenar por orden personalizado, luego por fecha de creación
-                  const orderA = a.customOrder !== undefined ? a.customOrder : 999999;
-                  const orderB = b.customOrder !== undefined ? b.customOrder : 999999;
-                  if (orderA !== orderB) return orderA - orderB;
-                  return new Date(a.createdAt) - new Date(b.createdAt);
-                })
-                .map((task, index) => (
+            )}
+            
+            {/* Resumen de tiempo estimado */}
+            {calculateTotalEstimatedTime() && (
+              <div className="flex items-center space-x-2 text-green-300 border-t border-blue-500/30 pt-2">
+                <span>⏱️</span>
+                <span><strong>Tiempo total estimado:</strong> {calculateTotalEstimatedTime()}</span>
+              </div>
+            )}
+          </div>
+          {getFilteredPendingTasks().map((task, index) => (
             <div key={task.id}>
               {/* Zona de drop superior */}
               <div
@@ -715,16 +832,16 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
           {/* Zona de drop al final para agregar al final de la lista */}
           <div
             className={`transition-all duration-200 mt-2 ${  
-              dragOverColumn === 'pendiente' && dragOverIndex === tasks.filter(t => t.status === 'pendiente').length && draggedTask?.status === 'pendiente'
+              dragOverColumn === 'pendiente' && dragOverIndex === getFilteredPendingTasks().length && draggedTask?.status === 'pendiente'
                 ? 'h-12 bg-blue-500 rounded-lg mx-2 shadow-lg border-2 border-blue-300'
                 : 'h-2'
             }`}
-            onDragOver={(e) => handleDragOver(e, 'pendiente', tasks.filter(t => t.status === 'pendiente').length)}
-            onDrop={(e) => handleDrop(e, 'pendiente', tasks.filter(t => t.status === 'pendiente').length)}
+            onDragOver={(e) => handleDragOver(e, 'pendiente', getFilteredPendingTasks().length)}
+            onDrop={(e) => handleDrop(e, 'pendiente', getFilteredPendingTasks().length)}
           >
-            {dragOverColumn === 'pendiente' && dragOverIndex === tasks.filter(t => t.status === 'pendiente').length && draggedTask?.status === 'pendiente' && (
+            {dragOverColumn === 'pendiente' && dragOverIndex === getFilteredPendingTasks().length && draggedTask?.status === 'pendiente' && (
               <div className="text-center text-xs text-blue-200 font-bold py-3">
-                ⬇️ Soltar al final (posición {tasks.filter(t => t.status === 'pendiente').length + 1})
+                ⬇️ Soltar al final (posición {getFilteredPendingTasks().length + 1})
               </div>
             )}
           </div>
