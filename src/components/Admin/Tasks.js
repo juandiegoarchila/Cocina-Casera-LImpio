@@ -2,14 +2,16 @@
 import { useState, useEffect } from 'react';
 import { db } from '../../config/firebase';
 import { doc, setDoc, onSnapshot, collection, addDoc, deleteDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { PlusIcon, TrashIcon, CheckIcon, ClockIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, TrashIcon, CheckIcon, ClockIcon, PencilIcon } from '@heroicons/react/24/outline';
 
 const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
   const [tasks, setTasks] = useState([]);
-  const [newTask, setNewTask] = useState({ title: '', description: '', assignedTo: '', priority: 'media', dueDate: '' });
+  const [newTask, setNewTask] = useState({ title: '', description: '', assignedTo: '', priority: 'media', dueDate: '', estimatedTime: '' });
   const [showAddForm, setShowAddForm] = useState(false);
   const [draggedTask, setDraggedTask] = useState(null);
   const [dragOverColumn, setDragOverColumn] = useState(null);
+  const [editingTask, setEditingTask] = useState(null);
+  const [editForm, setEditForm] = useState({ title: '', description: '', assignedTo: '', priority: 'media', dueDate: '', estimatedTime: '' });
 
   // Perfiles disponibles para asignar tareas
   const profiles = [
@@ -46,7 +48,7 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
         createdAt: new Date(),
         createdBy: 'admin'
       });
-      setNewTask({ title: '', description: '', assignedTo: '', priority: 'media', dueDate: '' });
+      setNewTask({ title: '', description: '', assignedTo: '', priority: 'media', dueDate: '', estimatedTime: '' });
       setShowAddForm(false);
       setSuccess('Tarea creada exitosamente');
     } catch (error) {
@@ -57,6 +59,30 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
   // Cambiar estado de tarea
   const handleStatusChange = async (taskId, newStatus) => {
     try {
+      const currentTask = tasks.find(t => t.id === taskId);
+      
+      // Validar dependencias y flujo correcto antes de cambiar estado
+      if (newStatus === 'en_progreso') {
+        const tasksForProfile = tasks.filter(t => t.assignedTo === currentTask.assignedTo)
+                                   .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+        
+        const currentIndex = tasksForProfile.findIndex(t => t.id === taskId);
+        
+        // Verificar que todas las tareas anteriores estén completadas
+        for (let i = 0; i < currentIndex; i++) {
+          if (tasksForProfile[i].status !== 'completada') {
+            setError(`⛔ Debes completar primero la tarea: "${tasksForProfile[i].title}" antes de iniciar esta.`);
+            return;
+          }
+        }
+      }
+      
+      // Validar que no se pueda completar una tarea que no está en progreso
+      if (newStatus === 'completada' && currentTask.status !== 'en_progreso') {
+        setError(`⛔ No puedes completar una tarea que no has iniciado. Primero debes ponerla "En Progreso".`);
+        return;
+      }
+
       const updateData = {
         status: newStatus,
         updatedAt: serverTimestamp()
@@ -93,6 +119,44 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
     }
   };
 
+  // Iniciar edición de tarea
+  const handleEditTask = (task) => {
+    setEditingTask(task);
+    setEditForm({
+      title: task.title || '',
+      description: task.description || '',
+      assignedTo: task.assignedTo || '',
+      priority: task.priority || 'media',
+      dueDate: task.dueDate || '',
+      estimatedTime: task.estimatedTime || ''
+    });
+  };
+
+  // Guardar edición de tarea
+  const handleSaveEdit = async () => {
+    if (!editForm.title || !editForm.assignedTo) {
+      setError('Título y perfil asignado son obligatorios');
+      return;
+    }
+    try {
+      await updateDoc(doc(db, 'tasks', editingTask.id), {
+        ...editForm,
+        updatedAt: serverTimestamp()
+      });
+      setEditingTask(null);
+      setEditForm({ title: '', description: '', assignedTo: '', priority: 'media', dueDate: '', estimatedTime: '' });
+      setSuccess('Tarea actualizada exitosamente');
+    } catch (error) {
+      setError(`Error al actualizar tarea: ${error.message}`);
+    }
+  };
+
+  // Cancelar edición
+  const handleCancelEdit = () => {
+    setEditingTask(null);
+    setEditForm({ title: '', description: '', assignedTo: '', priority: 'media', dueDate: '', estimatedTime: '' });
+  };
+
   // Obtener color del perfil
   const getProfileColor = (profileId) => {
     const profile = profiles.find(p => p.id === profileId);
@@ -103,6 +167,31 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
   const getProfileName = (profileId) => {
     const profile = profiles.find(p => p.id === profileId);
     return profile ? profile.name : profileId;
+  };
+
+  // Funciones helper
+  const formatEstimatedTime = (minutes) => {
+    if (!minutes) return '';
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    if (hours > 0) {
+      return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+    }
+    return `${mins}m`;
+  };
+
+  const isTaskBlocked = (task) => {
+    const tasksForProfile = tasks.filter(t => t.assignedTo === task.assignedTo)
+                               .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    const currentIndex = tasksForProfile.findIndex(t => t.id === task.id);
+    
+    // Verificar si hay tareas anteriores sin completar
+    for (let i = 0; i < currentIndex; i++) {
+      if (tasksForProfile[i].status !== 'completada') {
+        return tasksForProfile[i];
+      }
+    }
+    return null;
   };
 
   // Funciones para Drag & Drop
@@ -134,6 +223,23 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
     setDragOverColumn(null);
     
     if (!draggedTask || draggedTask.status === newStatus) {
+      setDraggedTask(null);
+      return;
+    }
+
+    // Validar dependencias antes del drop
+    if (newStatus === 'en_progreso') {
+      const blockedBy = isTaskBlocked(draggedTask);
+      if (blockedBy) {
+        setError(`⛔ Esta tarea está bloqueada. Completa primero: "${blockedBy.title}"`);
+        setDraggedTask(null);
+        return;
+      }
+    }
+    
+    // Validar que no se pueda completar una tarea que no está en progreso
+    if (newStatus === 'completada' && draggedTask.status !== 'en_progreso') {
+      setError(`⛔ No puedes completar una tarea que no has iniciado. Primero debes ponerla "En Progreso".`);
       setDraggedTask(null);
       return;
     }
@@ -209,6 +315,18 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
               />
             </div>
 
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">⏱️ Tiempo Estimado (min)</label>
+              <input
+                type="number"
+                value={newTask.estimatedTime}
+                onChange={(e) => setNewTask({...newTask, estimatedTime: e.target.value})}
+                placeholder="Ej: 90 (1h 30min)"
+                min="1"
+                className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-gray-300 mb-2">Descripción</label>
               <textarea
@@ -238,6 +356,102 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
         </div>
       )}
 
+      {/* Modal de edición de tarea */}
+      {editingTask && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className={`bg-${theme === 'dark' ? 'gray-800' : 'white'} p-4 sm:p-6 rounded-xl shadow-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto`}>
+            <h3 className="text-lg font-semibold mb-4 text-gray-100">✏️ Editar Tarea</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Título *</label>
+                <input
+                  type="text"
+                  value={editForm.title}
+                  onChange={(e) => setEditForm({...editForm, title: e.target.value})}
+                  placeholder="Ej: Limpiar mesas del área principal"
+                  className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Asignar a *</label>
+                <select
+                  value={editForm.assignedTo}
+                  onChange={(e) => setEditForm({...editForm, assignedTo: e.target.value})}
+                  className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Seleccionar perfil</option>
+                  {profiles.map(profile => (
+                    <option key={profile.id} value={profile.id}>{profile.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Prioridad</label>
+                <select
+                  value={editForm.priority}
+                  onChange={(e) => setEditForm({...editForm, priority: e.target.value})}
+                  className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="baja">🟢 Baja</option>
+                  <option value="media">🟡 Media</option>
+                  <option value="alta">🔴 Alta</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Fecha límite</label>
+                <input
+                  type="date"
+                  value={editForm.dueDate}
+                  onChange={(e) => setEditForm({...editForm, dueDate: e.target.value})}
+                  className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">⏱️ Tiempo Estimado (min)</label>
+                <input
+                  type="number"
+                  value={editForm.estimatedTime}
+                  onChange={(e) => setEditForm({...editForm, estimatedTime: e.target.value})}
+                  placeholder="Ej: 90 (1h 30min)"
+                  min="1"
+                  className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-300 mb-2">Descripción</label>
+                <textarea
+                  value={editForm.description}
+                  onChange={(e) => setEditForm({...editForm, description: e.target.value})}
+                  placeholder="Detalles adicionales sobre la tarea..."
+                  rows="3"
+                  className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end space-x-3 mt-4">
+              <button
+                onClick={handleCancelEdit}
+                className="px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded-lg transition-colors text-sm"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSaveEdit}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors text-sm"
+              >
+                Guardar Cambios
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Lista de tareas */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Columna: Pendientes */}
@@ -259,12 +473,15 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
               task={task} 
               onStatusChange={handleStatusChange}
               onDelete={handleDeleteTask}
+              onEdit={handleEditTask}
               getProfileColor={getProfileColor}
               getProfileName={getProfileName}
               theme={theme}
               isDragging={draggedTask?.id === task.id}
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
+              isTaskBlocked={isTaskBlocked}
+              formatEstimatedTime={formatEstimatedTime}
             />
           ))}
         </div>
@@ -288,12 +505,15 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
               task={task} 
               onStatusChange={handleStatusChange}
               onDelete={handleDeleteTask}
+              onEdit={handleEditTask}
               getProfileColor={getProfileColor}
               getProfileName={getProfileName}
               theme={theme}
               isDragging={draggedTask?.id === task.id}
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
+              isTaskBlocked={isTaskBlocked}
+              formatEstimatedTime={formatEstimatedTime}
             />
           ))}
         </div>
@@ -317,12 +537,15 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
               task={task} 
               onStatusChange={handleStatusChange}
               onDelete={handleDeleteTask}
+              onEdit={handleEditTask}
               getProfileColor={getProfileColor}
               getProfileName={getProfileName}
               theme={theme}
               isDragging={draggedTask?.id === task.id}
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
+              isTaskBlocked={isTaskBlocked}
+              formatEstimatedTime={formatEstimatedTime}
             />
           ))}
         </div>
@@ -332,7 +555,7 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
 };
 
 // Componente para renderizar cada tarea individual
-const TaskCard = ({ task, onStatusChange, onDelete, getProfileColor, getProfileName, theme, isDragging, onDragStart, onDragEnd }) => {
+const TaskCard = ({ task, onStatusChange, onDelete, onEdit, getProfileColor, getProfileName, theme, isDragging, onDragStart, onDragEnd, isTaskBlocked, formatEstimatedTime }) => {
   const getPriorityEmoji = (priority) => {
     switch(priority) {
       case 'alta': return '🔴';
@@ -385,14 +608,30 @@ const TaskCard = ({ task, onStatusChange, onDelete, getProfileColor, getProfileN
       title="Arrastra para cambiar de estado"
     >
       <div className="flex justify-between items-start mb-2">
-        <h4 className="font-semibold text-sm text-gray-100">{task.title}</h4>
-        <button
-          onClick={() => onDelete(task.id)}
-          className="text-red-400 hover:text-red-300 p-1"
-          title="Eliminar tarea"
-        >
-          <TrashIcon className="w-4 h-4" />
-        </button>
+        <div className="flex items-center space-x-1">
+          <h4 className="font-semibold text-sm text-gray-100">{task.title}</h4>
+          {isTaskBlocked && isTaskBlocked(task) && (
+            <span className="text-xs text-red-400" title={`Dependiente de: ${isTaskBlocked(task).title}`}>
+              🔗
+            </span>
+          )}
+        </div>
+        <div className="flex space-x-1">
+          <button
+            onClick={() => onEdit(task)}
+            className="text-blue-400 hover:text-blue-300 p-1"
+            title="Editar tarea"
+          >
+            <PencilIcon className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => onDelete(task.id)}
+            className="text-red-400 hover:text-red-300 p-1"
+            title="Eliminar tarea"
+          >
+            <TrashIcon className="w-4 h-4" />
+          </button>
+        </div>
       </div>
       
       {task.description && (
@@ -409,6 +648,12 @@ const TaskCard = ({ task, onStatusChange, onDelete, getProfileColor, getProfileN
       {task.dueDate && (
         <p className="text-xs text-yellow-400 mb-2">
           📅 Vence: {formatDate(task.dueDate)}
+        </p>
+      )}
+      
+      {task.estimatedTime && (
+        <p className="text-xs text-blue-400 mb-2">
+          ⏱️ Estimado: {formatEstimatedTime(task.estimatedTime)}
         </p>
       )}
       
@@ -441,12 +686,20 @@ const TaskCard = ({ task, onStatusChange, onDelete, getProfileColor, getProfileN
       
       <div className="flex space-x-1">
         {task.status === 'pendiente' && (
-          <button
-            onClick={() => onStatusChange(task.id, 'en_progreso')}
-            className="px-2 py-1 bg-yellow-600 hover:bg-yellow-700 rounded text-xs transition-colors"
-          >
-            Iniciar
-          </button>
+          <>
+            <button
+              onClick={() => onStatusChange(task.id, 'en_progreso')}
+              className={`px-2 py-1 rounded text-xs transition-colors ${
+                isTaskBlocked(task) 
+                  ? 'bg-gray-500 cursor-not-allowed opacity-50' 
+                  : 'bg-yellow-600 hover:bg-yellow-700'
+              }`}
+              disabled={isTaskBlocked(task)}
+              title={isTaskBlocked(task) ? `Bloqueada por: ${isTaskBlocked(task).title}` : 'Iniciar tarea'}
+            >
+              {isTaskBlocked(task) ? '🔒 Bloqueada' : 'Iniciar'}
+            </button>
+          </>
         )}
         {task.status === 'en_progreso' && (
           <>
