@@ -22,6 +22,7 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentMode, setPaymentMode] = useState('simple'); // 'simple', 'split'
   const [paymentData, setPaymentData] = useState({});
+  const [paymentLines, setPaymentLines] = useState([]); // para modo split: { method, amount }
   const [cashAmount, setCashAmount] = useState('');
   const [currentTime, setCurrentTime] = useState(new Date());
 
@@ -84,6 +85,19 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
     });
     return grouped;
   }, [allOrders]);
+
+  // Órdenes pagadas (para sección de completadas)
+  const paidOrdersByTable = useMemo(() => {
+    const combined = [...tableOrders, ...breakfastOrders];
+    const paid = combined.filter(o => o.isPaid);
+    const grouped = {};
+    paid.forEach(order => {
+      const tableNum = order.tableNumber || 'Sin mesa';
+      if (!grouped[tableNum]) grouped[tableNum] = [];
+      grouped[tableNum].push(order);
+    });
+    return grouped;
+  }, [tableOrders, breakfastOrders]);
 
   // Estadísticas del día
   const dayStats = useMemo(() => {
@@ -151,6 +165,7 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
       amount: parseFloat(order.total) || 0,
       note: ''
     });
+    setPaymentLines([]);
     setCashAmount('');
     setCalculatedChange(0);
     setShowChangeCalculator(false);
@@ -203,6 +218,11 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
       }
 
       const collection_name = selectedOrder.orderType === 'mesa' ? 'tableOrders' : 'breakfastOrders';
+      // Si es pago dividido, añadimos paymentLines
+      if (paymentMode === 'split') {
+        updateData.paymentLines = paymentLines.map(l => ({ method: l.method, amount: Number(l.amount) }));
+        updateData.paymentAmount = paymentLines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0);
+      }
       await updateDoc(doc(db, collection_name, selectedOrder.id), updateData);
 
       // Actualización optimista local para reflejar el pago inmediatamente en la UI
@@ -213,6 +233,7 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
         paymentAmount: updateData.paymentAmount,
         paymentDate: new Date()
       };
+      if (updateData.paymentLines) optimisticFields.paymentLines = updateData.paymentLines;
       if (updateData.cashReceived) optimisticFields.cashReceived = updateData.cashReceived;
       if (updateData.changeGiven) optimisticFields.changeGiven = updateData.changeGiven;
 
@@ -254,7 +275,47 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
       splitType: type
     }));
     setPaymentMode('split');
+    // inicializar paymentLines dependiendo del tipo
+    if (type === '50-50') {
+      setPaymentLines([{ method: 'efectivo', amount: Math.round(total/2) }, { method: 'efectivo', amount: Math.round(total/2) }]);
+    } else if (type === '1-3') {
+      const part = Math.round(total/3);
+      setPaymentLines([{ method: 'efectivo', amount: part }, { method: 'efectivo', amount: part }, { method: 'efectivo', amount: total - part*2 }]);
+    } else {
+      setPaymentLines([]);
+    }
   };
+
+  const splitTotal = useMemo(() => paymentLines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0), [paymentLines]);
+  const splitIsExact = useMemo(() => {
+    const total = parseFloat(selectedOrder?.total || 0);
+    return Math.round(splitTotal) === Math.round(total);
+  }, [splitTotal, selectedOrder]);
+
+  const addSplitLine = () => setPaymentLines(prev => ([...prev, { method: 'efectivo', amount: 0 }]));
+  const removeSplitLine = (idx) => setPaymentLines(prev => prev.filter((_, i) => i !== idx));
+  const updateSplitLine = (idx, patch) => setPaymentLines(prev => prev.map((l, i) => i === idx ? { ...l, ...patch } : l));
+
+  const fillAllWith = (method) => setPaymentLines(prev => prev.map(l => ({ ...l, method })));
+
+  // Recalcular automáticamente los vueltos cuando cambian las líneas, el monto en efectivo o el modo
+  useEffect(() => {
+    // Si no hay monto en efectivo ingresado, ocultar calculadora
+    if (!cashAmount) {
+      setCalculatedChange(0);
+      setShowChangeCalculator(false);
+      return;
+    }
+
+    // Determinar cuánto corresponde a efectivo: si está dividido, sumar sólo las líneas 'efectivo'
+    const efectivoTotal = paymentMode === 'split'
+      ? paymentLines.reduce((s, l) => s + (l.method === 'efectivo' ? (parseFloat(l.amount) || 0) : 0), 0)
+      : (parseFloat(paymentData.amount) || 0);
+
+    const changeInfo = calculateChange(efectivoTotal, parseFloat(cashAmount) || 0);
+    setCalculatedChange(changeInfo.total);
+    setShowChangeCalculator(Boolean(parseFloat(cashAmount)));
+  }, [paymentLines, cashAmount, paymentMode, paymentData.amount]);
 
   // Botones rápidos para billetes
   const quickCashButtons = [10000, 20000, 50000, 100000];
@@ -504,6 +565,69 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
             </div>
           );
         })}
+        {/* Sección: Pedidos Completados */}
+        <div className="mt-8">
+          <h3 className="text-lg font-semibold text-gray-200 mb-3">✅ Pedidos Completados</h3>
+          {Object.entries(paidOrdersByTable).length === 0 && (
+            <div className="text-sm text-gray-400">No hay pedidos completados aún.</div>
+          )}
+          <div className="space-y-3">
+            {Object.entries(paidOrdersByTable).map(([tableNumber, orders]) => (
+              <div key={`paid-${tableNumber}`} className={`${theme === 'dark' ? 'bg-gray-800' : 'bg-white'} rounded-xl shadow-lg p-4 border-l-4 border-blue-500`}>
+                <div className="flex justify-between items-center mb-2">
+                  <div className="text-sm text-gray-300">{canDeleteAll ? `Pedidos ${tableNumber}` : `Mesa ${tableNumber}`}</div>
+                  <div className="text-xs text-gray-400">{orders.length} orden(es)</div>
+                </div>
+                <div className="space-y-2">
+                  {orders.map((order) => (
+                    <div key={`paid-order-${order.id}`} className={`p-3 rounded-lg border ${theme === 'dark' ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <div className="text-sm font-medium text-gray-100">{order.orderType === 'desayuno' ? '🌅 Desayuno' : '🍽️ Almuerzo'}</div>
+                          <div className="text-xs text-gray-400">Orden #{order.id.substring(0,8)}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm font-bold text-green-400">{formatPrice(order.total)}</div>
+                          {order.paymentMethod && <div className="text-xs text-gray-300 capitalize">{order.paymentMethod}</div>}
+                        </div>
+                      </div>
+                      <div className="mt-3 flex space-x-2">
+                        <button
+                          onClick={() => {
+                            // Abrir modal con datos de pago actuales para editar
+                            setSelectedOrder(order);
+                            // Si la orden tiene paymentLines, abrir en modo split y cargar líneas
+                            if (order.paymentLines && Array.isArray(order.paymentLines) && order.paymentLines.length > 0) {
+                              setPaymentMode('split');
+                              setPaymentLines(order.paymentLines.map(l => ({ method: l.method || 'efectivo', amount: String(l.amount || 0) })));
+                              // calcular suma en paymentData.amount para mostrar en resumen
+                              setPaymentData(prev => ({ ...prev, amount: order.paymentLines.reduce((s, x) => s + (parseFloat(x.amount) || 0), 0) }));
+                            } else {
+                              setPaymentMode('simple');
+                              setPaymentLines([]);
+                              setPaymentData({
+                                method: order.paymentMethod || 'efectivo',
+                                amount: parseFloat(order.paymentAmount) || parseFloat(order.total) || 0,
+                                note: order.paymentNote || ''
+                              });
+                            }
+                            setCashAmount(order.cashReceived ? String(order.cashReceived) : '');
+                            setCalculatedChange(order.changeGiven || 0);
+                            setShowChangeCalculator(!!order.cashReceived);
+                            setShowPaymentModal(true);
+                          }}
+                          className="px-3 py-1 bg-yellow-600 hover:bg-yellow-700 text-white text-sm rounded-lg"
+                        >
+                          ✏️ Editar Pago
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Modal de pago */}
@@ -601,6 +725,47 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
                 </div>
               )}
 
+                {/* Editor de líneas para pago dividido */}
+                {paymentMode === 'split' && (
+                  <div className="mb-6 p-4 rounded-lg border border-gray-600 bg-gray-800/30">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="text-sm font-medium text-gray-200">Líneas de Pago</div>
+                      <div className="flex items-center space-x-2">
+                        <button onClick={() => fillAllWith('efectivo')} className="px-2 py-1 bg-green-600 text-white rounded text-xs">Todo Efectivo</button>
+                        <button onClick={() => fillAllWith('nequi')} className="px-2 py-1 bg-purple-600 text-white rounded text-xs">Todo Nequi</button>
+                        <button onClick={() => fillAllWith('daviplata')} className="px-2 py-1 bg-orange-600 text-white rounded text-xs">Todo Daviplata</button>
+                        <button onClick={addSplitLine} className="px-2 py-1 bg-blue-600 text-white rounded text-xs">+ Añadir línea</button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      {paymentLines.map((line, idx) => (
+                        <div key={`line-${idx}`} className="flex items-center space-x-2">
+                          <select value={line.method} onChange={(e) => updateSplitLine(idx, { method: e.target.value })} className="px-2 py-1 rounded bg-gray-700 text-white text-sm">
+                            <option value="efectivo">Efectivo</option>
+                            <option value="nequi">Nequi</option>
+                            <option value="daviplata">Daviplata</option>
+                          </select>
+                          <input type="number" value={line.amount} onChange={(e) => updateSplitLine(idx, { amount: e.target.value })} className="w-32 px-2 py-1 rounded text-sm bg-white text-black" />
+                          <button onClick={() => removeSplitLine(idx)} className="px-2 py-1 bg-red-600 text-white rounded text-sm">✕</button>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="mt-3 flex items-center justify-between">
+                      <div className="text-sm text-gray-300">Total pedido: <span className="font-bold">{formatPrice(selectedOrder?.total || 0)}</span></div>
+                      <div className="text-sm">
+                        <span className="mr-3">Suma líneas: <span className="font-bold">{formatPrice(splitTotal)}</span></span>
+                        {splitIsExact ? (
+                          <span className="text-green-400 font-semibold">✔ Suma exacta</span>
+                        ) : (
+                          <span className="text-yellow-400">Suma no coincide</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
               {/* Método de pago */}
               <div className="mb-6">
                 <h4 className="text-sm font-medium text-gray-300 mb-2">Método de Pago</h4>
@@ -630,13 +795,18 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
               {paymentData.method === 'efectivo' && (
                 <div className="mb-6">
                   <h4 className="text-sm font-medium text-gray-300 mb-2">Billetes Recibidos</h4>
-                  <div className="grid grid-cols-2 gap-2">
+                    {/* Mostrar cuánto corresponde a efectivo (cuando hay split) */}
+                    {paymentMode === 'split' && (
+                      <div className="text-sm text-gray-200 mb-2">Efectivo a cobrar: <span className="font-bold">{formatPrice(paymentLines.reduce((s, l) => s + (l.method === 'efectivo' ? (parseFloat(l.amount) || 0) : 0), 0))}</span></div>
+                    )}
+                    <div className="grid grid-cols-2 gap-2">
                     {quickCashButtons.map((amount) => (
                       <button
                         key={amount}
                         onClick={() => {
                           setCashAmount(amount.toString());
-                          const change = calculateChange(paymentData.amount, amount);
+                          const efectivoTotal = paymentMode === 'split' ? paymentLines.reduce((s, l) => s + (l.method === 'efectivo' ? (parseFloat(l.amount) || 0) : 0), 0) : (parseFloat(paymentData.amount) || 0);
+                          const change = calculateChange(efectivoTotal, amount);
                           setCalculatedChange(change.total);
                           setShowChangeCalculator(true);
                         }}
@@ -656,7 +826,8 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
                       onChange={(e) => {
                         setCashAmount(e.target.value);
                         if (e.target.value) {
-                          const change = calculateChange(paymentData.amount, parseFloat(e.target.value));
+                          const efectivoTotal = paymentMode === 'split' ? paymentLines.reduce((s, l) => s + (l.method === 'efectivo' ? (parseFloat(l.amount) || 0) : 0), 0) : (parseFloat(paymentData.amount) || 0);
+                          const change = calculateChange(efectivoTotal, parseFloat(e.target.value));
                           setCalculatedChange(change.total);
                           setShowChangeCalculator(true);
                         } else {
