@@ -35,7 +35,7 @@ import { format } from 'date-fns';
 
 // === NUEVO: pagos
 import PaymentSplitEditor from '../common/PaymentSplitEditor';
-import { summarizePayments, sumPaymentsByMethod, defaultPaymentsForOrder } from '../../utils/payments';
+import { summarizePayments, sumPaymentsByMethod, defaultPaymentsForOrder, extractOrderPayments } from '../../utils/payments';
 
 // ===== Helpers para buscar por nombre y asegurar estructura =====
 const normalizeName = (s) => (s || '').replace(/\s*NUEVO\s*$/i, '').trim();
@@ -95,11 +95,13 @@ const displayPaymentLabel = (val) => {
 };
 
 const paymentMethodsOnly = (order) => {
-  if (Array.isArray(order?.payments) && order.payments.length) {
-    const names = order.payments
-      .map((p) => displayPaymentLabel(typeof p.method === 'string' ? p.method : p?.method?.name || p?.method))
-      .filter(Boolean);
-    return [...new Set(names)].join(' + ') || 'Sin pago';
+  try {
+    const rows = extractOrderPayments(order || {});
+    const methodName = (k) => (k === 'cash' ? 'Efectivo' : k === 'nequi' ? 'Nequi' : k === 'daviplata' ? 'Daviplata' : '');
+    const names = [...new Set(rows.map(r => methodName(r.methodKey)).filter(Boolean))];
+    if (names.length) return names.join(' + ');
+  } catch (e) {
+    console.error('extractOrderPayments error', e);
   }
   return displayPaymentLabel(getOrderPaymentRaw(order)) || 'Sin pago';
 };

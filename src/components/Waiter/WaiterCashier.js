@@ -108,10 +108,22 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
       return orderDate === today;
     });
 
+    // Total general (suma de totales)
     const totalAmount = paidToday.reduce((sum, order) => sum + (parseFloat(order.total) || 0), 0);
-    const paymentMethods = paidToday.reduce((acc, order) => {
-      if (order.paymentMethod) {
-        acc[order.paymentMethod] = (acc[order.paymentMethod] || 0) + 1;
+
+    // Sumar montos por método de pago (tener en cuenta paymentLines si existen)
+    const paymentSums = paidToday.reduce((acc, order) => {
+      // Si la orden tiene paymentLines, sumar cada línea por su método
+      if (order.paymentLines && Array.isArray(order.paymentLines) && order.paymentLines.length > 0) {
+        order.paymentLines.forEach(line => {
+          const method = line.method || 'efectivo';
+          const amt = parseFloat(line.amount) || 0;
+          acc[method] = (acc[method] || 0) + amt;
+        });
+      } else {
+        const method = order.paymentMethod || 'efectivo';
+        const amt = parseFloat(order.paymentAmount || order.total) || 0;
+        acc[method] = (acc[method] || 0) + amt;
       }
       return acc;
     }, {});
@@ -119,9 +131,9 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
     return {
       totalOrders: paidToday.length,
       totalAmount,
-      efectivo: paymentMethods.efectivo || 0,
-      nequi: paymentMethods.nequi || 0,
-      daviplata: paymentMethods.daviplata || 0
+      efectivo: paymentSums.efectivo || 0,
+      nequi: paymentSums.nequi || 0,
+      daviplata: paymentSums.daviplata || 0
     };
   }, [tableOrders, breakfastOrders]);
 
@@ -339,6 +351,69 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
     }
   };
 
+  // Función para borrar todas las órdenes completadas (pagadas)
+  const deleteCompletedOrders = async () => {
+    if (!window.confirm('¿Eliminar todas las órdenes completadas (pagadas)? Esto no se puede deshacer.')) return;
+    try {
+      const { getDocs, collection: coll, deleteDoc, doc: docRef, query, where } = await import('firebase/firestore');
+      // tableOrders pagadas
+      const q1 = query(coll(db, 'tableOrders'), where('isPaid', '==', true));
+      const tableSnapshot = await getDocs(q1);
+      for (const d of tableSnapshot.docs) {
+        await deleteDoc(docRef(db, 'tableOrders', d.id));
+      }
+      // breakfastOrders pagadas
+      const q2 = query(coll(db, 'breakfastOrders'), where('isPaid', '==', true));
+      const breakfastSnapshot = await getDocs(q2);
+      for (const d of breakfastSnapshot.docs) {
+        await deleteDoc(docRef(db, 'breakfastOrders', d.id));
+      }
+      setSuccess('✅ Todas las órdenes completadas fueron eliminadas');
+    } catch (error) {
+      setError(`Error eliminando órdenes completadas: ${error.message}`);
+    }
+  };
+
+  // Borrar pedidos pagados por mesa (tableNumber)
+  const deletePaidByTable = async (tableNumber) => {
+    if (!window.confirm(`¿Eliminar las órdenes pagadas de ${tableNumber}? Esto no se puede deshacer.`)) return;
+    try {
+      const { getDocs, collection: coll, deleteDoc, doc: docRef, query, where } = await import('firebase/firestore');
+      const q1 = query(coll(db, 'tableOrders'), where('tableNumber', '==', tableNumber), where('isPaid', '==', true));
+      const tableSnapshot = await getDocs(q1);
+      for (const d of tableSnapshot.docs) {
+        await deleteDoc(docRef(db, 'tableOrders', d.id));
+      }
+      const q2 = query(coll(db, 'breakfastOrders'), where('tableNumber', '==', tableNumber), where('isPaid', '==', true));
+      const breakfastSnapshot = await getDocs(q2);
+      for (const d of breakfastSnapshot.docs) {
+        await deleteDoc(docRef(db, 'breakfastOrders', d.id));
+      }
+      setSuccess(`✅ Órdenes pagadas de ${tableNumber} eliminadas`);
+    } catch (error) {
+      setError(`Error eliminando órdenes pagadas de ${tableNumber}: ${error.message}`);
+    }
+  };
+
+  // Borrar una orden individual por id (detecta collection por orderType)
+  const deleteSingleOrder = async (order) => {
+    if (!window.confirm(`¿Eliminar la orden ${order.id.substring(0,8)}? Esto no se puede deshacer.`)) return;
+    try {
+      const { deleteDoc, doc: docRef } = await import('firebase/firestore');
+      const collectionName = order.orderType === 'mesa' ? 'tableOrders' : 'breakfastOrders';
+      await deleteDoc(docRef(db, collectionName, order.id));
+      setSuccess(`✅ Orden ${order.id.substring(0,8)} eliminada`);
+      // Actualizar estado local para remover la orden de la UI sin esperar al snapshot
+      if (collectionName === 'tableOrders') {
+        setTableOrders(prev => prev.filter(o => o.id !== order.id));
+      } else {
+        setBreakfastOrders(prev => prev.filter(o => o.id !== order.id));
+      }
+    } catch (error) {
+      setError(`Error eliminando orden: ${error.message}`);
+    }
+  };
+
   return (
     <div className="w-full mx-auto px-2 sm:px-4 lg:px-6 py-4 sm:py-6">
       {/* Header con estadísticas */}
@@ -374,8 +449,8 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
               <div className="flex items-center">
                 <DevicePhoneMobileIcon className="w-6 h-6 text-purple-600 mr-2" />
                 <div>
-                  <div className="text-xl font-bold text-purple-600">{dayStats.nequi}</div>
-                  <div className="text-xs text-gray-500">Nequi</div>
+                  <div className="text-xl font-bold text-purple-600">{formatPrice(dayStats.nequi)}</div>
+                  <div className="text-xs text-gray-500">Total Nequi</div>
                 </div>
               </div>
             </div>
@@ -385,8 +460,8 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
               <div className="flex items-center">
                 <CreditCardIcon className="w-6 h-6 text-orange-600 mr-2" />
                 <div>
-                  <div className="text-xl font-bold text-orange-600">{dayStats.daviplata}</div>
-                  <div className="text-xs text-gray-500">Daviplata</div>
+                  <div className="text-xl font-bold text-orange-600">{formatPrice(dayStats.daviplata)}</div>
+                  <div className="text-xs text-gray-500">Total Daviplata</div>
                 </div>
               </div>
             </div>
@@ -397,26 +472,24 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
               <div className="flex items-center">
                 <BanknotesIcon className="w-6 h-6 text-gray-600 mr-2" />
                 <div>
-                  <div className="text-xl font-bold text-gray-600">{dayStats.efectivo}</div>
-                  <div className="text-xs text-gray-500">Efectivo</div>
+                  <div className="text-xl font-bold text-gray-600">{formatPrice(dayStats.efectivo)}</div>
+                  <div className="text-xs text-gray-500">Total Efectivo</div>
                 </div>
               </div>
             </div>
           </div>
-          {/* Total Día - solo visible para admin */}
-          {canDeleteAll && (
-            <div className={`p-4 rounded-lg h-24 flex items-center ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'} border-l-4 border-blue-500`}>
-              <div className="flex items-center w-full justify-between">
-                <div className="flex items-center">
-                  <CurrencyDollarIcon className="w-6 h-6 text-blue-600 mr-2" />
-                  <div>
-                    <div className="text-xl font-bold text-blue-600">{formatPrice(dayStats.totalAmount)}</div>
-                    <div className="text-xs text-gray-500">Total Día</div>
-                  </div>
+          {/* Total Día - siempre visible */}
+          <div className={`p-4 rounded-lg h-24 flex items-center ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'} border-l-4 border-blue-500`}>
+            <div className="flex items-center w-full justify-between">
+              <div className="flex items-center">
+                <CurrencyDollarIcon className="w-6 h-6 text-blue-600 mr-2" />
+                <div>
+                  <div className="text-xl font-bold text-blue-600">{formatPrice(dayStats.totalAmount)}</div>
+                  <div className="text-xs text-gray-500">Total General</div>
                 </div>
               </div>
             </div>
-          )}
+          </div>
         </div>
 
         {/* Búsqueda: separada y con padding lateral */}
@@ -543,12 +616,19 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
                       </div>
                       
                       {!order.isPaid && (
-                        <button
-                          onClick={() => handleOpenPayment(order)}
-                          className="w-full mt-2 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg transition-colors"
-                        >
-                          💰 Procesar Pago
-                        </button>
+                        <div className="flex space-x-2">
+                          <button
+                            onClick={() => handleOpenPayment(order)}
+                            className="flex-1 mt-2 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg transition-colors"
+                          >
+                            💰 Procesar Pago
+                          </button>
+                          {canDeleteAll && (
+                            <button onClick={() => deleteSingleOrder(order)} className="mt-2 px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded-lg flex items-center" title={`Eliminar orden ${order.id.substring(0,8)}`}>
+                              <TrashIcon className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                   );
@@ -568,6 +648,7 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
         {/* Sección: Pedidos Completados */}
         <div className="mt-8">
           <h3 className="text-lg font-semibold text-gray-200 mb-3">✅ Pedidos Completados</h3>
+          {/* Botón global eliminado a petición del usuario; ahora se permite eliminación por mesa y por orden */}
           {Object.entries(paidOrdersByTable).length === 0 && (
             <div className="text-sm text-gray-400">No hay pedidos completados aún.</div>
           )}
@@ -575,8 +656,17 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
             {Object.entries(paidOrdersByTable).map(([tableNumber, orders]) => (
               <div key={`paid-${tableNumber}`} className={`${theme === 'dark' ? 'bg-gray-800' : 'bg-white'} rounded-xl shadow-lg p-4 border-l-4 border-blue-500`}>
                 <div className="flex justify-between items-center mb-2">
-                  <div className="text-sm text-gray-300">{canDeleteAll ? `Pedidos ${tableNumber}` : `Mesa ${tableNumber}`}</div>
-                  <div className="text-xs text-gray-400">{orders.length} orden(es)</div>
+                  <div className="text-sm text-gray-300 flex items-center space-x-2">
+                    <div>{canDeleteAll ? `Pedidos ${tableNumber}` : `Mesa ${tableNumber}`}</div>
+                  </div>
+                    <div className="text-xs text-gray-400 flex items-center space-x-2">
+                      <div>{orders.length} orden(es)</div>
+                      {canDeleteAll && (
+                        <button onClick={() => deletePaidByTable(tableNumber)} className="p-1 rounded-md text-red-400 hover:text-white hover:bg-red-600" title={`Eliminar ${orders.length} orden(es) pagadas`}>
+                          <TrashIcon className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                 </div>
                 <div className="space-y-2">
                   {orders.map((order) => (
@@ -620,6 +710,11 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
                         >
                           ✏️ Editar Pago
                         </button>
+                          {canDeleteAll && (
+                            <button onClick={() => deleteSingleOrder(order)} className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-sm rounded-lg flex items-center" title={`Eliminar orden ${order.id.substring(0,8)}`}>
+                              <TrashIcon className="w-4 h-4 mr-2" />Eliminar
+                            </button>
+                          )}
                       </div>
                     </div>
                   ))}

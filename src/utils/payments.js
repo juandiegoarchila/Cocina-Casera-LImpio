@@ -41,13 +41,17 @@ export const extractOrderPayments = (order) => {
     ? Math.floor(window.calculateCorrectBreakfastTotal(order)) || 0
     : Math.floor(Number(order?.total || 0)) || 0;
 
-  if (Array.isArray(order?.payments) && order.payments.length) {
+  // Prefer `paymentLines` (newer canonical field) over `payments` if present
+  const candidateLines = Array.isArray(order?.paymentLines) && order.paymentLines.length ? order.paymentLines : (Array.isArray(order?.payments) && order.payments.length ? order.payments : null);
+  if (candidateLines && candidateLines.length) {
     // Si es un pedido de desayuno, ajustar los montos proporcionalmente al total correcto
+    const linesSource = candidateLines;
+    // Si es desayuno y la suma no coincide, ajustar proporcionalmente
     if (isBreakfast) {
-      const originalTotal = order.payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+      const originalTotal = linesSource.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
       if (originalTotal > 0 && originalTotal !== total) {
         const ratio = total / originalTotal;
-        return order.payments.map((p) => {
+        return linesSource.map((p) => {
           const amount = Math.floor((Number(p?.amount || 0) * ratio)) || 0;
           return {
             methodKey: normalizePaymentMethodKey(p?.method),
@@ -57,8 +61,8 @@ export const extractOrderPayments = (order) => {
         });
       }
     }
-    
-    return order.payments.map((p) => {
+
+    return linesSource.map((p) => {
       const amount = Math.floor(Number(p?.amount || 0)) || 0;
       return {
         methodKey: normalizePaymentMethodKey(p?.method),

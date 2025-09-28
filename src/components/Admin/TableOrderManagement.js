@@ -4,7 +4,7 @@ import OptionSelector from '../OptionSelector';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../Auth/AuthProvider';
 import { db } from '../../config/firebase';
-import { collection, onSnapshot, updateDoc, doc } from 'firebase/firestore';
+import { collection, onSnapshot, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
 import LoadingIndicator from '../LoadingIndicator';
 import ErrorMessage from '../ErrorMessage';
 import { calculateTotal } from '../../utils/MealCalculations';
@@ -118,12 +118,24 @@ const handleSaveEdit = async () => {
     setIsLoading(true);
     const orderRef = doc(db, 'tableOrders', editingOrder.id);
     const total = calculateTotal(editingOrder.meals);
+
+    // Construir paymentLines agrupando por método usando el precio de cada meal
+    const linesMap = {};
+    for (const meal of editingOrder.meals) {
+      const method = meal.paymentMethod?.name || 'Efectivo';
+      const amount = Math.floor(calculateTotal([meal]) || 0);
+      linesMap[method] = (linesMap[method] || 0) + amount;
+    }
+    const paymentLines = Object.entries(linesMap).map(([method, amount]) => ({ method, amount: Math.floor(amount) }));
+    const paymentAmount = paymentLines.reduce((s, l) => s + (Number(l.amount) || 0), 0);
+
     const paymentSummary = {
-      Efectivo: editingOrder.meals[0]?.paymentMethod?.name === 'Efectivo' ? total : 0,
-      Daviplata: editingOrder.meals[0]?.paymentMethod?.name === 'Daviplata' ? total : 0,
-      Nequi: editingOrder.meals[0]?.paymentMethod?.name === 'Nequi' ? total : 0,
+      Efectivo: linesMap['Efectivo'] || 0,
+      Daviplata: linesMap['Daviplata'] || 0,
+      Nequi: linesMap['Nequi'] || 0,
     };
-    await updateDoc(orderRef, {
+
+    const payload = {
       meals: editingOrder.meals.map(meal => ({
         ...meal,
         soup: meal.soup ? { name: meal.soup.name } : null,
@@ -146,8 +158,18 @@ const handleSaveEdit = async () => {
       })),
       total,
       paymentSummary,
-      updatedAt: new Date(),
-    });
+      payments: paymentLines,
+      paymentLines,
+      paymentAmount,
+      // Marcar como pagada si la suma de líneas coincide con el total
+      isPaid: paymentAmount === Math.floor(total),
+      paymentMethod: paymentLines.length === 1 ? paymentLines[0].method : undefined,
+      status: paymentAmount === Math.floor(total) ? 'Completada' : editingOrder.status || 'Pendiente',
+      paymentDate: paymentAmount === Math.floor(total) ? (serverTimestamp ? serverTimestamp() : new Date()) : undefined,
+      updatedAt: serverTimestamp ? serverTimestamp() : new Date(),
+    };
+
+    await updateDoc(orderRef, payload);
     setEditingOrder(null);
     setErrorMessage(null);
   } catch (error) {

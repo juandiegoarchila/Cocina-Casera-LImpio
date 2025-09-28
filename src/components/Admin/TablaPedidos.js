@@ -716,26 +716,21 @@ const paymentsRowsFromOrder = (order, fallbackBuilder) => {
     isBreakfast: isBreakfast
   });
 
-  if (Array.isArray(order?.payments) && order.payments.length) {
-    // Si es un pedido de desayuno, ajustar los montos proporcionalmente al total correcto
+  // Prefer `paymentLines` (canonical) over `payments`
+  const candidateLines = Array.isArray(order?.paymentLines) && order.paymentLines.length ? order.paymentLines : (Array.isArray(order?.payments) && order.payments.length ? order.payments : null);
+  if (candidateLines && candidateLines.length) {
+    const linesSource = candidateLines;
     if (isBreakfast) {
-      const originalTotal = order.payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+      const originalTotal = linesSource.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
       if (originalTotal > 0 && originalTotal !== total) {
         const ratio = total / originalTotal;
-        const result = order.payments.map((p) => ({
-          methodKey: normalizePaymentMethodKey(p.method),
-          amount: Math.floor((Number(p.amount || 0) * ratio)) || 0,
-        }));
-        console.log('✅ Using adjusted order.payments for breakfast:', result);
+        const result = linesSource.map((p) => ({ methodKey: normalizePaymentMethodKey(p.method), amount: Math.floor((Number(p.amount || 0) * ratio)) || 0 }));
+        console.log('✅ Using adjusted payment lines for breakfast:', result);
         return result;
       }
     }
-    
-    const result = order.payments.map((p) => ({
-      methodKey: normalizePaymentMethodKey(p.method),
-      amount: Math.floor(Number(p.amount || 0)) || 0,
-    }));
-    console.log('✅ Using order.payments:', result);
+    const result = linesSource.map((p) => ({ methodKey: normalizePaymentMethodKey(p.method), amount: Math.floor(Number(p.amount || 0)) || 0 }));
+    console.log('✅ Using payment lines/payments:', result);
     return result;
   }
 
@@ -1105,18 +1100,31 @@ const TablaPedidos = ({
       return false;
     }
 
+    const lines = (payments || []).map((p) => ({
+      method: typeof p.method === 'string' ? p.method : p?.method?.name || '',
+      amount: Math.floor(Number(p.amount || 0)) || 0,
+      note: p.note || '',
+    }));
+
+    const totalAmount = lines.reduce((s, l) => s + (Number(l.amount) || 0), 0);
+
+    // Construir payload que refleje un pago completo
     const payload = {
-      payments: (payments || []).map((p) => ({
-        method: typeof p.method === 'string' ? p.method : p?.method?.name || '',
-        amount: Math.floor(Number(p.amount || 0)) || 0,
-        note: p.note || '',
-      })),
+      payments: lines,
+      paymentLines: lines,
+      paymentAmount: totalAmount,
+      isPaid: true,
+      status: 'Completada',
+      paymentDate: serverTimestamp ? serverTimestamp() : new Date(),
       updatedAt: new Date(),
     };
 
+    // Si solo hay una línea y su método existe, setear paymentMethod
+    if (lines.length === 1) payload.paymentMethod = lines[0].method;
+
     try {
       await updateDoc(ref, payload);
-      showToast('success', 'Pagos actualizados correctamente.');
+      showToast('success', 'Pagos actualizados y orden marcada como pagada correctamente.');
       return true;
     } catch (e) {
       console.error('[Pagos] updateDoc error', e);
