@@ -161,6 +161,22 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
     }).format(price);
   };
 
+  // Obtener etiqueta legible para una orden: preferir order.tableNumber, si no existe
+  // usar order.meals[0]?.tableNumber (caso donde la mesa se guardó en la primera comida),
+  // si no hay mesa, mostrar 'Para llevar' o un fallback con id.
+  const getOrderLabel = (order) => {
+    if (!order) return '';
+    // Intentar obtener número de mesa desde order.tableNumber o desde la primera comida
+    let tableNumRaw = order.tableNumber || (order.meals && order.meals[0] && order.meals[0].tableNumber) || null;
+    if (tableNumRaw) {
+      // Normalizar: eliminar la palabra 'Mesa' si ya está incluida y trim
+      const cleaned = String(tableNumRaw).replace(/Mesa\s*/i, '').trim();
+      return `Mesa ${cleaned}`;
+    }
+    if (order.takeaway || order.isTakeaway) return 'Para llevar';
+    return `Orden #${String(order.id || '').substring(0,8)}`;
+  };
+
   // Obtener color de estado por tiempo de espera
   const getUrgencyColor = (createdAt) => {
     const now = new Date();
@@ -700,9 +716,7 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
                           <div className="text-sm font-medium text-gray-100">
                             {order.orderType === 'desayuno' ? '🌅 Desayuno' : '🍽️ Almuerzo'}
                           </div>
-                          <div className="text-xs text-gray-400">
-                            Orden #{order.id.substring(0, 8)}...
-                          </div>
+                          <div className="text-xs text-gray-400">{getOrderLabel(order)}</div>
                         </div>
                         <div className="text-right">
                           <div className="text-sm font-bold text-green-400">
@@ -781,7 +795,7 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
                       <div className="flex justify-between items-center">
                         <div>
                           <div className="text-sm font-medium text-gray-100">{order.orderType === 'desayuno' ? '🌅 Desayuno' : '🍽️ Almuerzo'}</div>
-                          <div className="text-xs text-gray-400">Orden #{order.id.substring(0,8)}</div>
+                          <div className="text-xs text-gray-400">{getOrderLabel(order)}</div>
                         </div>
                         <div className="text-right">
                           <div className="text-sm font-bold text-green-400">{formatPrice(order.total)}</div>
@@ -861,7 +875,7 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
               {/* Información de la orden */}
               <div className={`p-4 rounded-lg ${theme === 'dark' ? 'bg-gray-700' : 'bg-gray-100'} mb-6`}>
                 <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm text-gray-400">Orden #{selectedOrder.id.substring(0, 8)}</span>
+                  <span className="text-sm text-gray-400">{getOrderLabel(selectedOrder)}</span>
                   <span className="text-sm text-gray-400">
                     {selectedOrder.orderType === 'desayuno' ? '🌅 Desayuno' : '🍽️ Almuerzo'}
                   </span>
