@@ -6,7 +6,7 @@ import { collection, onSnapshot, updateDoc, doc } from 'firebase/firestore';
 import TablaPedidos from '../Admin/TablaPedidos';
 import { cleanText, getAddressDisplay, getMealDetailsDisplay } from '../Admin/utils';
 import { Disclosure, Transition } from '@headlessui/react';
-import { Bars3Icon, XMarkIcon, SunIcon, MoonIcon, ArrowLeftOnRectangleIcon, ClipboardDocumentListIcon, CreditCardIcon } from '@heroicons/react/24/outline';
+import { Bars3Icon, XMarkIcon, SunIcon, MoonIcon, ArrowLeftOnRectangleIcon, ClipboardDocumentListIcon, CreditCardIcon, ClipboardIcon } from '@heroicons/react/24/outline';
 import { signOut } from 'firebase/auth';
 import { auth } from '../../config/firebase';
 import { useNavigate, Routes, Route, Navigate } from 'react-router-dom';
@@ -16,6 +16,7 @@ import { defaultPaymentsForOrder } from '../../utils/payments';
 import OrderSummary from '../OrderSummary';
 import BreakfastOrderSummary from '../BreakfastOrderSummary';
 import DeliveryPayments from './DeliveryPayments';
+import DeliveryTasks from './DeliveryTasks';
 
 const DeliveryOrdersPage = () => {
   const { user, loading, role } = useAuth();
@@ -405,6 +406,14 @@ const DeliveryOrdersPage = () => {
                     </button>
 
                     <button
+                      onClick={() => { navigate('/delivery/tasks'); setIsSidebarOpen(false); }}
+                      className={`flex items-center px-4 py-2 rounded-md text-sm font-medium ${theme === 'dark' ? 'text-gray-300 hover:text-white hover:bg-gray-700' : 'text-gray-700 hover:text-black hover:bg-gray-300'} transition-all duration-200`}
+                    >
+                      <ClipboardIcon className={`w-6 h-6 mr-2 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} />
+                      <span>Gestión de Tareas</span>
+                    </button>
+
+                    <button
                       onClick={() => { navigate('/delivery/payments'); setIsSidebarOpen(false); }}
                       className={`flex items-center px-4 py-2 rounded-md text-sm font-medium ${theme === 'dark' ? 'text-gray-300 hover:text-white hover:bg-gray-700' : 'text-gray-700 hover:text-black hover:bg-gray-300'} transition-all duration-200`}
                     >
@@ -459,6 +468,27 @@ const DeliveryOrdersPage = () => {
             />
             <span className={`transition-opacity duration-200 ${isSidebarOpen ? 'opacity-100 block' : 'opacity-0 hidden'}`}>
               Gestión de Pedidos
+            </span>
+          </button>
+
+          <button
+            onClick={() => navigate('/delivery/tasks')}
+            className={`relative flex items-center px-4 py-2 rounded-md text-sm font-medium min-w-[48px]
+              ${
+                isSidebarOpen
+                  ? theme === 'dark'
+                    ? 'text-gray-300 hover:text-white hover:bg-gray-700'
+                    : 'text-gray-700 hover:text-black hover:bg-gray-300'
+                  : 'justify-center'
+              } transition-all duration-300`}
+          >
+            <ClipboardIcon
+              className={`w-6 h-6 ${isSidebarOpen ? 'mr-2' : 'mr-0'} ${
+                theme === 'dark' ? 'text-gray-200' : 'text-gray-700'
+              }`}
+            />
+            <span className={`transition-opacity duration-200 ${isSidebarOpen ? 'opacity-100 block' : 'opacity-0 hidden'}`}>
+              Gestión de Tareas
             </span>
           </button>
 
@@ -561,6 +591,13 @@ const DeliveryOrdersPage = () => {
               permissions={permissions}
               editingPaymentsOrder={editingPaymentsOrder}
               setEditingPaymentsOrder={setEditingPaymentsOrder}
+            />
+          } />
+          <Route path="/tasks" element={
+            <DeliveryTasks 
+              setError={setError}
+              setSuccess={setSuccess}
+              theme={theme}
             />
           } />
           <Route path="/payments" element={

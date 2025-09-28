@@ -1,7 +1,7 @@
 //src/components/Waiter/WaiterDashboard.js
 import React, { useState, useEffect, useMemo } from 'react';
 import { Disclosure, Transition } from '@headlessui/react';
-import { Bars3Icon, XMarkIcon, SunIcon, MoonIcon, ArrowLeftOnRectangleIcon, ClipboardDocumentListIcon, CreditCardIcon } from '@heroicons/react/24/outline';
+import { Bars3Icon, XMarkIcon, SunIcon, MoonIcon, ArrowLeftOnRectangleIcon, ClipboardDocumentListIcon, CreditCardIcon, ListBulletIcon } from '@heroicons/react/24/outline';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../Auth/AuthProvider';
 import { db, auth } from '../../config/firebase';
@@ -16,6 +16,7 @@ import ErrorMessage from '../ErrorMessage';
 import SuccessMessage from '../SuccessMessage';
 import OptionSelector from '../OptionSelector';
 import WaiterPayments from './WaiterPayments';
+import WaiterTasks from './WaiterTasks';
 import { initializeMealData, handleMealChange, addMeal, duplicateMeal, removeMeal } from '../../utils/MealLogic';
 import { calculateTotal, calculateMealPrice } from '../../utils/MealCalculations';
 import { initializeBreakfastData, handleBreakfastChange, addBreakfast, duplicateBreakfast, removeBreakfast, calculateBreakfastPrice, calculateTotalBreakfastPrice } from '../../utils/BreakfastLogic';
@@ -58,7 +59,7 @@ const WaiterDashboard = () => {
   const [manualMenuType, setManualMenuType] = useState(null);
   const [theme, setTheme] = useState('dark');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [currentView, setCurrentView] = useState('orders'); // 'orders' o 'payments'
+  const [currentView, setCurrentView] = useState('orders'); // 'orders', 'payments', o 'tasks'
   const [schedules, setSchedules] = useState({
     breakfastStart: 420, // 07:00
     breakfastEnd: 631,   // 10:31
@@ -1019,6 +1020,21 @@ const WaiterDashboard = () => {
                       <span>Pagos</span>
                     </button>
                     <button
+                      onClick={() => { setCurrentView('tasks'); setIsSidebarOpen(false); }}
+                      className={`flex items-center px-4 py-2 rounded-md text-sm font-medium ${
+                        currentView === 'tasks' 
+                          ? theme === 'dark' 
+                            ? 'bg-blue-700 text-white' 
+                            : 'bg-blue-200 text-blue-800'
+                          : theme === 'dark' 
+                            ? 'text-gray-300 hover:text-white hover:bg-gray-700' 
+                            : 'text-gray-700 hover:text-black hover:bg-gray-300'
+                      } transition-all duration-200`}
+                    >
+                      <ListBulletIcon className={`w-6 h-6 mr-2 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} />
+                      <span>Gestión de Tareas</span>
+                    </button>
+                    <button
                       onClick={handleLogout}
                       className={`mt-auto flex items-center px-4 py-2 rounded-md text-sm font-medium ${theme === 'dark' ? 'text-red-300 hover:text-white hover:bg-red-700' : 'text-red-600 hover:text-red-800 hover:bg-red-200'} transition-all duration-200`}
                     >
@@ -1098,6 +1114,31 @@ const WaiterDashboard = () => {
           </button>
 
           <button
+            onClick={() => setCurrentView('tasks')}
+            className={`relative flex items-center px-4 py-2 rounded-md text-sm font-medium min-w-[48px]
+              ${
+                currentView === 'tasks' 
+                  ? theme === 'dark' 
+                    ? 'bg-blue-700 text-white' 
+                    : 'bg-blue-200 text-blue-800'
+                  : isSidebarOpen
+                    ? theme === 'dark'
+                      ? 'text-gray-300 hover:text-white hover:bg-gray-700'
+                      : 'text-gray-700 hover:text-black hover:bg-gray-300'
+                    : 'justify-center'
+              } transition-all duration-300`}
+          >
+            <ListBulletIcon
+              className={`w-6 h-6 ${isSidebarOpen ? 'mr-2' : 'mr-0'} ${
+                theme === 'dark' ? 'text-gray-200' : 'text-gray-700'
+              }`}
+            />
+            <span className={`transition-opacity duration-200 ${isSidebarOpen ? 'opacity-100 block' : 'opacity-0 hidden'}`}>
+              Gestión de Tareas
+            </span>
+          </button>
+
+          <button
             onClick={handleLogout}
             className={`mt-auto flex items-center px-4 py-2 rounded-md text-sm font-medium min-w-[48px]
               ${
@@ -1125,6 +1166,13 @@ const WaiterDashboard = () => {
         {currentView === 'payments' ? (
           // Vista de Pagos
           <WaiterPayments 
+            setError={setErrorMessage} 
+            setSuccess={setSuccessMessage} 
+            theme={theme} 
+          />
+        ) : currentView === 'tasks' ? (
+          // Vista de Tareas
+          <WaiterTasks 
             setError={setErrorMessage} 
             setSuccess={setSuccessMessage} 
             theme={theme} 

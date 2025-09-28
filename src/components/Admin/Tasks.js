@@ -62,13 +62,24 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
         console.log('🔄 Verificando tareas recurrentes para reset automático...');
         
         // Buscar tareas recurrentes completadas que necesiten reset
-        const recurringTasksToReset = tasks.filter(task => 
-          task.isRecurringDaily && 
-          task.status === 'completada' &&
-          task.lastCompletedDate === currentDate
-        );
+        // Ahora incluye tareas completadas en días anteriores también
+        const recurringTasksToReset = tasks.filter(task => {
+          if (!task.isRecurringDaily || task.status !== 'completada') return false;
+          
+          // Si fue completada hoy, la reseteamos mañana
+          // Si fue completada antes de hoy, la reseteamos hoy
+          const lastCompleted = task.lastCompletedDate;
+          const completedToday = lastCompleted === currentDate;
+          const completedBefore = lastCompleted && lastCompleted < currentDate;
+          
+          console.log(`Tarea: ${task.title}, Completada: ${lastCompleted}, Hoy: ${currentDate}, CompletadaHoy: ${completedToday}, CompletadaAntes: ${completedBefore}`);
+          
+          return completedBefore; // Solo resetear tareas completadas en días anteriores
+        });
         
-        // Resetear cada tarea recurrente completada hoy
+        console.log(`📋 Encontradas ${recurringTasksToReset.length} tareas para resetear`);
+        
+        // Resetear cada tarea recurrente completada
         for (const task of recurringTasksToReset) {
           try {
             // 🔒 PRESERVAR EL ORDEN PERSONALIZADO AL RESETEAR
@@ -78,7 +89,9 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
               completedAt: null,
               updatedAt: serverTimestamp(),
               resetAt: serverTimestamp(),
-              dailyResetCount: (task.dailyResetCount || 0) + 1
+              dailyResetCount: (task.dailyResetCount || 0) + 1,
+              needsReset: false, // Limpiar la bandera
+              lastCompletedDate: null // Limpiar fecha de completado para nuevo ciclo
             };
 
             // ⚠️ IMPORTANTE: Mantener el customOrder si existe para preservar el orden del admin
@@ -182,7 +195,9 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
         if (currentTask.isRecurringDaily) {
           // Marcar la fecha de cuando fue completada por última vez
           updateData.lastCompletedDate = new Date().toISOString().split('T')[0];
-          setSuccess('🔄 Tarea recurrente completada - Se reiniciará automáticamente a las 6pm');
+          // También marcar que necesita reset al día siguiente
+          updateData.needsReset = true;
+          setSuccess('🔄 Tarea recurrente completada - Se reiniciará automáticamente a las 6pm del día siguiente');
         }
       } else if (newStatus === 'pendiente') {
         // Al regresar a pendiente, limpiar timestamps
@@ -450,13 +465,57 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
     <div className="max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 py-4 sm:py-8">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-xl sm:text-2xl font-bold text-gray-100">📋 Gestión de Tareas</h2>
-        <button
-          onClick={() => setShowAddForm(!showAddForm)}
-          className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors text-sm"
-        >
-          <PlusIcon className="w-4 h-4" />
-          <span>Nueva Tarea</span>
-        </button>
+        <div className="flex space-x-2">
+          <button
+            onClick={async () => {
+              try {
+                const recurringTasksToReset = tasks.filter(task => 
+                  task.isRecurringDaily && 
+                  task.status === 'completada'
+                );
+                
+                for (const task of recurringTasksToReset) {
+                  const updateData = {
+                    status: 'pendiente',
+                    startedAt: null,
+                    completedAt: null,
+                    updatedAt: serverTimestamp(),
+                    resetAt: serverTimestamp(),
+                    dailyResetCount: (task.dailyResetCount || 0) + 1,
+                    needsReset: false,
+                    lastCompletedDate: null
+                  };
+
+                  if (task.customOrder !== undefined && task.customOrder !== null) {
+                    updateData.customOrder = task.customOrder;
+                  }
+
+                  await updateDoc(doc(db, 'tasks', task.id), updateData);
+                }
+                
+                if (recurringTasksToReset.length > 0) {
+                  setSuccess(`🔄 ${recurringTasksToReset.length} tarea(s) recurrente(s) reiniciada(s) manualmente`);
+                } else {
+                  setError('No hay tareas recurrentes completadas para resetear');
+                }
+              } catch (error) {
+                setError(`Error al resetear tareas: ${error.message}`);
+              }
+            }}
+            className="bg-purple-600 hover:bg-purple-700 px-3 py-2 rounded-lg flex items-center space-x-2 transition-colors text-sm"
+            title="Reset manual de tareas recurrentes"
+          >
+            <span>🔄</span>
+            <span>Reset Manual</span>
+          </button>
+          <button
+            onClick={() => setShowAddForm(!showAddForm)}
+            className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors text-sm"
+          >
+            <PlusIcon className="w-4 h-4" />
+            <span>Nueva Tarea</span>
+          </button>
+        </div>
       </div>
 
       {/* Formulario para crear nueva tarea */}
@@ -825,6 +884,7 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
                 isTaskBlocked={isTaskBlocked}
                 formatEstimatedTime={formatEstimatedTime}
                 orderIndex={index + 1}
+                isAdmin={true}
               />
             </div>
           ))}
@@ -875,6 +935,7 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
               onDragEnd={handleDragEnd}
               isTaskBlocked={isTaskBlocked}
               formatEstimatedTime={formatEstimatedTime}
+              isAdmin={true}
             />
           ))}
         </div>
@@ -907,6 +968,7 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
               onDragEnd={handleDragEnd}
               isTaskBlocked={isTaskBlocked}
               formatEstimatedTime={formatEstimatedTime}
+              isAdmin={true}
             />
           ))}
         </div>
@@ -916,7 +978,7 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
 };
 
 // Componente para renderizar cada tarea individual
-const TaskCard = ({ task, onStatusChange, onDelete, onEdit, getProfileColor, getProfileName, theme, isDragging, onDragStart, onDragEnd, isTaskBlocked, formatEstimatedTime, orderIndex }) => {
+const TaskCard = ({ task, onStatusChange, onDelete, onEdit, getProfileColor, getProfileName, theme, isDragging, onDragStart, onDragEnd, isTaskBlocked, formatEstimatedTime, orderIndex, isAdmin = true }) => {
   const getPriorityEmoji = (priority) => {
     switch(priority) {
       case 'alta': return '🔴';
@@ -965,8 +1027,8 @@ const TaskCard = ({ task, onStatusChange, onDelete, onEdit, getProfileColor, get
       onDragEnd={onDragEnd}
       className={`bg-${theme === 'dark' ? 'gray-700' : 'gray-50'} p-4 rounded-lg mb-3 border-l-4 border-${profileColor}-500 cursor-move transition-all duration-200 hover:shadow-lg ${
         isDragging ? 'opacity-50 scale-95 rotate-2' : 'hover:scale-102'
-      }`}
-      title="Arrastra para cambiar de estado"
+      } ${task.status === 'completada' ? 'border-green-500 bg-green-900/20' : ''}`}
+      title={task.status === 'completada' ? "Tarea completada - Solo admin puede mover" : "Arrastra para cambiar de estado"}
     >
       <div className="flex justify-between items-start mb-2">
         <div className="flex items-center space-x-1">
@@ -1125,7 +1187,7 @@ const TaskCard = ({ task, onStatusChange, onDelete, onEdit, getProfileColor, get
             </button>
           </>
         )}
-        {task.status === 'completada' && (
+        {task.status === 'completada' && isAdmin && (
           <button
             onClick={() => onStatusChange(task.id, 'pendiente')}
             className="px-2 py-1 bg-blue-600 hover:bg-blue-700 rounded text-xs transition-colors"
