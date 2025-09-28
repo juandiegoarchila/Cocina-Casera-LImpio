@@ -8,7 +8,6 @@ const DeliveryTasks = ({ setError, setSuccess, theme }) => {
   const [tasks, setTasks] = useState([]);
   const [draggedTask, setDraggedTask] = useState(null);
   const [dragOverColumn, setDragOverColumn] = useState(null);
-  const [currentTime, setCurrentTime] = useState(new Date());
   // Ya no necesitamos filtros de perfil - solo mostramos tareas del domiciliario
 
   // Perfiles disponibles (solo lectura)
@@ -32,15 +31,6 @@ const DeliveryTasks = ({ setError, setSuccess, theme }) => {
     }, (error) => setError(`Error al cargar tareas: ${error.message}`));
     return () => unsubscribe();
   }, [setError]);
-
-  // 🕐 Contador en tiempo real para validar tiempo mínimo
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentTime(new Date());
-    }, 1000); // Actualizar cada segundo
-    
-    return () => clearInterval(interval);
-  }, []);
 
   // Ya no necesitamos manejar clics del dropdown
 
@@ -80,42 +70,6 @@ const DeliveryTasks = ({ setError, setSuccess, theme }) => {
       if (newStatus === 'completada' && currentTask.status !== 'en_progreso') {
         setError(`⛔ No puedes completar una tarea que no has iniciado. Primero debes ponerla "En Progreso".`);
         return;
-      }
-
-      // 🚨 VALIDACIÓN DE TIEMPO MÍNIMO OBLIGATORIO ANTES DE COMPLETAR
-      if (newStatus === 'completada') {
-        const estimatedTimeMinutes = parseInt(currentTask.estimatedTime) || 0;
-        
-        if (estimatedTimeMinutes > 0 && currentTask.startedAt) {
-          const startedTime = currentTask.startedAt.toDate ? currentTask.startedAt.toDate() : new Date(currentTask.startedAt);
-          const currentTime = new Date();
-          const elapsedMinutes = Math.floor((currentTime - startedTime) / (1000 * 60));
-          
-          if (elapsedMinutes < estimatedTimeMinutes) {
-            const remainingMinutes = estimatedTimeMinutes - elapsedMinutes;
-            const remainingHours = Math.floor(remainingMinutes / 60);
-            const remainingMins = remainingMinutes % 60;
-            
-            let timeMessage = '';
-            if (remainingHours > 0) {
-              timeMessage = remainingMins > 0 ? `${remainingHours}h ${remainingMins}m` : `${remainingHours}h`;
-            } else {
-              timeMessage = `${remainingMins}m`;
-            }
-            
-            const formatEstimatedTime = (minutes) => {
-              const hours = Math.floor(minutes / 60);
-              const mins = minutes % 60;
-              if (hours > 0) {
-                return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
-              }
-              return `${mins}m`;
-            };
-            
-            setError(`⏰ Debes esperar ${timeMessage} más antes de completar esta tarea. Tiempo estimado: ${formatEstimatedTime(estimatedTimeMinutes)}`);
-            return;
-          }
-        }
       }
 
       const updateData = {
@@ -459,39 +413,6 @@ const DeliveryTaskCard = ({ task, onStatusChange, getProfileColor, getProfileNam
     return `${minutes}m`;
   };
 
-  // 🕐 Calcular si puede completarse según tiempo mínimo
-  const canCompleteTask = () => {
-    const estimatedTimeMinutes = parseInt(task.estimatedTime) || 0;
-    
-    if (estimatedTimeMinutes === 0 || !task.startedAt) return true;
-    
-    const startedTime = task.startedAt.toDate ? task.startedAt.toDate() : new Date(task.startedAt);
-    const elapsedMinutes = Math.floor((new Date() - startedTime) / (1000 * 60));
-    
-    return elapsedMinutes >= estimatedTimeMinutes;
-  };
-
-  // 🕐 Calcular tiempo restante en tiempo real
-  const getRemainingTime = () => {
-    const estimatedTimeMinutes = parseInt(task.estimatedTime) || 0;
-    
-    if (estimatedTimeMinutes === 0 || !task.startedAt || task.status !== 'en_progreso') return null;
-    
-    const startedTime = task.startedAt.toDate ? task.startedAt.toDate() : new Date(task.startedAt);
-    const elapsedMinutes = Math.floor((new Date() - startedTime) / (1000 * 60));
-    const remainingMinutes = estimatedTimeMinutes - elapsedMinutes;
-    
-    if (remainingMinutes <= 0) return null;
-    
-    const hours = Math.floor(remainingMinutes / 60);
-    const mins = remainingMinutes % 60;
-    
-    if (hours > 0) {
-      return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
-    }
-    return `${mins}m`;
-  };
-
   const profileColor = getProfileColor(task.assignedTo);
   
   return (
@@ -644,15 +565,9 @@ const DeliveryTaskCard = ({ task, onStatusChange, getProfileColor, getProfileNam
             <>
               <button
                 onClick={() => onStatusChange(task.id, 'completada')}
-                disabled={!canCompleteTask()}
-                className={`px-2 py-1 text-xs rounded transition-colors ${
-                  canCompleteTask() 
-                    ? 'bg-green-600 hover:bg-green-700 cursor-pointer' 
-                    : 'bg-gray-400 cursor-not-allowed opacity-50'
-                }`}
-                title={!canCompleteTask() ? `Debes esperar ${getRemainingTime()} más` : 'Completar tarea'}
+                className="px-2 py-1 bg-green-600 hover:bg-green-700 rounded text-xs transition-colors"
               >
-                {canCompleteTask() ? 'Completar' : `Esperar ${getRemainingTime()}`}
+                Completar
               </button>
               <button
                 onClick={() => onStatusChange(task.id, 'pendiente')}
@@ -666,7 +581,11 @@ const DeliveryTaskCard = ({ task, onStatusChange, getProfileColor, getProfileNam
         </div>
       )}
       
-
+      {!canEdit && (
+        <div className="bg-gray-600/50 p-2 rounded text-xs text-center text-gray-400">
+          👁️ Solo lectura - Tarea de {getProfileName(task.assignedTo)}
+        </div>
+      )}
       
       <div className="text-xs text-gray-500 mt-2">
         Creada: {formatDate(task.createdAt?.toDate?.() || task.createdAt)}

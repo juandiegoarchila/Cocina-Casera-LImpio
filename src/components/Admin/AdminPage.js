@@ -8,7 +8,7 @@ import { Disclosure, Transition } from '@headlessui/react';
 import {
   Bars3Icon, XMarkIcon, ChartBarIcon, UserGroupIcon,
   ClockIcon, DocumentTextIcon, CogIcon, ArrowLeftOnRectangleIcon,
-  BellIcon, SunIcon, MoonIcon, TableCellsIcon, ClipboardDocumentListIcon
+  BellIcon, SunIcon, MoonIcon, TableCellsIcon, ClipboardDocumentListIcon, CurrencyDollarIcon
 } from '@heroicons/react/24/outline';
 
 // Lazy load components
@@ -19,6 +19,7 @@ const OrderManagement = lazy(() => import('./OrderManagement'));
 const UserManagement = lazy(() => import('./UserManagement'));
 const Settings = lazy(() => import('./Tasks'));
 const Notifications = lazy(() => import('./Payments'));
+const WaiterCashier = lazy(() => import('../Waiter/WaiterCashier'));
 const TableOrdersAdmin = lazy(() => import('./TableOrdersAdmin'));
 
 const AdminPage = () => {
@@ -81,6 +82,7 @@ const AdminPage = () => {
     { name: 'Gestión de Usuarios', to: '/admin/users', icon: UserGroupIcon },
     { name: 'Tareas', to: '/admin/settings', icon: ClipboardDocumentListIcon },
     { name: 'Pagos', to: '/admin/Payments.js', icon: BellIcon },
+    { name: 'Caja', to: '/admin/cashier', icon: CurrencyDollarIcon },
   ];
 
   return (
@@ -307,6 +309,10 @@ const AdminPage = () => {
             <Route
               path="/Payments.js"
               element={<Notifications setError={setError} setSuccess={setSuccess} theme={theme} />}
+            />
+            <Route
+              path="/cashier"
+              element={<WaiterCashier setError={setError} setSuccess={setSuccess} theme={theme} canDeleteAll={true} />}
             />
           </Routes>
         </Suspense>
