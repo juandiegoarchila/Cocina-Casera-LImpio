@@ -24,6 +24,20 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
   const [paymentData, setPaymentData] = useState({});
   const [paymentLines, setPaymentLines] = useState([]); // para modo split: { method, amount }
   const [cashAmount, setCashAmount] = useState('');
+  // Adicionales que el cliente pidió (antes de confirmar pago)
+  const [addedItems, setAddedItems] = useState([]); // { id, name, amount }
+  const [newAddedName, setNewAddedName] = useState('');
+  const [newAddedAmount, setNewAddedAmount] = useState('');
+
+  // Si cambian los adicionales, ajustar el monto a pagar automáticamente en modo simple
+  useEffect(() => {
+    if (!selectedOrder) return;
+    const base = parseFloat(selectedOrder.total || 0) || 0;
+    const addedTotal = (addedItems || []).reduce((s, a) => s + (Number(a.amount || 0)), 0);
+    if (paymentMode === 'simple') {
+      setPaymentData(prev => ({ ...prev, amount: Math.round(base + addedTotal) }));
+    }
+  }, [addedItems, selectedOrder, paymentMode]);
   const [currentTime, setCurrentTime] = useState(new Date());
 
   // Estados para calculadora de vueltos
@@ -181,6 +195,10 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
     setCashAmount('');
     setCalculatedChange(0);
     setShowChangeCalculator(false);
+    // Inicializar adicionales desde la orden si existen
+    setAddedItems(Array.isArray(order.addedItems) ? order.addedItems.map((it, idx) => ({ id: it.id || idx, name: it.name, amount: Number(it.amount || 0) })) : []);
+    setNewAddedName('');
+    setNewAddedAmount('');
     setShowPaymentModal(true);
   };
 
@@ -214,14 +232,36 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
     if (!selectedOrder) return;
 
     try {
+      console.log('Procesando pago - debug', { orderId: selectedOrder.id, addedItems, paymentData, paymentMode, paymentLines });
       const updateData = {
         isPaid: true,
         status: 'Completada',
         paymentDate: serverTimestamp(),
         paymentMethod: paymentData.method,
+        // paymentAmount se calculará más abajo para garantizar que incluye 'addedItems' o 'paymentLines'
         paymentAmount: paymentData.amount,
         updatedAt: serverTimestamp()
       };
+
+      // Preparar lista final de adicionales: incluir cualquiera que esté en los inputs pero no se haya añadido con +Añadir
+      const finalAddedItems = [];
+      if (Array.isArray(addedItems) && addedItems.length) {
+        finalAddedItems.push(...addedItems.map(a => ({ id: a.id, name: a.name, amount: Number(a.amount || 0) })));
+      }
+      // Si el cajero escribió un adicional en los inputs pero no presionó +Añadir, incluirlo también
+      if (newAddedName && newAddedAmount) {
+        const pendingAmount = Math.floor(Number(newAddedAmount || 0));
+        if (String(newAddedName).trim() !== '' && pendingAmount > 0) {
+          const pending = { id: `${Date.now()}-pending`, name: String(newAddedName).trim(), amount: pendingAmount };
+          finalAddedItems.push(pending);
+        }
+      }
+
+      if (finalAddedItems.length) {
+        const addedTotalFinal = finalAddedItems.reduce((s, a) => s + (Number(a.amount || 0)), 0);
+        updateData.addedItems = finalAddedItems;
+        updateData.total = (parseFloat(selectedOrder.total || 0) || 0) + addedTotalFinal;
+      }
 
       if (paymentData.note) updateData.paymentNote = paymentData.note;
       if (paymentData.method === 'efectivo' && cashAmount) {
@@ -231,10 +271,28 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
 
       const collection_name = selectedOrder.orderType === 'mesa' ? 'tableOrders' : 'breakfastOrders';
       // Si es pago dividido, añadimos paymentLines
+  // Calcular total de adicionales si existen (usar finalAddedItems si está definido)
+  const addedTotal = (typeof finalAddedItems !== 'undefined' ? finalAddedItems : (addedItems || [])).reduce((s, a) => s + (Number(a.amount || 0)), 0);
+
+      // Si es pago dividido, añadimos paymentLines y recalculamos paymentAmount
       if (paymentMode === 'split') {
         updateData.paymentLines = paymentLines.map(l => ({ method: l.method, amount: Number(l.amount) }));
-        updateData.paymentAmount = paymentLines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0);
+        const linesTotal = paymentLines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0);
+        updateData.paymentAmount = Math.round(linesTotal + addedTotal);
+        // Indicar método múltiple para evitar sobrescribir con paymentData.method que puede ser un método simple
+        updateData.paymentMethod = 'multiple';
+      } else {
+        // Asegurar que paymentAmount refleje paymentData.amount actualizado (incluyendo adicionales)
+        // Si el cajero no añadió la línea pero dejó los inputs con un valor pendiente, paymentData.amount puede no incluirlo,
+        // por eso usamos selectedOrder.total + addedTotal como fuente de verdad si addedTotal > 0.
+        if ((addedTotal || 0) > 0) {
+          updateData.paymentAmount = Math.round((parseFloat(selectedOrder.total) || 0) + addedTotal);
+        } else {
+          updateData.paymentAmount = Math.round(parseFloat(paymentData.amount) || parseFloat(selectedOrder.total) || 0);
+        }
       }
+
+      console.log('Procesando pago - data a enviar a Firestore', { updateData, addedTotal, paymentLines });
       await updateDoc(doc(db, collection_name, selectedOrder.id), updateData);
 
       // Actualización optimista local para reflejar el pago inmediatamente en la UI
@@ -245,6 +303,8 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
         paymentAmount: updateData.paymentAmount,
         paymentDate: new Date()
       };
+      if (updateData.addedItems) optimisticFields.addedItems = updateData.addedItems;
+      if (updateData.total) optimisticFields.total = updateData.total;
       if (updateData.paymentLines) optimisticFields.paymentLines = updateData.paymentLines;
       if (updateData.cashReceived) optimisticFields.cashReceived = updateData.cashReceived;
       if (updateData.changeGiven) optimisticFields.changeGiven = updateData.changeGiven;
@@ -262,6 +322,27 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
       setError(`Error al procesar pago: ${error.message}`);
     }
   };
+
+  // Gestión de adicionales (antes de confirmar)
+  const addNewItem = () => {
+    const name = String(newAddedName || '').trim();
+    const amount = Math.floor(Number(newAddedAmount || 0));
+    if (!name || !amount) return setError('Nombre y monto del adicional son obligatorios');
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2,7)}`;
+    const newItem = { id, name, amount };
+    console.log('Añadiendo adicional:', newItem);
+    setAddedItems(prev => ([...prev, newItem]));
+    setNewAddedName('');
+    setNewAddedAmount('');
+  };
+
+  const removeAddedItem = (id) => setAddedItems(prev => prev.filter(i => i.id !== id));
+
+  const editAddedItem = (id, patch) => setAddedItems(prev => prev.map(i => i.id === id ? ({ ...i, ...patch }) : i));
+
+  // Añadidos: logs para depurar eliminación/edición
+  const _removeAddedItem = (id) => { console.log('Eliminar adicional:', id); setAddedItems(prev => prev.filter(i => i.id !== id)); };
+  const _editAddedItem = (id, patch) => { console.log('Editar adicional:', id, patch); setAddedItems(prev => prev.map(i => i.id === id ? ({ ...i, ...patch }) : i)); };
 
   // Configurar pago dividido
   const handleSplitPayment = (type) => {
@@ -379,17 +460,43 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
     if (!window.confirm(`¿Eliminar las órdenes pagadas de ${tableNumber}? Esto no se puede deshacer.`)) return;
     try {
       const { getDocs, collection: coll, deleteDoc, doc: docRef, query, where } = await import('firebase/firestore');
-      const q1 = query(coll(db, 'tableOrders'), where('tableNumber', '==', tableNumber), where('isPaid', '==', true));
-      const tableSnapshot = await getDocs(q1);
-      for (const d of tableSnapshot.docs) {
-        await deleteDoc(docRef(db, 'tableOrders', d.id));
+      // Si la mesa es 'Sin mesa', buscamos documentos donde 'tableNumber' no exista o sea falsy
+      if (tableNumber === 'Sin mesa') {
+        const q1 = query(coll(db, 'tableOrders'), where('isPaid', '==', true));
+        const tableSnapshot = await getDocs(q1);
+        for (const d of tableSnapshot.docs) {
+          const data = d.data();
+          if (!data.tableNumber) await deleteDoc(docRef(db, 'tableOrders', d.id));
+        }
+
+        const q2 = query(coll(db, 'breakfastOrders'), where('isPaid', '==', true));
+        const breakfastSnapshot = await getDocs(q2);
+        for (const d of breakfastSnapshot.docs) {
+          const data = d.data();
+          if (!data.tableNumber) await deleteDoc(docRef(db, 'breakfastOrders', d.id));
+        }
+
+        // Actualizar estado local: remover órdenes sin tableNumber que estén pagadas
+        setTableOrders(prev => prev.filter(o => !(o.isPaid && !o.tableNumber)));
+        setBreakfastOrders(prev => prev.filter(o => !(o.isPaid && !o.tableNumber)));
+        setSuccess(`✅ Órdenes pagadas de ${tableNumber} eliminadas`);
+      } else {
+        const q1 = query(coll(db, 'tableOrders'), where('tableNumber', '==', tableNumber), where('isPaid', '==', true));
+        const tableSnapshot = await getDocs(q1);
+        for (const d of tableSnapshot.docs) {
+          await deleteDoc(docRef(db, 'tableOrders', d.id));
+        }
+        const q2 = query(coll(db, 'breakfastOrders'), where('tableNumber', '==', tableNumber), where('isPaid', '==', true));
+        const breakfastSnapshot = await getDocs(q2);
+        for (const d of breakfastSnapshot.docs) {
+          await deleteDoc(docRef(db, 'breakfastOrders', d.id));
+        }
+
+        // Actualizar estado local: remover órdenes de la mesa específica
+        setTableOrders(prev => prev.filter(o => !(o.isPaid && o.tableNumber === tableNumber)));
+        setBreakfastOrders(prev => prev.filter(o => !(o.isPaid && o.tableNumber === tableNumber)));
+        setSuccess(`✅ Órdenes pagadas de ${tableNumber} eliminadas`);
       }
-      const q2 = query(coll(db, 'breakfastOrders'), where('tableNumber', '==', tableNumber), where('isPaid', '==', true));
-      const breakfastSnapshot = await getDocs(q2);
-      for (const d of breakfastSnapshot.docs) {
-        await deleteDoc(docRef(db, 'breakfastOrders', d.id));
-      }
-      setSuccess(`✅ Órdenes pagadas de ${tableNumber} eliminadas`);
     } catch (error) {
       setError(`Error eliminando órdenes pagadas de ${tableNumber}: ${error.message}`);
     }
@@ -686,18 +793,26 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
                           onClick={() => {
                             // Abrir modal con datos de pago actuales para editar
                             setSelectedOrder(order);
+                            // Inicializar adicionales desde la orden si existen (para editar correctamente)
+                            const initialAdded = Array.isArray(order.addedItems) ? order.addedItems.map((it, idx) => ({ id: it.id || idx, name: it.name, amount: Number(it.amount || 0) })) : [];
+                            setAddedItems(initialAdded);
+
                             // Si la orden tiene paymentLines, abrir en modo split y cargar líneas
                             if (order.paymentLines && Array.isArray(order.paymentLines) && order.paymentLines.length > 0) {
                               setPaymentMode('split');
                               setPaymentLines(order.paymentLines.map(l => ({ method: l.method || 'efectivo', amount: String(l.amount || 0) })));
-                              // calcular suma en paymentData.amount para mostrar en resumen
-                              setPaymentData(prev => ({ ...prev, amount: order.paymentLines.reduce((s, x) => s + (parseFloat(x.amount) || 0), 0) }));
+                              // calcular suma en paymentData.amount para mostrar en resumen, incluyendo adicionales
+                              const linesTotal = order.paymentLines.reduce((s, x) => s + (parseFloat(x.amount) || 0), 0);
+                              const addedTotal = initialAdded.reduce((s, a) => s + (Number(a.amount || 0)), 0);
+                              setPaymentData(prev => ({ ...prev, amount: Math.round(linesTotal + addedTotal) }));
                             } else {
                               setPaymentMode('simple');
                               setPaymentLines([]);
+                              // Preferir order.total (que puede incluir adicionales persistidos) sobre paymentAmount
+                              const amount = Math.round(parseFloat(order.total) || parseFloat(order.paymentAmount) || 0);
                               setPaymentData({
                                 method: order.paymentMethod || 'efectivo',
-                                amount: parseFloat(order.paymentAmount) || parseFloat(order.total) || 0,
+                                amount,
                                 note: order.paymentNote || ''
                               });
                             }
@@ -938,6 +1053,40 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
                   </div>
                 </div>
               )}
+
+              {/* Adicionales: permitir agregar platos/añadidos antes de confirmar el pago */}
+              <div className="mb-6">
+                <h4 className={`text-sm font-medium mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Adicionales / Items extra</h4>
+                <div className="grid grid-cols-3 gap-2 mb-2">
+                  <input type="text" placeholder="Descripción (ej: 1 Jugo extra)" value={newAddedName} onChange={(e) => setNewAddedName(e.target.value)} className={`col-span-2 px-3 py-2 rounded-lg border text-sm ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`} />
+                  <input type="number" placeholder="Monto" value={newAddedAmount} onChange={(e) => setNewAddedAmount(e.target.value)} className={`px-3 py-2 rounded-lg border text-sm ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`} />
+                </div>
+                <div className="flex gap-2 mb-3">
+                  <button onClick={addNewItem} className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm">+ Añadir</button>
+                  <button onClick={() => { setNewAddedName(''); setNewAddedAmount(''); }} className="px-3 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded text-sm">Limpiar</button>
+                </div>
+
+                <div className="space-y-2">
+                  {addedItems.length === 0 && <div className={`text-sm ${theme === 'dark' ? 'text-gray-300' : 'text-gray-500'}`}>No hay adicionales</div>}
+                  {addedItems.map(item => (
+                    <div key={item.id} className={`flex items-center justify-between p-2 rounded ${theme === 'dark' ? 'bg-gray-800' : 'bg-gray-50'}`}>
+                      <div>
+                        <div className={`text-sm font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{item.name}</div>
+                        <div className={`text-xs ${theme === 'dark' ? 'text-gray-300' : 'text-gray-500'}`}>{formatPrice(item.amount)}</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input type="number" value={item.amount} onChange={(e) => _editAddedItem(item.id, { amount: Number(e.target.value || 0) })} className={`w-24 px-2 py-1 rounded text-sm ${theme === 'dark' ? 'bg-gray-700 text-white border border-gray-600' : 'bg-white text-gray-900 border border-gray-300'}`} />
+                        <button onClick={() => _removeAddedItem(item.id)} className="px-2 py-1 bg-red-600 text-white rounded text-sm">Eliminar</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-3 text-sm">
+                  <span className="font-medium">Total adicionales: </span>
+                  <span className="font-bold">{formatPrice(addedItems.reduce((s, a) => s + (Number(a.amount || 0)), 0))}</span>
+                </div>
+              </div>
 
               {/* Calculadora de vueltos */}
               {showChangeCalculator && calculatedChange > 0 && (
