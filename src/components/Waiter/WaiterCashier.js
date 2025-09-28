@@ -1,7 +1,7 @@
 // src/components/Waiter/WaiterCashier.js
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../../config/firebase';
-import { collection, onSnapshot, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, onSnapshot, updateDoc, doc, serverTimestamp, addDoc } from 'firebase/firestore';
 import { 
   MagnifyingGlassIcon, 
   CurrencyDollarIcon, 
@@ -39,6 +39,12 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
     }
   }, [addedItems, selectedOrder, paymentMode]);
   const [currentTime, setCurrentTime] = useState(new Date());
+  // Estados para creación manual de pedidos/pagos desde Caja
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [manualOrder, setManualOrder] = useState({ orderType: 'almuerzo', tableNumber: '', takeaway: false, total: '', paymentMethod: 'efectivo', note: '' });
+  const [manualAddedItems, setManualAddedItems] = useState([]);
+  const [manualNewAddedName, setManualNewAddedName] = useState('');
+  const [manualNewAddedAmount, setManualNewAddedAmount] = useState('');
 
   // Estados para calculadora de vueltos
   const [showChangeCalculator, setShowChangeCalculator] = useState(false);
@@ -548,6 +554,7 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
           </h2>
           <div className="flex items-center space-x-3">
             <div className="text-sm text-gray-400">{currentTime.toLocaleTimeString('es-CO')}</div>
+            <button onClick={() => setShowCreateModal(true)} className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg">➕ Crear Pedido</button>
             {/* Botón global de eliminar todas removido: ahora se usa el icono por mesa */}
           </div>
         </div>
@@ -754,6 +761,7 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
                     </div>
                   );
                 })}
+                
               </div>
 
               {/* Estado de la mesa */}
@@ -767,6 +775,114 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
           );
         })}
         {/* Sección: Pedidos Completados */}
+        {/* Modal: Crear Pedido Manual (desde Caja) */}
+        {showCreateModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className={`${theme === 'dark' ? 'bg-gray-800' : 'bg-white'} rounded-xl shadow-2xl w-full max-w-md`}> 
+              <div className="p-6">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className={`text-lg font-bold ${theme === 'dark' ? 'text-gray-100' : 'text-gray-900'}`}>➕ Crear Pedido Manual</h3>
+                    <button onClick={() => setShowCreateModal(false)} className={`text-gray-400 hover:text-gray-200`}><XCircleIcon className="w-6 h-6" /></button>
+                  </div>
+
+                <div className="mb-3">
+                  <label className="text-sm text-gray-300">Tipo</label>
+                  <select value={manualOrder.orderType} onChange={(e) => setManualOrder(prev => ({ ...prev, orderType: e.target.value }))} className={`w-full mt-1 p-2 rounded border ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`}>
+                    <option value="almuerzo">Almuerzo</option>
+                    <option value="desayuno">Desayuno</option>
+                  </select>
+                </div>
+
+                <div className="mb-3">
+                  <label className="text-sm text-gray-300">Mesa (dejar vacío para Para llevar)</label>
+                          <input value={manualOrder.tableNumber} onChange={(e) => setManualOrder(prev => ({ ...prev, tableNumber: e.target.value }))} className={`w-full mt-1 p-2 rounded border ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'}`} />
+                </div>
+
+                <div className="mb-3">
+                  <label className="text-sm text-gray-300">Total (COP)</label>
+                          <input type="number" value={manualOrder.total} onChange={(e) => setManualOrder(prev => ({ ...prev, total: e.target.value }))} className={`w-full mt-1 p-2 rounded border ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`} />
+                </div>
+
+                <div className="mb-3">
+                  <label className="text-sm text-gray-300">Método de pago</label>
+                  <select value={manualOrder.paymentMethod} onChange={(e) => setManualOrder(prev => ({ ...prev, paymentMethod: e.target.value }))} className={`w-full mt-1 p-2 rounded border ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`}>
+                    <option value="efectivo">Efectivo</option>
+                    <option value="nequi">Nequi</option>
+                    <option value="daviplata">Daviplata</option>
+                  </select>
+                </div>
+
+                <div className="mb-3">
+                  <label className="text-sm text-gray-300">Nota (opcional)</label>
+                  <input value={manualOrder.note} onChange={(e) => setManualOrder(prev => ({ ...prev, note: e.target.value }))} className={`w-full mt-1 p-2 rounded border ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'}`} />
+                </div>
+
+                {/* Adicionales manuales */}
+                <div className="mb-3">
+                  <div className="flex gap-2 mb-2">
+                    <input placeholder="Descripción" value={manualNewAddedName} onChange={(e) => setManualNewAddedName(e.target.value)} className={`flex-1 p-2 rounded border ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'}`} />
+                    <input placeholder="Monto" type="number" value={manualNewAddedAmount} onChange={(e) => setManualNewAddedAmount(e.target.value)} className={`w-28 p-2 rounded border ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`} />
+                    <button onClick={() => {
+                      const name = String(manualNewAddedName || '').trim();
+                      const amount = Math.floor(Number(manualNewAddedAmount || 0));
+                      if (!name || !amount) return setError('Nombre y monto del adicional son obligatorios');
+                      setManualAddedItems(prev => ([...prev, { id: `${Date.now()}`, name, amount }]));
+                      setManualNewAddedName(''); setManualNewAddedAmount('');
+                    }} className="px-3 py-1 bg-blue-600 text-white rounded">+Añadir</button>
+                  </div>
+                  <div className="space-y-1">
+                    {manualAddedItems.map(it => (
+                      <div key={it.id} className="flex justify-between items-center p-2 border rounded">
+                        <div>
+                  <div className="text-sm font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}">{it.name}</div>
+                  <div className={`text-xs ${theme === 'dark' ? 'text-gray-300' : 'text-gray-500'}`}>{formatPrice(it.amount)}</div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <input type="number" value={it.amount} onChange={(e) => setManualAddedItems(prev => prev.map(x => x.id === it.id ? ({ ...x, amount: Number(e.target.value || 0) }) : x))} className={`w-20 p-1 rounded border ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`} />
+                          <button onClick={() => setManualAddedItems(prev => prev.filter(x => x.id !== it.id))} className="px-2 py-1 bg-red-600 text-white rounded">Eliminar</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex space-x-3">
+                  <button onClick={() => setShowCreateModal(false)} className="flex-1 px-4 py-2 bg-gray-600 text-white rounded">Cancelar</button>
+                  <button onClick={async () => {
+                    try {
+                      // Construir payload
+                      const payload = {
+                        orderType: manualOrder.orderType,
+                        tableNumber: manualOrder.tableNumber ? String(manualOrder.tableNumber).trim() : undefined,
+                        takeaway: !manualOrder.tableNumber,
+                        total: Math.round(Number(manualOrder.total) || manualAddedItems.reduce((s,a)=>s+(Number(a.amount||0)),0)),
+                        paymentMethod: manualOrder.paymentMethod,
+                        paymentAmount: Math.round(Number(manualOrder.total) || 0),
+                        isPaid: true,
+                        status: 'Completada',
+                        paymentDate: serverTimestamp(),
+                        addedItems: manualAddedItems.map(a => ({ id: a.id, name: a.name, amount: Number(a.amount || 0) })),
+                        createdAt: serverTimestamp(),
+                        updatedAt: serverTimestamp(),
+                        paymentNote: manualOrder.note || ''
+                      };
+
+                      const collectionName = manualOrder.orderType === 'almuerzo' ? 'tableOrders' : 'breakfastOrders';
+                      const ref = await addDoc(collection(db, collectionName), payload);
+                      setSuccess('✅ Pedido creado y marcado como pagado');
+                      setShowCreateModal(false);
+                      // Optimistic update local state
+                      const newDoc = { id: ref.id, ...payload, paymentDate: new Date() };
+                      if (collectionName === 'tableOrders') setTableOrders(prev => [newDoc, ...prev]); else setBreakfastOrders(prev => [newDoc, ...prev]);
+                    } catch (err) {
+                      setError(`Error creando pedido: ${err.message}`);
+                    }
+                  }} className="flex-1 px-4 py-2 bg-green-600 text-white rounded">Crear y Marcar Pagado</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="mt-8">
           <h3 className="text-lg font-semibold text-gray-200 mb-3">✅ Pedidos Completados</h3>
           {/* Botón global eliminado a petición del usuario; ahora se permite eliminación por mesa y por orden */}
