@@ -1,7 +1,9 @@
 // src/components/Waiter/WaiterCashier.js
 import React, { useState, useEffect, useMemo } from 'react';
+import { calculateMealPrice } from '../../utils/MealCalculations';
+import { calculateBreakfastPrice } from '../../utils/BreakfastLogic';
 import { db } from '../../config/firebase';
-import { collection, onSnapshot, updateDoc, doc, serverTimestamp, addDoc } from 'firebase/firestore';
+import { collection, onSnapshot, updateDoc, doc, serverTimestamp, addDoc, getDoc, runTransaction } from 'firebase/firestore';
 import { 
   MagnifyingGlassIcon, 
   CurrencyDollarIcon, 
@@ -24,27 +26,49 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
   const [paymentData, setPaymentData] = useState({});
   const [paymentLines, setPaymentLines] = useState([]); // para modo split: { method, amount }
   const [cashAmount, setCashAmount] = useState('');
+  const [editableOrderType, setEditableOrderType] = useState('almuerzo'); // Para editar tipo en modal de pago
   // Adicionales que el cliente pidió (antes de confirmar pago)
   const [addedItems, setAddedItems] = useState([]); // { id, name, amount }
+  const [addedItemsSource, setAddedItemsSource] = useState('new'); // 'new' | 'persisted'
   const [newAddedName, setNewAddedName] = useState('');
   const [newAddedAmount, setNewAddedAmount] = useState('');
 
-  // Si cambian los adicionales, ajustar el monto a pagar automáticamente en modo simple
+  // Si cambian los adicionales, ajustar el monto a pagar automáticamente
+  // displayedMainItems representa los items principales recuperados del pedido
+  const [displayedMainItems, setDisplayedMainItems] = useState([]); // { id, name, unitPrice, quantity }
+
   useEffect(() => {
     if (!selectedOrder) return;
-    const base = parseFloat(selectedOrder.total || 0) || 0;
-    const addedTotal = (addedItems || []).reduce((s, a) => s + (Number(a.amount || 0)), 0);
-    if (paymentMode === 'simple') {
-      setPaymentData(prev => ({ ...prev, amount: Math.round(base + addedTotal) }));
+    // Calcular total a partir de los items principales actualmente mostrados y los adicionales temporales
+    const mainTotal = (displayedMainItems || []).reduce((s, it) => s + (Number(it.unitPrice || 0) * Number(it.quantity || 1)), 0);
+    const addedTotal = (addedItems || []).reduce((s, a) => s + (Number(a.amount || 0) * Number(a.quantity || 1)), 0);
+    // Siempre sumar mainTotal + addedTotal, ya que addedItems contiene las adiciones actuales
+    let newTotal = 0;
+    if (Array.isArray(displayedMainItems) && displayedMainItems.length) {
+      newTotal = Math.round(mainTotal + addedTotal);
+    } else {
+      // No hay items principales mostrados: partir del total guardado y añadir adicionales
+      newTotal = Math.round((parseFloat(selectedOrder.total || 0) || 0) + addedTotal);
     }
-  }, [addedItems, selectedOrder, paymentMode]);
+    setPaymentData(prev => ({ ...prev, amount: newTotal }));
+  }, [addedItems, selectedOrder, displayedMainItems]);
   const [currentTime, setCurrentTime] = useState(new Date());
   // Estados para creación manual de pedidos/pagos desde Caja
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createMode, setCreateMode] = useState('manual'); // 'manual' or 'quick'
   const [manualOrder, setManualOrder] = useState({ orderType: 'almuerzo', tableNumber: '', takeaway: false, total: '', paymentMethod: 'efectivo', note: '' });
   const [manualAddedItems, setManualAddedItems] = useState([]);
   const [manualNewAddedName, setManualNewAddedName] = useState('');
   const [manualNewAddedAmount, setManualNewAddedAmount] = useState('');
+
+  // Estados para modo rápido
+  const [quickOrderType, setQuickOrderType] = useState('almuerzo'); // 'almuerzo' or 'desayuno'
+  const [quickTableNumber, setQuickTableNumber] = useState('');
+  const [quickPaymentMethod, setQuickPaymentMethod] = useState('efectivo');
+  const [quickNote, setQuickNote] = useState('');
+  const [quickItems, setQuickItems] = useState([]); // { id, type, subType, quantity, price, additions: [] }
+  const [quickAdditions, setQuickAdditions] = useState([]); // Adiciones para almuerzo
+  const [quickBreakfastAdditions, setQuickBreakfastAdditions] = useState([]); // Adiciones para desayuno
 
   // Estados para calculadora de vueltos
   const [showChangeCalculator, setShowChangeCalculator] = useState(false);
@@ -68,6 +92,24 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
     };
   }, [setError]);
 
+  // Cargar adiciones para modo rápido
+  useEffect(() => {
+    const unsubscribeAdditions = onSnapshot(collection(db, 'additions'), (snapshot) => {
+      const additions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setQuickAdditions(additions);
+    }, (error) => console.error('Error cargando adiciones:', error));
+
+    const unsubscribeBreakfastAdditions = onSnapshot(collection(db, 'breakfastAdditions'), (snapshot) => {
+      const additions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setQuickBreakfastAdditions(additions);
+    }, (error) => console.error('Error cargando adiciones de desayuno:', error));
+
+    return () => {
+      unsubscribeAdditions();
+      unsubscribeBreakfastAdditions();
+    };
+  }, []);
+
   // Actualizar hora cada segundo
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -78,7 +120,7 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
   const allOrders = useMemo(() => {
     const combined = [...tableOrders, ...breakfastOrders];
     return combined
-      .filter(order => !order.isPaid)
+      .filter(order => !order.isPaid && order.status !== 'Completada')
       .filter(order => {
         return (
           searchTerm === '' ||
@@ -167,6 +209,273 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
     }).format(price);
   };
 
+  // Extrae una lista de items (id, name, unitPrice, quantity) a partir de la orden
+  const extractDisplayedItems = (order) => {
+    if (!order || typeof order !== 'object') return [];
+    const mains = [];
+
+    // Helper para empujar de forma consistente
+    const pushItem = (id, name, unitPrice, quantity = 1) => {
+      mains.push({ id: id || `${order.id || 'o'}-${mains.length}`, name: String(name || 'Item'), unitPrice: Math.round(Number(unitPrice || 0) || 0), quantity: Number(quantity || 1) });
+    };
+
+    // Preferir UNA sola fuente para evitar duplicados: meals > breakfasts > items > addedItems > additions > singular > candidate arrays
+    if (Array.isArray(order.meals) && order.meals.length) {
+      order.meals.forEach((m, idx) => {
+        const nameParts = [];
+        if (m.soup && m.soup.name) nameParts.push(m.soup.name);
+        if (m.principle && Array.isArray(m.principle) && m.principle.length) nameParts.push(m.principle.map(p => p.name).join(', '));
+        if (m.protein && m.protein.name) nameParts.push(m.protein.name);
+        const name = nameParts.join(' - ') || m.name || `Almuerzo ${idx + 1}`;
+        const unit = Number(m.price || m.unitPrice || m.total || 0) || calculateMealPrice(m) || 0;
+        pushItem(m.id || `${order.id}-meal-${idx}`, name, unit, m.quantity || 1);
+      });
+      // Agrupar y devolver
+      const grouped = {};
+      mains.forEach(it => {
+        const key = `${String(it.name).trim().toLowerCase()}|${Number(it.unitPrice || 0)}`;
+        if (!grouped[key]) grouped[key] = { ...it, quantity: Number(it.quantity || 1) };
+        else grouped[key].quantity = Number(grouped[key].quantity || 0) + Number(it.quantity || 1);
+      });
+      return Object.values(grouped);
+    }
+
+    if (Array.isArray(order.breakfasts) && order.breakfasts.length) {
+      order.breakfasts.forEach((b, idx) => {
+        const name = [b.type?.name, b.protein?.name, b.drink?.name].filter(Boolean).join(' - ') || b.name || `Desayuno ${idx + 1}`;
+        const unit = Number(b.price || b.unitPrice || b.total || 0) || calculateBreakfastPrice(b, 3) || 0;
+        pushItem(b.id || `${order.id}-breakfast-${idx}`, name, unit, b.quantity || 1);
+      });
+      const grouped = {};
+      mains.forEach(it => {
+        const key = `${String(it.name).trim().toLowerCase()}|${Number(it.unitPrice || 0)}`;
+        if (!grouped[key]) grouped[key] = { ...it, quantity: Number(it.quantity || 1) };
+        else grouped[key].quantity = Number(grouped[key].quantity || 0) + Number(it.quantity || 1);
+      });
+      return Object.values(grouped);
+    }
+
+    if (Array.isArray(order.items) && order.items.length) {
+      order.items.forEach((it, idx) => {
+        const name = it.name || it.title || it.product || `Item ${idx + 1}`;
+        const qty = it.quantity || it.qty || it.count || 1;
+        const unit = Number(it.price || it.unitPrice || it.amount || 0) || 0;
+        pushItem(it.id || `${order.id}-item-${idx}`, name, unit, qty);
+      });
+      const grouped = {};
+      mains.forEach(it => {
+        const key = `${String(it.name).trim().toLowerCase()}|${Number(it.unitPrice || 0)}`;
+        if (!grouped[key]) grouped[key] = { ...it, quantity: Number(it.quantity || 1) };
+        else grouped[key].quantity = Number(grouped[key].quantity || 0) + Number(it.quantity || 1);
+      });
+      return Object.values(grouped);
+    }
+
+    if (Array.isArray(order.addedItems) && order.addedItems.length) {
+      order.addedItems.forEach((a, idx) => {
+        const name = a.name || a.description || `Adicional ${idx + 1}`;
+        const unit = Number(a.amount || a.price || 0) || 0;
+        pushItem(a.id || `${order.id}-added-${idx}`, name, unit, a.quantity || 1);
+      });
+      const grouped = {};
+      mains.forEach(it => {
+        const key = `${String(it.name).trim().toLowerCase()}|${Number(it.unitPrice || 0)}`;
+        if (!grouped[key]) grouped[key] = { ...it, quantity: Number(it.quantity || 1) };
+        else grouped[key].quantity = Number(grouped[key].quantity || 0) + Number(it.quantity || 1);
+      });
+      return Object.values(grouped);
+    }
+
+    if (Array.isArray(order.additions) && order.additions.length) {
+      order.additions.forEach((a, idx) => {
+        const name = a.name || a.description || `Adición ${idx + 1}`;
+        const unit = Number(a.price || a.amount || 0) || 0;
+        const qty = a.quantity || a.qty || 1;
+        pushItem(a.id || `${order.id}-addition-${idx}`, name, unit, qty);
+      });
+      const grouped = {};
+      mains.forEach(it => {
+        const key = `${String(it.name).trim().toLowerCase()}|${Number(it.unitPrice || 0)}`;
+        if (!grouped[key]) grouped[key] = { ...it, quantity: Number(it.quantity || 1) };
+        else grouped[key].quantity = Number(grouped[key].quantity || 0) + Number(it.quantity || 1);
+      });
+      return Object.values(grouped);
+    }
+
+    // 5) Si hay un solo objeto breakfast o meal (no array), extraerlo igual
+    if (order.breakfast && typeof order.breakfast === 'object' && !Array.isArray(order.breakfast)) {
+      const b = order.breakfast;
+      const name = b.type?.name || b.name || `Desayuno`;
+      const unit = Number(b.price || b.unitPrice || b.total || 0) || calculateBreakfastPrice(b, 3) || 0;
+      pushItem(b.id || `${order.id}-breakfast-0`, name, unit, b.quantity || 1);
+    }
+    if (order.meal && typeof order.meal === 'object' && !Array.isArray(order.meal)) {
+      const m = order.meal;
+      const name = m.soup?.name || m.name || `Almuerzo`;
+      const unit = Number(m.price || m.unitPrice || m.total || 0) || calculateMealPrice(m) || 0;
+      pushItem(m.id || `${order.id}-meal-0`, name, unit, m.quantity || 1);
+    }
+    // Si se agregó algún item, devolver agrupado
+    if (mains.length > 0) {
+      const grouped = {};
+      mains.forEach(it => {
+        const key = `${String(it.name).trim().toLowerCase()}|${Number(it.unitPrice || 0)}`;
+        if (!grouped[key]) grouped[key] = { ...it, quantity: Number(it.quantity || 1) };
+        else grouped[key].quantity = Number(grouped[key].quantity || 0) + Number(it.quantity || 1);
+      });
+      return Object.values(grouped);
+    }
+
+    // Si no se encontró nada, intentar reconstruir el item principal desde los datos básicos de la orden
+    if ((order.orderType === 'desayuno' || order.orderType === 'almuerzo') && (order.total || order.paymentAmount)) {
+      // Si hay un nombre claro, úsalo, si no, fallback
+      let name = '';
+      if (order.orderType === 'desayuno') name = 'Solo Huevos';
+      if (order.orderType === 'almuerzo') name = 'Almuerzo';
+      if (order.name) name = order.name;
+      // Determinar cantidad
+      let quantity = Number(order.quantity || order.qty || 1);
+      if (!quantity || quantity < 1) quantity = 1;
+      // Calcular unitPrice
+      const total = Number(order.paymentAmount || order.total || 0);
+      const unit = quantity > 1 ? Math.round(total / quantity) : total;
+      if (total > 0) {
+        pushItem(`${order.id}-main-fallback`, name, unit, quantity);
+        return mains;
+      }
+    }
+
+    // 6) As a last resort, if there are any keys that look like line items (search for objects with name+price)
+    const candidateArrays = Object.keys(order).filter(k => Array.isArray(order[k]));
+    for (const key of candidateArrays) {
+      const arr = order[key];
+      if (!arr || !arr.length) continue;
+      const first = arr[0];
+      if (first && (first.name || first.title) && (first.price || first.amount || first.unitPrice)) {
+        arr.forEach((it, idx) => {
+          const name = it.name || it.title || `Item ${idx + 1}`;
+          const qty = it.quantity || it.qty || 1;
+          const unit = Number(it.price || it.amount || it.unitPrice || 0) || 0;
+          pushItem(it.id || `${order.id}-${key}-${idx}`, name, unit, qty);
+        });
+        const grouped = {};
+        mains.forEach(it => {
+          const k = `${String(it.name).trim().toLowerCase()}|${Number(it.unitPrice || 0)}`;
+          if (!grouped[k]) grouped[k] = { ...it, quantity: Number(it.quantity || 1) };
+          else grouped[k].quantity = Number(grouped[k].quantity || 0) + Number(it.quantity || 1);
+        });
+        return Object.values(grouped);
+      }
+    }
+
+    return [];
+  };
+
+  // Funciones para modo rápido
+  const getQuickPrice = (type, subType, orderType) => {
+    const prices = {
+      almuerzo: {
+        normal: { table: 12000, takeaway: 13000 },
+        bandeja: { table: 11000, takeaway: 12000 },
+        mojarra: { table: 16000, takeaway: 16000 }
+      },
+      desayuno: {
+        solo_huevos: { table: 7000, takeaway: 8000 },
+        solo_caldo_costilla: { table: 7000, takeaway: 8000 },
+        solo_caldo_pescado: { table: 7000, takeaway: 8000 },
+        solo_caldo_pata: { table: 8000, takeaway: 9000 },
+        solo_caldo_pajarilla: { table: 9000, takeaway: 10000 },
+        desayuno_completo_costilla: { table: 11000, takeaway: 12000 },
+        desayuno_completo_pescado: { table: 11000, takeaway: 12000 },
+        desayuno_completo_pata: { table: 12000, takeaway: 13000 },
+        desayuno_completo_pajarilla: { table: 13000, takeaway: 14000 },
+        monona: { table: 13000, takeaway: 14000 }
+      }
+    };
+    return prices[type]?.[subType]?.[orderType] || 0;
+  };
+
+  const getQuickName = (type, subType) => {
+    const names = {
+      almuerzo: {
+        normal: 'Almuerzo Normal',
+        bandeja: 'Solo Bandeja',
+        mojarra: 'Mojarra'
+      },
+      desayuno: {
+        solo_huevos: 'Solo Huevos',
+        solo_caldo_costilla: 'Solo Caldo Costilla',
+        solo_caldo_pescado: 'Solo Caldo Pescado',
+        solo_caldo_pata: 'Solo Caldo Pata',
+        solo_caldo_pajarilla: 'Solo Caldo Pajarilla',
+        desayuno_completo_costilla: 'Desayuno Completo Costilla',
+        desayuno_completo_pescado: 'Desayuno Completo Pescado',
+        desayuno_completo_pata: 'Desayuno Completo Pata',
+        desayuno_completo_pajarilla: 'Desayuno Completo Pajarilla',
+        monona: 'Mañona'
+      }
+    };
+    return names[type]?.[subType] || subType;
+  };
+
+  const addQuickItem = (type, subType, orderType) => {
+    const price = getQuickPrice(type, subType, orderType);
+    const name = getQuickName(type, subType);
+    const existing = quickItems.find(item => item.type === type && item.subType === subType && item.orderType === orderType);
+    if (existing) {
+      updateQuickItemQuantity(existing.id, existing.quantity + 1);
+    } else {
+      const newItem = {
+        id: `${Date.now()}-${Math.random()}`,
+        type,
+        subType,
+        orderType,
+        name,
+        price,
+        quantity: 1
+      };
+      setQuickItems(prev => [...prev, newItem]);
+    }
+  };
+
+  const updateQuickItemQuantity = (id, newQuantity) => {
+    if (newQuantity <= 0) {
+      removeQuickItem(id);
+    } else {
+      setQuickItems(prev => prev.map(item => 
+        item.id === id ? { ...item, quantity: newQuantity } : item
+      ));
+    }
+  };
+
+  const removeQuickItem = (id) => {
+    setQuickItems(prev => prev.filter(item => item.id !== id));
+  };
+
+  const calculateQuickTotal = () => {
+    return quickItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  };
+
+  // Adiciones según el tipo
+  const currentQuickAdditions = quickOrderType === 'almuerzo' ? quickAdditions : quickBreakfastAdditions;
+
+  const addQuickAddition = (addition) => {
+    const existing = quickItems.find(item => item.type === 'addition' && item.subType === addition.name);
+    if (existing) {
+      updateQuickItemQuantity(existing.id, existing.quantity + 1);
+    } else {
+      const newItem = {
+        id: `${Date.now()}-${Math.random()}`,
+        type: 'addition',
+        subType: addition.name,
+        name: addition.name,
+        price: addition.price || 0,
+        quantity: 1
+      };
+      setQuickItems(prev => [...prev, newItem]);
+    }
+  };
+
   // Obtener etiqueta legible para una orden: preferir order.tableNumber, si no existe
   // usar order.meals[0]?.tableNumber (caso donde la mesa se guardó en la primera comida),
   // si no hay mesa, mostrar 'Para llevar' o un fallback con id.
@@ -204,21 +513,45 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
     }
   };
 
-  // Abrir modal de pago
-  const handleOpenPayment = (order) => {
-    setSelectedOrder(order);
-    setPaymentMode('simple');
-    setPaymentData({
-      method: 'efectivo',
-      amount: parseFloat(order.total) || 0,
-      note: ''
-    });
-    setPaymentLines([]);
-    setCashAmount('');
-    setCalculatedChange(0);
-    setShowChangeCalculator(false);
-    // Inicializar adicionales desde la orden si existen
-    setAddedItems(Array.isArray(order.addedItems) ? order.addedItems.map((it, idx) => ({ id: it.id || idx, name: it.name, amount: Number(it.amount || 0) })) : []);
+  // Abrir modal de pago (leer versión más reciente del documento para evitar datos obsoletos)
+  const handleOpenPayment = async (order) => {
+    const collection_name = order.orderType === 'mesa' ? 'tableOrders' : 'breakfastOrders';
+    let freshOrder = order;
+    try {
+      const snap = await getDoc(doc(db, collection_name, order.id));
+      if (snap && snap.exists()) {
+        freshOrder = { id: snap.id, ...snap.data(), orderType: order.orderType };
+      }
+    } catch (err) {
+      console.warn('No se pudo leer la orden antes de abrir modal, usando la versión local:', err.message || err);
+    }
+
+    // Al abrir el modal, solo mostrar los items y adicionales actuales (sin residuos)
+    setSelectedOrder(freshOrder);
+    const items = extractDisplayedItems(freshOrder).filter(it => it.quantity > 0); // solo los que existen
+    setDisplayedMainItems(items);
+    const initialAdded = Array.isArray(freshOrder.addedItems)
+      ? freshOrder.addedItems.filter(it => Number(it.amount) > 0).map((it, idx) => ({ id: it.id || idx, name: it.name, amount: Number(it.amount || 0), quantity: Number(it.quantity || 1) }))
+      : [];
+    setAddedItems(initialAdded);
+    setAddedItemsSource(initialAdded && initialAdded.length ? 'persisted' : 'new');
+    const mainTotal = items.reduce((s, it) => s + (Number(it.unitPrice || 0) * Number(it.quantity || 1)), 0);
+    const addedTotal = initialAdded.reduce((s, a) => s + (Number(a.amount || 0)), 0);
+    if (freshOrder.paymentLines && Array.isArray(freshOrder.paymentLines) && freshOrder.paymentLines.length > 0) {
+      setPaymentMode('split');
+      setPaymentLines(freshOrder.paymentLines.map(l => ({ method: l.method || 'efectivo', amount: String(l.amount || 0) })));
+      const linesTotal = freshOrder.paymentLines.reduce((s, x) => s + (parseFloat(x.amount) || 0), 0);
+      setPaymentData({ method: freshOrder.paymentMethod || 'efectivo', amount: Math.round(linesTotal), note: freshOrder.paymentNote || '' });
+    } else {
+      setPaymentMode('simple');
+      setPaymentLines([]);
+      setPaymentData({ method: freshOrder.paymentMethod || 'efectivo', amount: Math.round(mainTotal + addedTotal) || Math.round(parseFloat(freshOrder.total) || 0), note: freshOrder.paymentNote || '' });
+    }
+
+    setCashAmount(freshOrder.cashReceived ? String(freshOrder.cashReceived) : '');
+    setCalculatedChange(freshOrder.changeGiven || 0);
+    setShowChangeCalculator(!!freshOrder.cashReceived);
+    setEditableOrderType(freshOrder.orderType || 'almuerzo');
     setNewAddedName('');
     setNewAddedAmount('');
     setShowPaymentModal(true);
@@ -251,38 +584,159 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
 
   // Procesar pago
   const handleProcessPayment = async () => {
-    if (!selectedOrder) return;
-
-    try {
-      console.log('Procesando pago - debug', { orderId: selectedOrder.id, addedItems, paymentData, paymentMode, paymentLines });
+      // ...código original...
       const updateData = {
         isPaid: true,
         status: 'Completada',
         paymentDate: serverTimestamp(),
         paymentMethod: paymentData.method,
-        // paymentAmount se calculará más abajo para garantizar que incluye 'addedItems' o 'paymentLines'
         paymentAmount: paymentData.amount,
         updatedAt: serverTimestamp()
       };
 
-      // Preparar lista final de adicionales: incluir cualquiera que esté en los inputs pero no se haya añadido con +Añadir
-      const finalAddedItems = [];
-      if (Array.isArray(addedItems) && addedItems.length) {
-        finalAddedItems.push(...addedItems.map(a => ({ id: a.id, name: a.name, amount: Number(a.amount || 0) })));
+      // Declarar filteredMainItems aquí para que esté disponible
+      const filteredMainItems = (displayedMainItems || []).filter(it => it.quantity > 0);
+
+      // Si no hay breakfasts/meals pero sí hay items principales filtrados, crear breakfasts/meals para persistirlos
+      if ((!Array.isArray(updateData.breakfasts) || updateData.breakfasts.length === 0) && selectedOrder.orderType === 'desayuno' && filteredMainItems.length > 0) {
+        // Crear breakfasts desde los items principales
+        updateData.breakfasts = filteredMainItems.map(it => ({
+          id: it.id,
+          name: it.name,
+          price: it.unitPrice,
+          quantity: it.quantity
+        }));
       }
-      // Si el cajero escribió un adicional en los inputs pero no presionó +Añadir, incluirlo también
+      if ((!Array.isArray(updateData.meals) || updateData.meals.length === 0) && selectedOrder.orderType === 'almuerzo' && filteredMainItems.length > 0) {
+        // Crear meals desde los items principales
+        updateData.meals = filteredMainItems.map(it => ({
+          id: it.id,
+          name: it.name,
+          price: it.unitPrice,
+          quantity: it.quantity
+        }));
+      }
+    if (!selectedOrder) return;
+
+    try {
+      // Solo guardar items principales y adicionales que existan (cantidad > 0 o monto > 0)
+      const filteredMainItems = (displayedMainItems || []).filter(it => it.quantity > 0);
+      const filteredAddedItems = (addedItems || []).filter(a => Number(a.amount) > 0);
+
+      // Lógica original, pero usando los filtrados
+      const updateData = {
+        isPaid: true,
+        status: 'Completada',
+        paymentDate: serverTimestamp(),
+        paymentMethod: paymentData.method,
+        paymentAmount: paymentData.amount,
+        updatedAt: serverTimestamp()
+      };
+
+      // Preparar lista final de adicionales
+      // Incluir siempre las adiciones actualmente mostradas (persistidas o nuevas)
+      const finalAddedItems = [];
+      if (filteredAddedItems.length) {
+        finalAddedItems.push(...filteredAddedItems.map(a => ({ id: a.id, name: a.name, amount: Number(a.amount || 0), quantity: Number(a.quantity || 1) })));
+      }
       if (newAddedName && newAddedAmount) {
         const pendingAmount = Math.floor(Number(newAddedAmount || 0));
         if (String(newAddedName).trim() !== '' && pendingAmount > 0) {
-          const pending = { id: `${Date.now()}-pending`, name: String(newAddedName).trim(), amount: pendingAmount };
+          const pending = { id: `${Date.now()}-pending`, name: String(newAddedName).trim(), amount: pendingAmount, quantity: 1 };
           finalAddedItems.push(pending);
         }
       }
 
+      // Calcular total principal desde los items filtrados
+      const mainTotal = filteredMainItems.reduce((s, it) => s + (Number(it.unitPrice || 0) * Number(it.quantity || 1)), 0);
+
+      // Persistir cambios en meals/breakfasts si aplica
+      if (Array.isArray(filteredMainItems) && filteredMainItems.length) {
+        const normalize = (s) => String(s || '').trim().toLowerCase();
+        if (Array.isArray(selectedOrder.breakfasts) && selectedOrder.breakfasts.length) {
+          const displayedMap = {};
+          filteredMainItems.forEach(di => {
+            const k = `${normalize(di.name)}|${Number(di.unitPrice || 0)}`;
+            displayedMap[k] = (displayedMap[k] || 0) + Number(di.quantity || 0);
+          });
+          const groups = {};
+          selectedOrder.breakfasts.forEach((b, idx) => {
+            const bName = [b.type?.name, b.protein?.name, b.drink?.name, b.name].filter(Boolean).join(' - ') || b.name || '';
+            const price = Number(b.price || b.unitPrice || b.total || 0) || 0;
+            const key = `${normalize(bName)}|${price}`;
+            if (!groups[key]) groups[key] = [];
+            groups[key].push(idx);
+          });
+          const merged = selectedOrder.breakfasts.map((b, idx) => ({ ...b }));
+          Object.keys(groups).forEach(key => {
+            const idxs = groups[key];
+            const totalQty = Math.round(displayedMap[key] || 0);
+            if (idxs.length === 0) return;
+            const base = Math.floor(totalQty / idxs.length);
+            let remainder = totalQty % idxs.length;
+            idxs.forEach((origIndex, i) => {
+              const assign = base + (remainder > 0 ? 1 : 0);
+              merged[origIndex].quantity = assign;
+              if (assign > 0 && filteredMainItems.length) {
+                const di = filteredMainItems.find(d => `${normalize(d.name)}|${Number(d.unitPrice||0)}` === key);
+                if (di) merged[origIndex].price = di.unitPrice;
+              }
+              if (remainder > 0) remainder -= 1;
+            });
+          });
+          updateData.breakfasts = merged;
+        }
+        if (Array.isArray(selectedOrder.meals) && selectedOrder.meals.length) {
+          const displayedMapM = {};
+          filteredMainItems.forEach(di => {
+            const k = `${normalize(di.name)}|${Number(di.unitPrice || 0)}`;
+            displayedMapM[k] = (displayedMapM[k] || 0) + Number(di.quantity || 0);
+          });
+          const groupsM = {};
+          selectedOrder.meals.forEach((m, idx) => {
+            const nameParts = [];
+            if (m.soup && m.soup.name) nameParts.push(m.soup.name);
+            if (m.principle && Array.isArray(m.principle) && m.principle.length) nameParts.push(m.principle.map(p => p.name).join(', '));
+            if (m.protein && m.protein.name) nameParts.push(m.protein.name);
+            const mName = nameParts.join(' - ') || m.name || '';
+            const price = Number(m.price || m.unitPrice || m.total || 0) || 0;
+            const key = `${normalize(mName)}|${price}`;
+            if (!groupsM[key]) groupsM[key] = [];
+            groupsM[key].push(idx);
+          });
+          const mergedMeals = selectedOrder.meals.map((m) => ({ ...m }));
+          Object.keys(groupsM).forEach(key => {
+            const idxs = groupsM[key];
+            const totalQty = Math.round(displayedMapM[key] || 0);
+            if (idxs.length === 0) return;
+            const base = Math.floor(totalQty / idxs.length);
+            let remainder = totalQty % idxs.length;
+            idxs.forEach((origIndex, i) => {
+              const assign = base + (remainder > 0 ? 1 : 0);
+              mergedMeals[origIndex].quantity = assign;
+              if (assign > 0 && filteredMainItems.length) {
+                const di = filteredMainItems.find(d => `${normalize(d.name)}|${Number(d.unitPrice||0)}` === key);
+                if (di) mergedMeals[origIndex].price = di.unitPrice;
+              }
+              if (remainder > 0) remainder -= 1;
+            });
+          });
+          updateData.meals = mergedMeals;
+        }
+      }
+
+      // Actualizar items si existen
+      if (Array.isArray(selectedOrder.items) && selectedOrder.items.length) {
+        updateData.items = filteredMainItems;
+      }
+
       if (finalAddedItems.length) {
-        const addedTotalFinal = finalAddedItems.reduce((s, a) => s + (Number(a.amount || 0)), 0);
+        const addedTotalFinal = finalAddedItems.reduce((s, a) => s + (Number(a.amount || 0) * Number(a.quantity || 1)), 0);
         updateData.addedItems = finalAddedItems;
-        updateData.total = (parseFloat(selectedOrder.total || 0) || 0) + addedTotalFinal;
+        updateData.total = Math.round(mainTotal + addedTotalFinal);
+      } else {
+        updateData.addedItems = [];
+        updateData.total = Math.round(mainTotal);
       }
 
       if (paymentData.note) updateData.paymentNote = paymentData.note;
@@ -292,44 +746,58 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
       }
 
       const collection_name = selectedOrder.orderType === 'mesa' ? 'tableOrders' : 'breakfastOrders';
-      // Si es pago dividido, añadimos paymentLines
-  // Calcular total de adicionales si existen (usar finalAddedItems si está definido)
-  const addedTotal = (typeof finalAddedItems !== 'undefined' ? finalAddedItems : (addedItems || [])).reduce((s, a) => s + (Number(a.amount || 0)), 0);
-
-      // Si es pago dividido, añadimos paymentLines y recalculamos paymentAmount
+      const addedTotal = finalAddedItems.reduce((s, a) => s + (Number(a.amount || 0) * Number(a.quantity || 1)), 0);
       if (paymentMode === 'split') {
         updateData.paymentLines = paymentLines.map(l => ({ method: l.method, amount: Number(l.amount) }));
         const linesTotal = paymentLines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0);
-        updateData.paymentAmount = Math.round(linesTotal + addedTotal);
-        // Indicar método múltiple para evitar sobrescribir con paymentData.method que puede ser un método simple
+        updateData.paymentAmount = Math.round(linesTotal + (filteredMainItems.length ? 0 : addedTotal));
         updateData.paymentMethod = 'multiple';
       } else {
-        // Asegurar que paymentAmount refleje paymentData.amount actualizado (incluyendo adicionales)
-        // Si el cajero no añadió la línea pero dejó los inputs con un valor pendiente, paymentData.amount puede no incluirlo,
-        // por eso usamos selectedOrder.total + addedTotal como fuente de verdad si addedTotal > 0.
-        if ((addedTotal || 0) > 0) {
-          updateData.paymentAmount = Math.round((parseFloat(selectedOrder.total) || 0) + addedTotal);
-        } else {
-          updateData.paymentAmount = Math.round(parseFloat(paymentData.amount) || parseFloat(selectedOrder.total) || 0);
-        }
+        updateData.paymentAmount = Math.round(mainTotal + addedTotal);
       }
 
-      console.log('Procesando pago - data a enviar a Firestore', { updateData, addedTotal, paymentLines });
-      await updateDoc(doc(db, collection_name, selectedOrder.id), updateData);
+      // Guardar en Firestore (transacción)
+      try {
+        await runTransaction(db, async (tx) => {
+          const ref = doc(db, collection_name, selectedOrder.id);
+          const snap = await tx.get(ref);
+          if (!snap.exists()) throw new Error('Documento no existe en Firestore al intentar procesar pago');
+          const current = snap.data();
+          // Actualizar meals/breakfasts eliminando los que tengan cantidad 0
+          if (Array.isArray(updateData.breakfasts)) {
+            updateData.breakfasts = updateData.breakfasts.filter(b => Number(b.quantity) > 0);
+          }
+          if (Array.isArray(updateData.meals)) {
+            updateData.meals = updateData.meals.filter(m => Number(m.quantity) > 0);
+          }
+          if (Array.isArray(updateData.items)) {
+            updateData.items = updateData.items.filter(it => Number(it.quantity) > 0);
+          }
+          if (Array.isArray(updateData.addedItems)) {
+            updateData.addedItems = updateData.addedItems.filter(a => Number(a.quantity || 1) > 0 && Number(a.amount || 0) > 0);
+          }
+          tx.update(ref, updateData);
+        });
+      } catch (txErr) {
+        setError(`Error al procesar pago en transacción: ${txErr.message}`);
+        return;
+      }
 
-      // Actualización optimista local para reflejar el pago inmediatamente en la UI
+      // Actualización optimista local
       const optimisticFields = {
         isPaid: true,
         status: 'Completada',
         paymentMethod: updateData.paymentMethod,
         paymentAmount: updateData.paymentAmount,
-        paymentDate: new Date()
+        paymentDate: new Date(),
+        total: updateData.total,
+        addedItems: updateData.addedItems
       };
-      if (updateData.addedItems) optimisticFields.addedItems = updateData.addedItems;
-      if (updateData.total) optimisticFields.total = updateData.total;
       if (updateData.paymentLines) optimisticFields.paymentLines = updateData.paymentLines;
       if (updateData.cashReceived) optimisticFields.cashReceived = updateData.cashReceived;
       if (updateData.changeGiven) optimisticFields.changeGiven = updateData.changeGiven;
+      if (updateData.breakfasts) optimisticFields.breakfasts = updateData.breakfasts;
+      if (updateData.items) optimisticFields.items = updateData.items;
 
       if (collection_name === 'tableOrders') {
         setTableOrders(prev => prev.map(o => o.id === selectedOrder.id ? ({ ...o, ...optimisticFields }) : o));
@@ -350,10 +818,18 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
     const name = String(newAddedName || '').trim();
     const amount = Math.floor(Number(newAddedAmount || 0));
     if (!name || !amount) return setError('Nombre y monto del adicional son obligatorios');
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2,7)}`;
-    const newItem = { id, name, amount };
-    console.log('Añadiendo adicional:', newItem);
-    setAddedItems(prev => ([...prev, newItem]));
+    const existing = addedItems.find(item => item.name === name && item.amount === amount);
+    if (existing) {
+      setAddedItems(prev => prev.map(item => 
+        item.id === existing.id ? { ...item, quantity: (item.quantity || 1) + 1 } : item
+      ));
+    } else {
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2,7)}`;
+      const newItem = { id, name, amount, quantity: 1 };
+      console.log('Añadiendo adicional:', newItem);
+      setAddedItems(prev => ([...prev, newItem]));
+      setAddedItemsSource('new');
+    }
     setNewAddedName('');
     setNewAddedAmount('');
   };
@@ -362,9 +838,64 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
 
   const editAddedItem = (id, patch) => setAddedItems(prev => prev.map(i => i.id === id ? ({ ...i, ...patch }) : i));
 
+  const updateAddedItemQuantity = (id, newQty) => {
+    if (newQty <= 0) {
+      setAddedItems(prev => prev.filter(i => i.id !== id));
+    } else {
+      setAddedItems(prev => prev.map(i => i.id === id ? ({ ...i, quantity: Number(newQty) }) : i));
+    }
+  };
+
   // Añadidos: logs para depurar eliminación/edición
   const _removeAddedItem = (id) => { console.log('Eliminar adicional:', id); setAddedItems(prev => prev.filter(i => i.id !== id)); };
   const _editAddedItem = (id, patch) => { console.log('Editar adicional:', id, patch); setAddedItems(prev => prev.map(i => i.id === id ? ({ ...i, ...patch }) : i)); };
+
+  // Agregar adición rápida a la orden en edición
+  const addQuickAdditionToOrder = (addition) => {
+    const existing = addedItems.find(item => item.name === addition.name);
+    if (existing) {
+      setAddedItems(prev => prev.map(item => 
+        item.id === existing.id ? { ...item, quantity: (item.quantity || 1) + 1 } : item
+      ));
+    } else {
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2,7)}`;
+      const newItem = { 
+        id, 
+        name: addition.name, 
+        amount: addition.price || addition.amount || 0,
+        quantity: 1
+      };
+      console.log('Añadiendo adición rápida:', newItem);
+      setAddedItems(prev => ([...prev, newItem]));
+      setAddedItemsSource('new');
+    }
+  };
+
+  // Agregar item principal a la orden en edición
+  const addMainItemToOrder = (type, subType, orderType) => {
+    const price = getQuickPrice(type, subType, orderType);
+    const name = getQuickName(type, subType);
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2,7)}`;
+    const newItem = { 
+      id, 
+      name: `${name} (Principal)`, 
+      amount: price 
+    };
+    console.log('Añadiendo item principal:', newItem);
+    setAddedItems(prev => ([...prev, newItem]));
+    setAddedItemsSource('new');
+  };
+
+  // Funciones para manipular los items principales mostrados cuando se edita
+  const updateMainItemQuantity = (id, newQty) => {
+    if (newQty <= 0) {
+      setDisplayedMainItems(prev => prev.filter(i => i.id !== id));
+    } else {
+      setDisplayedMainItems(prev => prev.map(i => i.id === id ? ({ ...i, quantity: Number(newQty) }) : i));
+    }
+  };
+
+  const removeMainItem = (id) => setDisplayedMainItems(prev => prev.filter(i => i.id !== id));
 
   // Configurar pago dividido
   const handleSplitPayment = (type) => {
@@ -550,11 +1081,24 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl sm:text-2xl font-bold text-gray-100 flex items-center">
             <CurrencyDollarIcon className="w-6 h-6 mr-2" />
-            💰 Caja Registradora
+            Caja Registradora
           </h2>
           <div className="flex items-center space-x-3">
             <div className="text-sm text-gray-400">{currentTime.toLocaleTimeString('es-CO')}</div>
-            <button onClick={() => setShowCreateModal(true)} className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg">➕ Crear Pedido</button>
+            <button onClick={() => {
+              setShowCreateModal(true);
+              setCreateMode('manual');
+              // Resetear estados
+              setManualOrder({ orderType: 'almuerzo', tableNumber: '', takeaway: false, total: '', paymentMethod: 'efectivo', note: '' });
+              setManualAddedItems([]);
+              setManualNewAddedName('');
+              setManualNewAddedAmount('');
+              setQuickOrderType('almuerzo');
+              setQuickTableNumber('');
+              setQuickPaymentMethod('efectivo');
+              setQuickNote('');
+              setQuickItems([]);
+            }} className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg">➕ Crear Pedido</button>
             {/* Botón global de eliminar todas removido: ahora se usa el icono por mesa */}
           </div>
         </div>
@@ -778,13 +1322,31 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
         {/* Modal: Crear Pedido Manual (desde Caja) */}
         {showCreateModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className={`${theme === 'dark' ? 'bg-gray-800' : 'bg-white'} rounded-xl shadow-2xl w-full max-w-md`}> 
+            <div className={`${theme === 'dark' ? 'bg-gray-800' : 'bg-white'} rounded-xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto`}> 
               <div className="p-6">
                   <div className="flex justify-between items-center mb-4">
                     <h3 className={`text-lg font-bold ${theme === 'dark' ? 'text-gray-100' : 'text-gray-900'}`}>➕ Crear Pedido Manual</h3>
                     <button onClick={() => setShowCreateModal(false)} className={`text-gray-400 hover:text-gray-200`}><XCircleIcon className="w-6 h-6" /></button>
                   </div>
 
+                  {/* Pestañas */}
+                  <div className="flex mb-4 border-b border-gray-600">
+                    <button 
+                      onClick={() => setCreateMode('manual')} 
+                      className={`px-4 py-2 ${createMode === 'manual' ? 'border-b-2 border-blue-500 text-blue-400' : 'text-gray-400'}`}
+                    >
+                      Manual
+                    </button>
+                    <button 
+                      onClick={() => setCreateMode('quick')} 
+                      className={`px-4 py-2 ${createMode === 'quick' ? 'border-b-2 border-blue-500 text-blue-400' : 'text-gray-400'}`}
+                    >
+                      Rápido
+                    </button>
+                  </div>
+
+                  {createMode === 'manual' && (
+                    <>
                 <div className="mb-3">
                   <label className="text-sm text-gray-300">Tipo</label>
                   <select value={manualOrder.orderType} onChange={(e) => setManualOrder(prev => ({ ...prev, orderType: e.target.value }))} className={`w-full mt-1 p-2 rounded border ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`}>
@@ -845,35 +1407,312 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
                     ))}
                   </div>
                 </div>
+                    </>
+                  )}
+
+                  {createMode === 'quick' && (
+                    <div>
+                      {/* Tipo de pedido */}
+                      <div className="mb-3">
+                        <label className="text-sm text-gray-300">Tipo de Pedido</label>
+                        <div className="flex gap-2 mt-1">
+                          <button 
+                            onClick={() => setQuickOrderType('almuerzo')} 
+                            className={`px-4 py-2 rounded ${quickOrderType === 'almuerzo' ? 'bg-blue-600 text-white' : 'bg-gray-600 text-gray-300'}`}
+                          >
+                            🍽️ Almuerzo
+                          </button>
+                          <button 
+                            onClick={() => setQuickOrderType('desayuno')} 
+                            className={`px-4 py-2 rounded ${quickOrderType === 'desayuno' ? 'bg-blue-600 text-white' : 'bg-gray-600 text-gray-300'}`}
+                          >
+                            🌅 Desayuno
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Mesa o Llevar */}
+                      <div className="mb-3">
+                        <label className="text-sm text-gray-300">Tipo de Servicio</label>
+                        <div className="flex gap-2 mt-1">
+                          <button 
+                            onClick={() => setQuickTableNumber('')} 
+                            className={`px-4 py-2 rounded ${quickTableNumber === '' ? 'bg-green-600 text-white' : 'bg-gray-600 text-gray-300'}`}
+                          >
+                            🏃 Para Llevar
+                          </button>
+                          <input 
+                            placeholder="Número de Mesa" 
+                            value={quickTableNumber} 
+                            onChange={(e) => setQuickTableNumber(e.target.value)} 
+                            className={`px-4 py-2 rounded border ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'}`}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Opciones según tipo */}
+                      {quickOrderType === 'almuerzo' && (
+                        <div className="mb-3">
+                          <label className="text-sm text-gray-300">Selecciona tu Almuerzo</label>
+                          <div className="grid grid-cols-1 gap-2 mt-1">
+                            <button 
+                              onClick={() => addQuickItem('almuerzo', 'normal', quickTableNumber ? 'table' : 'takeaway')}
+                              className="p-3 bg-orange-600 hover:bg-orange-700 text-white rounded text-left"
+                            >
+                              <div className="font-medium">Normal</div>
+                              <div className="text-sm">{formatPrice(quickTableNumber ? 12000 : 13000)}</div>
+                            </button>
+                            <button 
+                              onClick={() => addQuickItem('almuerzo', 'bandeja', quickTableNumber ? 'table' : 'takeaway')}
+                              className="p-3 bg-orange-600 hover:bg-orange-700 text-white rounded text-left"
+                            >
+                              <div className="font-medium">Solo Bandeja</div>
+                              <div className="text-sm">{formatPrice(quickTableNumber ? 11000 : 12000)}</div>
+                            </button>
+                            <button 
+                              onClick={() => addQuickItem('almuerzo', 'mojarra', quickTableNumber ? 'table' : 'takeaway')}
+                              className="p-3 bg-orange-600 hover:bg-orange-700 text-white rounded text-left"
+                            >
+                              <div className="font-medium">Mojarra</div>
+                              <div className="text-sm">{formatPrice(16000)}</div>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {quickOrderType === 'desayuno' && (
+                        <div className="mb-3">
+                          <label className="text-sm text-gray-300">Selecciona tu Desayuno</label>
+                          <div className="grid grid-cols-1 gap-2 mt-1">
+                            <button 
+                              onClick={() => addQuickItem('desayuno', 'solo_huevos', quickTableNumber ? 'table' : 'takeaway')}
+                              className="p-3 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-left"
+                            >
+                              <div className="font-medium">Solo Huevos</div>
+                              <div className="text-sm">{formatPrice(quickTableNumber ? 7000 : 8000)}</div>
+                            </button>
+                            <button 
+                              onClick={() => addQuickItem('desayuno', 'solo_caldo_costilla', quickTableNumber ? 'table' : 'takeaway')}
+                              className="p-3 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-left"
+                            >
+                              <div className="font-medium">Solo Caldo Costilla</div>
+                              <div className="text-sm">{formatPrice(quickTableNumber ? 7000 : 8000)}</div>
+                            </button>
+                            <button 
+                              onClick={() => addQuickItem('desayuno', 'solo_caldo_pescado', quickTableNumber ? 'table' : 'takeaway')}
+                              className="p-3 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-left"
+                            >
+                              <div className="font-medium">Solo Caldo Pescado</div>
+                              <div className="text-sm">{formatPrice(quickTableNumber ? 7000 : 8000)}</div>
+                            </button>
+                            <button 
+                              onClick={() => addQuickItem('desayuno', 'solo_caldo_pata', quickTableNumber ? 'table' : 'takeaway')}
+                              className="p-3 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-left"
+                            >
+                              <div className="font-medium">Solo Caldo Pata</div>
+                              <div className="text-sm">{formatPrice(quickTableNumber ? 8000 : 9000)}</div>
+                            </button>
+                            <button 
+                              onClick={() => addQuickItem('desayuno', 'solo_caldo_pajarilla', quickTableNumber ? 'table' : 'takeaway')}
+                              className="p-3 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-left"
+                            >
+                              <div className="font-medium">Solo Caldo Pajarilla</div>
+                              <div className="text-sm">{formatPrice(quickTableNumber ? 9000 : 10000)}</div>
+                            </button>
+                            <button 
+                              onClick={() => addQuickItem('desayuno', 'desayuno_completo_costilla', quickTableNumber ? 'table' : 'takeaway')}
+                              className="p-3 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-left"
+                            >
+                              <div className="font-medium">Desayuno Completo Costilla</div>
+                              <div className="text-sm">{formatPrice(quickTableNumber ? 11000 : 12000)}</div>
+                            </button>
+                            <button 
+                              onClick={() => addQuickItem('desayuno', 'desayuno_completo_pescado', quickTableNumber ? 'table' : 'takeaway')}
+                              className="p-3 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-left"
+                            >
+                              <div className="font-medium">Desayuno Completo Pescado</div>
+                              <div className="text-sm">{formatPrice(quickTableNumber ? 11000 : 12000)}</div>
+                            </button>
+                            <button 
+                              onClick={() => addQuickItem('desayuno', 'desayuno_completo_pata', quickTableNumber ? 'table' : 'takeaway')}
+                              className="p-3 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-left"
+                            >
+                              <div className="font-medium">Desayuno Completo Pata</div>
+                              <div className="text-sm">{formatPrice(quickTableNumber ? 12000 : 13000)}</div>
+                            </button>
+                            <button 
+                              onClick={() => addQuickItem('desayuno', 'desayuno_completo_pajarilla', quickTableNumber ? 'table' : 'takeaway')}
+                              className="p-3 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-left"
+                            >
+                              <div className="font-medium">Desayuno Completo Pajarilla</div>
+                              <div className="text-sm">{formatPrice(quickTableNumber ? 13000 : 14000)}</div>
+                            </button>
+                            <button 
+                              onClick={() => addQuickItem('desayuno', 'monona', quickTableNumber ? 'table' : 'takeaway')}
+                              className="p-3 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-left"
+                            >
+                              <div className="font-medium">Mañona</div>
+                              <div className="text-sm">{formatPrice(quickTableNumber ? 13000 : 14000)}</div>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Adiciones - mover arriba para acceso rápido */}
+                      <div className="mb-3">
+                        <label className="text-sm text-gray-300">🍴 Adiciones Rápidas</label>
+                        <div className="grid grid-cols-2 gap-2 mt-1 max-h-32 overflow-y-auto">
+                          {currentQuickAdditions.map(addition => (
+                            <button
+                              key={addition.id}
+                              onClick={() => addQuickAddition(addition)}
+                              className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs"
+                            >
+                              <div className="font-medium">{addition.name}</div>
+                              <div className="text-xs opacity-90">+{formatPrice(addition.price)}</div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Items principales seleccionados */}
+                      <div className="mb-3">
+                        <label className="text-sm text-gray-300">🍽️ Items Principales</label>
+                        <div className="space-y-2 mt-1">
+                          {quickItems.filter(item => item.type !== 'addition').map(item => (
+                            <div key={item.id} className="flex justify-between items-center p-2 border rounded">
+                              <div>
+                                <div className="text-sm font-medium">{item.name}</div>
+                                <div className="text-xs text-gray-400">{formatPrice(item.price)} x {item.quantity}</div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button onClick={() => updateQuickItemQuantity(item.id, item.quantity - 1)} className="px-2 py-1 bg-red-600 text-white rounded">-</button>
+                                <span className="text-sm font-medium">{item.quantity}</span>
+                                <button onClick={() => updateQuickItemQuantity(item.id, item.quantity + 1)} className="px-2 py-1 bg-green-600 text-white rounded">+</button>
+                                <button onClick={() => removeQuickItem(item.id)} className="px-2 py-1 bg-red-600 text-white rounded text-xs">X</button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Adiciones seleccionadas */}
+                      <div className="mb-3">
+                        <label className="text-sm text-gray-300">➕ Adiciones Seleccionadas</label>
+                        <div className="space-y-2 mt-1">
+                          {quickItems.filter(item => item.type === 'addition').map(item => (
+                            <div key={item.id} className="flex justify-between items-center p-2 border rounded bg-blue-50 dark:bg-blue-900/20">
+                              <div>
+                                <div className="text-sm font-medium">{item.name}</div>
+                                <div className="text-xs text-gray-400">{formatPrice(item.price)} x {item.quantity}</div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button onClick={() => updateQuickItemQuantity(item.id, item.quantity - 1)} className="px-2 py-1 bg-red-600 text-white rounded">-</button>
+                                <span className="text-sm font-medium">{item.quantity}</span>
+                                <button onClick={() => updateQuickItemQuantity(item.id, item.quantity + 1)} className="px-2 py-1 bg-green-600 text-white rounded">+</button>
+                                <button onClick={() => removeQuickItem(item.id)} className="px-2 py-1 bg-red-600 text-white rounded text-xs">X</button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Método de pago */}
+                      <div className="mb-3">
+                        <label className="text-sm text-gray-300">Método de pago</label>
+                        <select value={quickPaymentMethod} onChange={(e) => setQuickPaymentMethod(e.target.value)} className={`w-full mt-1 p-2 rounded border ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`}>
+                          <option value="efectivo">Efectivo</option>
+                          <option value="nequi">Nequi</option>
+                          <option value="daviplata">Daviplata</option>
+                        </select>
+                      </div>
+
+                      {/* Nota */}
+                      <div className="mb-3">
+                        <label className="text-sm text-gray-300">Nota (opcional)</label>
+                        <input value={quickNote} onChange={(e) => setQuickNote(e.target.value)} className={`w-full mt-1 p-2 rounded border ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'}`} />
+                      </div>
+
+                      {/* Total */}
+                      <div className="mb-3">
+                        <label className="text-sm text-gray-300">Total</label>
+                        <div className="text-lg font-bold text-green-400">{formatPrice(calculateQuickTotal())}</div>
+                      </div>
+                    </div>
+                  )}
 
                 <div className="flex space-x-3">
                   <button onClick={() => setShowCreateModal(false)} className="flex-1 px-4 py-2 bg-gray-600 text-white rounded">Cancelar</button>
                   <button onClick={async () => {
                     try {
-                      // Construir payload
-                      const payload = {
-                        orderType: manualOrder.orderType,
-                        tableNumber: manualOrder.tableNumber ? String(manualOrder.tableNumber).trim() : undefined,
-                        takeaway: !manualOrder.tableNumber,
-                        total: Math.round(Number(manualOrder.total) || manualAddedItems.reduce((s,a)=>s+(Number(a.amount||0)),0)),
-                        paymentMethod: manualOrder.paymentMethod,
-                        paymentAmount: Math.round(Number(manualOrder.total) || 0),
-                        isPaid: true,
-                        status: 'Completada',
-                        paymentDate: serverTimestamp(),
-                        addedItems: manualAddedItems.map(a => ({ id: a.id, name: a.name, amount: Number(a.amount || 0) })),
-                        createdAt: serverTimestamp(),
-                        updatedAt: serverTimestamp(),
-                        paymentNote: manualOrder.note || ''
-                      };
+                      let payload;
+                      let collectionName;
 
-                      const collectionName = manualOrder.orderType === 'almuerzo' ? 'tableOrders' : 'breakfastOrders';
+                      if (createMode === 'manual') {
+                        // Calcular el total de adiciones
+                        const additionsTotal = manualAddedItems.reduce((s,a)=>s+(Number(a.amount||0)),0);
+                        const mainTotal = Number(manualOrder.total || 0) - additionsTotal;
+                        // Guardar ítem principal
+                        const mainItems = mainTotal > 0 ? [{
+                          id: 'main-1',
+                          name: manualOrder.orderType === 'desayuno' ? 'Solo Huevos' : 'Almuerzo',
+                          unitPrice: Math.round(mainTotal),
+                          quantity: 1
+                        }] : [];
+                        payload = {
+                          orderType: manualOrder.orderType,
+                          tableNumber: manualOrder.tableNumber ? String(manualOrder.tableNumber).trim() : undefined,
+                          takeaway: !manualOrder.tableNumber,
+                          total: Math.round(Number(manualOrder.total) || additionsTotal),
+                          items: mainItems,
+                          addedItems: manualAddedItems.map(a => ({ id: a.id, name: a.name, amount: Number(a.amount || 0), quantity: 1 })),
+                          createdAt: serverTimestamp(),
+                          updatedAt: serverTimestamp(),
+                          paymentNote: manualOrder.note || ''
+                        };
+                        collectionName = manualOrder.orderType === 'almuerzo' ? 'tableOrders' : 'breakfastOrders';
+                      } else if (createMode === 'quick') {
+                        const total = calculateQuickTotal();
+                        // Guardar items principales y adiciones separados
+                        const mainItems = quickItems.filter(item => item.type !== 'addition').map(item => ({
+                          id: item.id,
+                          name: item.name,
+                          unitPrice: item.price,
+                          quantity: item.quantity
+                        }));
+                        const additions = quickItems.filter(item => item.type === 'addition').map(item => ({
+                          id: item.id,
+                          name: item.name,
+                          amount: item.price,
+                          quantity: item.quantity
+                        }));
+                        payload = {
+                          orderType: quickOrderType,
+                          takeaway: !quickTableNumber.trim(),
+                          total: Math.round(total),
+                          items: mainItems,
+                          addedItems: additions,
+                          createdAt: serverTimestamp(),
+                          updatedAt: serverTimestamp(),
+                          paymentNote: quickNote || ''
+                        };
+                        if (quickTableNumber.trim()) payload.tableNumber = quickTableNumber.trim();
+                        collectionName = quickOrderType === 'almuerzo' ? 'tableOrders' : 'breakfastOrders';
+                      }
+
                       const ref = await addDoc(collection(db, collectionName), payload);
-                      setSuccess('✅ Pedido creado y marcado como pagado');
+                      setSuccess('✅ Pedido creado exitosamente');
                       setShowCreateModal(false);
-                      // Optimistic update local state
-                      const newDoc = { id: ref.id, ...payload, paymentDate: new Date() };
-                      if (collectionName === 'tableOrders') setTableOrders(prev => [newDoc, ...prev]); else setBreakfastOrders(prev => [newDoc, ...prev]);
+                      // Resetear estados
+                      setManualOrder({ orderType: 'almuerzo', tableNumber: '', takeaway: false, total: '', paymentMethod: 'efectivo', note: '' });
+                      setManualAddedItems([]);
+                      setManualNewAddedName('');
+                      setManualNewAddedAmount('');
+                      setQuickOrderType('almuerzo');
+                      setQuickTableNumber('');
+                      setQuickPaymentMethod('efectivo');
+                      setQuickNote('');
+                      setQuickItems([]);
                     } catch (err) {
                       setError(`Error creando pedido: ${err.message}`);
                     }
@@ -914,43 +1753,13 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
                           <div className="text-xs text-gray-400">{getOrderLabel(order)}</div>
                         </div>
                         <div className="text-right">
-                          <div className="text-sm font-bold text-green-400">{formatPrice(order.total)}</div>
+                          <div className="text-sm font-bold text-green-400">{formatPrice(order.paymentAmount || order.total)}</div>
                           {order.paymentMethod && <div className="text-xs text-gray-300 capitalize">{order.paymentMethod}</div>}
                         </div>
                       </div>
                       <div className="mt-3 flex space-x-2">
                         <button
-                          onClick={() => {
-                            // Abrir modal con datos de pago actuales para editar
-                            setSelectedOrder(order);
-                            // Inicializar adicionales desde la orden si existen (para editar correctamente)
-                            const initialAdded = Array.isArray(order.addedItems) ? order.addedItems.map((it, idx) => ({ id: it.id || idx, name: it.name, amount: Number(it.amount || 0) })) : [];
-                            setAddedItems(initialAdded);
-
-                            // Si la orden tiene paymentLines, abrir en modo split y cargar líneas
-                            if (order.paymentLines && Array.isArray(order.paymentLines) && order.paymentLines.length > 0) {
-                              setPaymentMode('split');
-                              setPaymentLines(order.paymentLines.map(l => ({ method: l.method || 'efectivo', amount: String(l.amount || 0) })));
-                              // calcular suma en paymentData.amount para mostrar en resumen, incluyendo adicionales
-                              const linesTotal = order.paymentLines.reduce((s, x) => s + (parseFloat(x.amount) || 0), 0);
-                              const addedTotal = initialAdded.reduce((s, a) => s + (Number(a.amount || 0)), 0);
-                              setPaymentData(prev => ({ ...prev, amount: Math.round(linesTotal + addedTotal) }));
-                            } else {
-                              setPaymentMode('simple');
-                              setPaymentLines([]);
-                              // Preferir order.total (que puede incluir adicionales persistidos) sobre paymentAmount
-                              const amount = Math.round(parseFloat(order.total) || parseFloat(order.paymentAmount) || 0);
-                              setPaymentData({
-                                method: order.paymentMethod || 'efectivo',
-                                amount,
-                                note: order.paymentNote || ''
-                              });
-                            }
-                            setCashAmount(order.cashReceived ? String(order.cashReceived) : '');
-                            setCalculatedChange(order.changeGiven || 0);
-                            setShowChangeCalculator(!!order.cashReceived);
-                            setShowPaymentModal(true);
-                          }}
+                          onClick={() => handleOpenPayment(order)}
                           className="px-3 py-1 bg-yellow-600 hover:bg-yellow-700 text-white text-sm rounded-lg"
                         >
                           ✏️ Editar Pago
@@ -997,8 +1806,155 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
                   </span>
                 </div>
                 <div className="text-2xl font-bold text-green-400">
-                  Total: {formatPrice(selectedOrder.total)}
+                  Total: {formatPrice(Number(paymentData?.amount) || Number(selectedOrder?.paymentAmount) || Number(selectedOrder?.total) || 0)}
                 </div>
+              </div>
+
+              {/* Selector de tipo de pedido para adiciones */}
+              <div className="mb-6">
+                <h4 className="text-lg font-semibold text-gray-100 mb-3">Tipo de Pedido para Adiciones</h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => setEditableOrderType('almuerzo')}
+                    className={`p-3 rounded-lg border-2 transition-colors ${
+                      editableOrderType === 'almuerzo'
+                        ? 'border-blue-500 bg-blue-500/20 text-blue-400'
+                        : theme === 'dark'
+                          ? 'border-gray-600 bg-gray-700 text-gray-300'
+                          : 'border-gray-300 bg-gray-50 text-gray-700'
+                    }`}
+                  >
+                    <div className="text-center">
+                      <div className="text-2xl mb-1">🍽️</div>
+                      <div className="text-sm font-medium">Almuerzo</div>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => setEditableOrderType('desayuno')}
+                    className={`p-3 rounded-lg border-2 transition-colors ${
+                      editableOrderType === 'desayuno'
+                        ? 'border-blue-500 bg-blue-500/20 text-blue-400'
+                        : theme === 'dark'
+                          ? 'border-gray-600 bg-gray-700 text-gray-300'
+                          : 'border-gray-300 bg-gray-50 text-gray-700'
+                    }`}
+                  >
+                    <div className="text-center">
+                      <div className="text-2xl mb-1">🌅</div>
+                      <div className="text-sm font-medium">Desayuno</div>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Selección de items principales según tipo */}
+              <div className="mb-6">
+                {editableOrderType === 'almuerzo' && (
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-100 mb-2">🍽️ Agregar Items Principales - Almuerzo</h4>
+                    <div className="grid grid-cols-1 gap-2">
+                      <button
+                        onClick={() => addMainItemToOrder('almuerzo', 'normal', selectedOrder?.tableNumber ? 'table' : 'takeaway')}
+                        className="p-3 bg-orange-600 hover:bg-orange-700 text-white rounded text-left transition-colors"
+                      >
+                        <div className="font-medium">Normal</div>
+                        <div className="text-sm">{formatPrice(selectedOrder?.tableNumber ? 12000 : 13000)}</div>
+                      </button>
+                      <button
+                        onClick={() => addMainItemToOrder('almuerzo', 'bandeja', selectedOrder?.tableNumber ? 'table' : 'takeaway')}
+                        className="p-3 bg-orange-600 hover:bg-orange-700 text-white rounded text-left transition-colors"
+                      >
+                        <div className="font-medium">Solo Bandeja</div>
+                        <div className="text-sm">{formatPrice(selectedOrder?.tableNumber ? 11000 : 12000)}</div>
+                      </button>
+                      <button
+                        onClick={() => addMainItemToOrder('almuerzo', 'mojarra', selectedOrder?.tableNumber ? 'table' : 'takeaway')}
+                        className="p-3 bg-orange-600 hover:bg-orange-700 text-white rounded text-left transition-colors"
+                      >
+                        <div className="font-medium">Mojarra</div>
+                        <div className="text-sm">{formatPrice(16000)}</div>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {editableOrderType === 'desayuno' && (
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-100 mb-2">🌅 Agregar Items Principales - Desayuno</h4>
+                    <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto">
+                      <button
+                        onClick={() => addMainItemToOrder('desayuno', 'solo_huevos', selectedOrder?.tableNumber ? 'table' : 'takeaway')}
+                        className="p-3 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-left transition-colors"
+                      >
+                        <div className="font-medium">Solo Huevos</div>
+                        <div className="text-sm">{formatPrice(selectedOrder?.tableNumber ? 7000 : 8000)}</div>
+                      </button>
+                      <button
+                        onClick={() => addMainItemToOrder('desayuno', 'solo_caldo_costilla', selectedOrder?.tableNumber ? 'table' : 'takeaway')}
+                        className="p-3 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-left transition-colors"
+                      >
+                        <div className="font-medium">Solo Caldo Costilla</div>
+                        <div className="text-sm">{formatPrice(selectedOrder?.tableNumber ? 7000 : 8000)}</div>
+                      </button>
+                      <button
+                        onClick={() => addMainItemToOrder('desayuno', 'solo_caldo_pescado', selectedOrder?.tableNumber ? 'table' : 'takeaway')}
+                        className="p-3 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-left transition-colors"
+                      >
+                        <div className="font-medium">Solo Caldo Pescado</div>
+                        <div className="text-sm">{formatPrice(selectedOrder?.tableNumber ? 7000 : 8000)}</div>
+                      </button>
+                      <button
+                        onClick={() => addMainItemToOrder('desayuno', 'solo_caldo_pata', selectedOrder?.tableNumber ? 'table' : 'takeaway')}
+                        className="p-3 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-left transition-colors"
+                      >
+                        <div className="font-medium">Solo Caldo Pata</div>
+                        <div className="text-sm">{formatPrice(selectedOrder?.tableNumber ? 8000 : 9000)}</div>
+                      </button>
+                      <button
+                        onClick={() => addMainItemToOrder('desayuno', 'solo_caldo_pajarilla', selectedOrder?.tableNumber ? 'table' : 'takeaway')}
+                        className="p-3 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-left transition-colors"
+                      >
+                        <div className="font-medium">Solo Caldo Pajarilla</div>
+                        <div className="text-sm">{formatPrice(selectedOrder?.tableNumber ? 9000 : 10000)}</div>
+                      </button>
+                      <button
+                        onClick={() => addMainItemToOrder('desayuno', 'desayuno_completo_costilla', selectedOrder?.tableNumber ? 'table' : 'takeaway')}
+                        className="p-3 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-left transition-colors"
+                      >
+                        <div className="font-medium">Desayuno Completo Costilla</div>
+                        <div className="text-sm">{formatPrice(selectedOrder?.tableNumber ? 11000 : 12000)}</div>
+                      </button>
+                      <button
+                        onClick={() => addMainItemToOrder('desayuno', 'desayuno_completo_pescado', selectedOrder?.tableNumber ? 'table' : 'takeaway')}
+                        className="p-3 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-left transition-colors"
+                      >
+                        <div className="font-medium">Desayuno Completo Pescado</div>
+                        <div className="text-sm">{formatPrice(selectedOrder?.tableNumber ? 11000 : 12000)}</div>
+                      </button>
+                      <button
+                        onClick={() => addMainItemToOrder('desayuno', 'desayuno_completo_pata', selectedOrder?.tableNumber ? 'table' : 'takeaway')}
+                        className="p-3 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-left transition-colors"
+                      >
+                        <div className="font-medium">Desayuno Completo Pata</div>
+                        <div className="text-sm">{formatPrice(selectedOrder?.tableNumber ? 12000 : 13000)}</div>
+                      </button>
+                      <button
+                        onClick={() => addMainItemToOrder('desayuno', 'desayuno_completo_pajarilla', selectedOrder?.tableNumber ? 'table' : 'takeaway')}
+                        className="p-3 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-left transition-colors"
+                      >
+                        <div className="font-medium">Desayuno Completo Pajarilla</div>
+                        <div className="text-sm">{formatPrice(selectedOrder?.tableNumber ? 13000 : 14000)}</div>
+                      </button>
+                      <button
+                        onClick={() => addMainItemToOrder('desayuno', 'monona', selectedOrder?.tableNumber ? 'table' : 'takeaway')}
+                        className="p-3 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-left transition-colors"
+                      >
+                        <div className="font-medium">Mañona</div>
+                        <div className="text-sm">{formatPrice(selectedOrder?.tableNumber ? 13000 : 14000)}</div>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Opciones de división de pago */}
@@ -1184,41 +2140,81 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
                 </div>
               )}
 
-              {/* Adicionales: permitir agregar platos/añadidos antes de confirmar el pago */}
-              <div className="mb-6">
-                <h4 className={`text-sm font-medium mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Adicionales / Items extra</h4>
-                <div className="grid grid-cols-3 gap-2 mb-2">
-                  <input type="text" placeholder="Descripción (ej: 1 Jugo extra)" value={newAddedName} onChange={(e) => setNewAddedName(e.target.value)} className={`col-span-2 px-3 py-2 rounded-lg border text-sm ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`} />
-                  <input type="number" placeholder="Monto" value={newAddedAmount} onChange={(e) => setNewAddedAmount(e.target.value)} className={`px-3 py-2 rounded-lg border text-sm ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`} />
+              {/* Adiciones rápidas basadas en el tipo de orden */}
+              {selectedOrder && (editableOrderType === 'desayuno' ? quickBreakfastAdditions : quickAdditions).length > 0 && (
+                <div className="mb-6">
+                  <h4 className={`text-sm font-medium mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                    🍴 Adiciones Rápidas ({editableOrderType === 'desayuno' ? 'Desayuno' : 'Almuerzo'})
+                  </h4>
+                  <div className="grid grid-cols-2 gap-2 mb-3 max-h-32 overflow-y-auto">
+                    {(editableOrderType === 'desayuno' ? quickBreakfastAdditions : quickAdditions).map(addition => (
+                      <button
+                        key={addition.id}
+                        onClick={() => addQuickAdditionToOrder(addition)}
+                        className={`p-2 rounded-lg border text-xs transition-colors ${
+                          theme === 'dark'
+                            ? 'bg-gray-700 border-gray-600 text-white hover:bg-gray-600'
+                            : 'bg-gray-50 border-gray-300 text-gray-900 hover:bg-gray-100'
+                        }`}
+                      >
+                        <div className="font-medium">{addition.name}</div>
+                        <div className={`text-xs ${theme === 'dark' ? 'text-gray-300' : 'text-gray-500'}`}>
+                          {formatPrice(addition.price)}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div className="flex gap-2 mb-3">
-                  <button onClick={addNewItem} className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm">+ Añadir</button>
-                  <button onClick={() => { setNewAddedName(''); setNewAddedAmount(''); }} className="px-3 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded text-sm">Limpiar</button>
-                </div>
+              )}
 
+              {/* Adicionales: permitir agregar platos/añadidos antes de confirmar el pago */}
+              {/* Items principales recuperados del pedido (mostrar cantidad y controles) */}
+              <div className="mb-6">
+                <h4 className={`text-sm font-medium mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Items del Pedido</h4>
                 <div className="space-y-2">
-                  {addedItems.length === 0 && <div className={`text-sm ${theme === 'dark' ? 'text-gray-300' : 'text-gray-500'}`}>No hay adicionales</div>}
-                  {addedItems.map(item => (
+                  {displayedMainItems.length === 0 && (
+                    <div className={`text-sm ${theme === 'dark' ? 'text-gray-300' : 'text-gray-500'}`}>No se encontraron items detallados de este pedido.</div>
+                  )}
+                  {displayedMainItems.map(item => (
                     <div key={item.id} className={`flex items-center justify-between p-2 rounded ${theme === 'dark' ? 'bg-gray-800' : 'bg-gray-50'}`}>
                       <div>
                         <div className={`text-sm font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{item.name}</div>
-                        <div className={`text-xs ${theme === 'dark' ? 'text-gray-300' : 'text-gray-500'}`}>{formatPrice(item.amount)}</div>
+                        <div className={`text-xs ${theme === 'dark' ? 'text-gray-300' : 'text-gray-500'}`}>{formatPrice(item.unitPrice)} x {item.quantity}</div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <input type="number" value={item.amount} onChange={(e) => _editAddedItem(item.id, { amount: Number(e.target.value || 0) })} className={`w-24 px-2 py-1 rounded text-sm ${theme === 'dark' ? 'bg-gray-700 text-white border border-gray-600' : 'bg-white text-gray-900 border border-gray-300'}`} />
-                        <button onClick={() => _removeAddedItem(item.id)} className="px-2 py-1 bg-red-600 text-white rounded text-sm">Eliminar</button>
+                        <button onClick={() => updateMainItemQuantity(item.id, item.quantity - 1)} className="px-2 py-1 bg-red-600 text-white rounded text-sm">-</button>
+                        <input type="number" value={item.quantity} onChange={(e) => updateMainItemQuantity(item.id, Number(e.target.value || 0))} className={`w-12 px-2 py-1 rounded text-sm ${theme === 'dark' ? 'bg-gray-700 text-white border border-gray-600' : 'bg-white text-gray-900 border border-gray-300'}`} />
+                        <button onClick={() => updateMainItemQuantity(item.id, item.quantity + 1)} className="px-2 py-1 bg-green-600 text-white rounded text-sm">+</button>
+                        <button onClick={() => removeMainItem(item.id)} className="px-2 py-1 bg-red-700 text-white rounded text-sm">X</button>
                       </div>
                     </div>
                   ))}
                 </div>
-
-                <div className="mt-3 text-sm">
-                  <span className="font-medium">Total adicionales: </span>
-                  <span className="font-bold">{formatPrice(addedItems.reduce((s, a) => s + (Number(a.amount || 0)), 0))}</span>
-                </div>
               </div>
 
-              {/* Calculadora de vueltos */}
+              {/* Adiciones seleccionadas */}
+              <div className="mb-6">
+                <h4 className={`text-sm font-medium mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>➕ Adiciones Seleccionadas</h4>
+                <div className="space-y-2">
+                  {addedItems.length === 0 && (
+                    <div className={`text-sm ${theme === 'dark' ? 'text-gray-300' : 'text-gray-500'}`}>No hay adiciones seleccionadas.</div>
+                  )}
+                  {addedItems.map(item => (
+                    <div key={item.id} className={`flex items-center justify-between p-2 rounded ${theme === 'dark' ? 'bg-gray-800' : 'bg-gray-50'}`}>
+                      <div>
+                        <div className={`text-sm font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{item.name}</div>
+                        <div className={`text-xs ${theme === 'dark' ? 'text-gray-300' : 'text-gray-500'}`}>{formatPrice(item.amount)} x {item.quantity || 1}</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => updateAddedItemQuantity(item.id, (item.quantity || 1) - 1)} className="px-2 py-1 bg-red-600 text-white rounded text-sm">-</button>
+                        <input type="number" value={item.quantity || 1} onChange={(e) => updateAddedItemQuantity(item.id, Number(e.target.value || 0))} className={`w-12 px-2 py-1 rounded text-sm ${theme === 'dark' ? 'bg-gray-700 text-white border border-gray-600' : 'bg-white text-gray-900 border border-gray-300'}`} />
+                        <button onClick={() => updateAddedItemQuantity(item.id, (item.quantity || 1) + 1)} className="px-2 py-1 bg-green-600 text-white rounded text-sm">+</button>
+                        <button onClick={() => removeAddedItem(item.id)} className="px-2 py-1 bg-red-700 text-white rounded text-sm">X</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
               {showChangeCalculator && calculatedChange > 0 && (
                 <div className={`p-4 rounded-lg ${theme === 'dark' ? 'bg-green-900/30' : 'bg-green-100'} border border-green-500 mb-6`}>
                   <h4 className="text-lg font-semibold text-green-400 mb-2">
