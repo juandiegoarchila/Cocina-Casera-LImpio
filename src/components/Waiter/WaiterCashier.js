@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { calculateMealPrice } from '../../utils/MealCalculations';
 import { calculateBreakfastPrice } from '../../utils/BreakfastLogic';
 import { db } from '../../config/firebase';
+import { useAuth } from '../Auth/AuthProvider';
 import { collection, onSnapshot, updateDoc, doc, serverTimestamp, addDoc, getDoc, runTransaction } from 'firebase/firestore';
 import { 
   MagnifyingGlassIcon, 
@@ -36,6 +37,7 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
   // Si cambian los adicionales, ajustar el monto a pagar automáticamente
   // displayedMainItems representa los items principales recuperados del pedido
   const [displayedMainItems, setDisplayedMainItems] = useState([]); // { id, name, unitPrice, quantity }
+  const { user, role } = useAuth();
 
   useEffect(() => {
     if (!selectedOrder) return;
@@ -968,6 +970,8 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
 
   // Función para borrar todas las órdenes en las colecciones de mesero/desayuno
   const deleteAllOrders = async () => {
+    // Only admins can perform destructive bulk deletes
+    if (role !== 2) return setError('No tienes permiso para eliminar todas las órdenes');
     if (!window.confirm('¿Eliminar todas las órdenes (mesa y desayuno)? Esto no se puede deshacer.')) return;
     try {
       const { getDocs, collection: coll, deleteDoc, doc: docRef } = await import('firebase/firestore');
@@ -987,6 +991,7 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
 
   // Función para borrar todas las órdenes completadas (pagadas)
   const deleteCompletedOrders = async () => {
+    if (role !== 2) return setError('No tienes permiso para eliminar órdenes completadas');
     if (!window.confirm('¿Eliminar todas las órdenes completadas (pagadas)? Esto no se puede deshacer.')) return;
     try {
       const { getDocs, collection: coll, deleteDoc, doc: docRef, query, where } = await import('firebase/firestore');
@@ -1010,6 +1015,7 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
 
   // Borrar pedidos pagados por mesa (tableNumber)
   const deletePaidByTable = async (tableNumber) => {
+    if (role !== 2) return setError('No tienes permiso para eliminar órdenes pagadas por mesa');
     if (!window.confirm(`¿Eliminar las órdenes pagadas de ${tableNumber}? Esto no se puede deshacer.`)) return;
     try {
       const { getDocs, collection: coll, deleteDoc, doc: docRef, query, where } = await import('firebase/firestore');
@@ -1057,6 +1063,8 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
 
   // Borrar una orden individual por id (detecta collection por orderType)
   const deleteSingleOrder = async (order) => {
+    // Only admins may delete individual orders
+    if (role !== 2) return setError('No tienes permiso para eliminar esta orden');
     if (!window.confirm(`¿Eliminar la orden ${order.id.substring(0,8)}? Esto no se puede deshacer.`)) return;
     try {
       const { deleteDoc, doc: docRef } = await import('firebase/firestore');
@@ -1295,7 +1303,7 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
                           >
                             💰 Procesar Pago
                           </button>
-                          {canDeleteAll && (
+                          {(canDeleteAll && role === 2) && (
                             <button onClick={() => deleteSingleOrder(order)} className="mt-2 px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded-lg flex items-center" title={`Eliminar orden ${order.id.substring(0,8)}`}>
                               <TrashIcon className="w-4 h-4" />
                             </button>
@@ -1737,7 +1745,7 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
                   </div>
                     <div className="text-xs text-gray-400 flex items-center space-x-2">
                       <div>{orders.length} orden(es)</div>
-                      {canDeleteAll && (
+                      {(canDeleteAll && role === 2) && (
                         <button onClick={() => deletePaidByTable(tableNumber)} className="p-1 rounded-md text-red-400 hover:text-white hover:bg-red-600" title={`Eliminar ${orders.length} orden(es) pagadas`}>
                           <TrashIcon className="w-4 h-4" />
                         </button>
@@ -1764,7 +1772,7 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
                         >
                           ✏️ Editar Pago
                         </button>
-                          {canDeleteAll && (
+                          {(canDeleteAll && role === 2) && (
                             <button onClick={() => deleteSingleOrder(order)} className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-sm rounded-lg flex items-center" title={`Eliminar orden ${order.id.substring(0,8)}`}>
                               <TrashIcon className="w-4 h-4 mr-2" />Eliminar
                             </button>
