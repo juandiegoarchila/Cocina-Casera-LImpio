@@ -420,6 +420,15 @@ message += `───────────────\n`;
       }
 
       message += `Acompañamientos: ${hasSpecialRice ? 'Ya incluidos' : baseMeal.sides?.length > 0 ? baseMeal.sides.map(s => cleanText(s.name)).join(', ') : 'Sin acompañamientos'}\n`;
+      // Mostrar acompañamientos NO seleccionados
+      const posiblesAcompanamientos = ['Patacon', 'Ensalada', 'Arepuelas', 'Arroz'];
+      if (!hasSpecialRice) {
+        const seleccionados = baseMeal.sides?.map(s => cleanText(s.name)) || [];
+        const noIncluidos = posiblesAcompanamientos.filter(a => !seleccionados.includes(a));
+        if (noIncluidos.length > 0) {
+          message += `No Incluir: ${noIncluidos.join(', ')}\n`;
+        }
+      }
 
       if (baseMeal.additions?.length > 0) {
         baseMeal.additions.forEach((addition, idx) => {
