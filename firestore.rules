@@ -118,16 +118,44 @@ service cloud.firestore {
       allow delete: if isAuthenticated() && isAdmin();
     }
 
-    // -------------------- Settings --------------------
+    // -------------------- Settings (lectura pública segura) --------------------
+    // Permitir lectura pública de configuración no sensible (frontend depende para mostrar menú/horarios)
+    // IMPORTANTE: Asegurarse de NO almacenar aquí datos sensibles (tokens, claves, info privada).
     match /settings/{document=**} {
-      allow read: if isAuthenticated();
+      allow read: if true; // público
       allow write: if isAuthenticated() && isAdmin();
     }
 
+    // -------------------- Catálogo / Menú público --------------------
+    // Colecciones usadas para construir el menú que deben ser visibles sin login.
+    // Lecturas públicas; escrituras restringidas a admin (y en algunos casos mesero si se requiere operar rápido).
+    // Ajusta esta lista si agregas nuevas colecciones de catálogo.
+    // Almuerzos
+    match /sides/{docId} { allow read: if true; allow write: if isAuthenticated() && isAdmin(); }
+    match /additions/{docId} { allow read: if true; allow write: if isAuthenticated() && isAdmin(); }
+    match /dailyProteins/{docId} {
+      // Lectura pública para mostrar disponibilidad; escritura: admin y mesero (actualizan sobrantes / entrada diaria)
+      allow read: if true;
+      allow create, update: if isAuthenticated() && (isAdmin() || isWaiter());
+      allow delete: if isAuthenticated() && isAdmin();
+    }
+    // Desayunos
+    match /breakfastAdditions/{docId} { allow read: if true; allow write: if isAuthenticated() && isAdmin(); }
+    match /breakfastProteins/{docId} { allow read: if true; allow write: if isAuthenticated() && isAdmin(); }
+    match /breakfastTypes/{docId} { allow read: if true; allow write: if isAuthenticated() && isAdmin(); }
+    match /breakfastEggs/{docId} { allow read: if true; allow write: if isAuthenticated() && isAdmin(); }
+    match /breakfastBroths/{docId} { allow read: if true; allow write: if isAuthenticated() && isAdmin(); }
+    match /breakfastRiceBread/{docId} { allow read: if true; allow write: if isAuthenticated() && isAdmin(); }
+    match /breakfastDrinks/{docId} { allow read: if true; allow write: if isAuthenticated() && isAdmin(); }
+
+    // Mesas visibles públicamente (para permitir elección sin login si aplica). Si no deseas esto, cambia read a isAuthenticated().
+    match /tables/{docId} { allow read: if true; allow write: if isAuthenticated() && isAdmin(); }
+
     // -------------------- Fallback (catch-all) --------------------
-    // Lectura autenticada por defecto; escritura sólo administradores.
+    // Ajuste intermedio: permitir lectura pública de todo para garantizar carga de menú.
+    // Próximo paso recomendado: enumerar explícitamente colecciones públicas y volver a cerrar aquí.
     match /{collection}/{document=**} {
-      allow read: if isAuthenticated();
+      allow read: if true; // público (temporal)
       allow write: if isAuthenticated() && isAdmin();
     }
   }
