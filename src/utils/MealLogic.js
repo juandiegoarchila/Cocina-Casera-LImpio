@@ -648,19 +648,29 @@ message += `───────────────\n`;
 
   if (Object.keys(paymentSummaryMap).length > 0) {
     if (allCashOrUnspecified) {
+      // Nuevo formato para pagos en efectivo
       message += `Paga en efectivo al momento de la entrega.\n`;
       message += `💵 Efectivo: $${(total || 0).toLocaleString('es-CO')}\n`;
-      message += `Si no tienes efectivo, puedes transferir por Nequi o DaviPlata al número: 313 850 5647.\n`;
+      message += `Si no tienes efectivo,  puedes transferir.\n`;
+      message += `\nBancolombia (Ahorros – Nequi a Bancolombia): 📲 54706725531\n`;
+      message += `Daviplata: 📲 313 850 5647\n`;
       message += `\n💰 Total: $${(total || 0).toLocaleString('es-CO')}\n`;
       message += `🚚 Estimado: 25-30 min (10-15 si están cerca).\n`;
     } else {
-      message += `💳 Instrucciones de pago:\n`;
-      message += `Envía al número 313 850 5647 (Nequi o DaviPlata):\n`;
+      // Nuevo formato para instrucciones de pago mixtas / no solo efectivo
+      message += `💳 Formas de pago:\n\n`;
+      message += `Bancolombia (Ahorros – Nequi a Bancolombia): 📲 54706725531\n`;
+      message += `Daviplata: 📲 313 850 5647\n`;
+      // Listado de métodos seleccionados con montos
       Object.entries(paymentSummaryMap).forEach(([method, amount]) => {
-        if (method !== 'No especificado' && amount > 0) {
+        if (method !== 'No especificado' && amount > 0 && method !== 'Efectivo') {
           message += `🔹 ${method}: $${(amount || 0).toLocaleString('es-CO')}\n`;
         }
       });
+      // Mostrar efectivo si hay mezcla
+      if (!allCashOrUnspecified && paymentSummaryMap['Efectivo'] > 0) {
+        message += `🔹 Efectivo: $${(paymentSummaryMap['Efectivo'] || 0).toLocaleString('es-CO')}\n`;
+      }
       message += `\n💰 Total: $${(total || 0).toLocaleString('es-CO')}\n`;
       message += `🚚 Estimado: 25-30 min (10-15 si están cerca).\n`;
     }

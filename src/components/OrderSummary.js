@@ -614,21 +614,27 @@ const PaymentSummary = ({ paymentSummary, total, isWaiterView, isTableOrder }) =
             <>
               <p className="font-medium text-gray-800 text-xs sm:text-sm">Paga en efectivo al momento de la entrega.</p>
               <p className="text-xs sm:text-sm text-gray-600">💵 Efectivo: ${total.toLocaleString('es-CO')}</p>
-              <p className="text-xs sm:text-sm text-gray-600">
-                Si no tienes efectivo, puedes transferir por Nequi o DaviPlata al número: 313 850 5647.
-              </p>
+              <p className="text-xs sm:text-sm text-gray-600">Si no tienes efectivo,  puedes transferir.</p>
+              <div className="mt-1">
+                <p className="text-xs sm:text-sm text-gray-600">Bancolombia (Ahorros – Nequi a Bancolombia): 📲 54706725531</p>
+                <p className="text-xs sm:text-sm text-gray-600">Daviplata: 📲 313 850 5647</p>
+              </div>
             </>
           ) : (
             <>
-              <p className="font-medium text-gray-800 text-xs sm:text-sm">💳 Instrucciones de pago:</p>
-              <p className="text-xs sm:text-sm text-gray-600">Envía al número 313 850 5647 (Nequi o DaviPlata):</p>
-              {Object.entries(paymentSummary).map(([method, amount]) => (
-                method !== 'No especificado' && amount > 0 && (
-                  <p key={method} className="text-xs sm:text-sm text-gray-600">
-                    🔹 {method}: ${amount.toLocaleString('es-CO')}
-                  </p>
-                )
-              ))}
+              <p className="font-medium text-gray-800 text-xs sm:text-sm">💳 Formas de pago:</p>
+              <div className="text-xs sm:text-sm text-gray-600 space-y-0.5">
+                <p>Bancolombia (Ahorros – Nequi a Bancolombia): 📲 54706725531</p>
+                <p>Daviplata: 📲 313 850 5647</p>
+                {Object.entries(paymentSummary).map(([method, amount]) => (
+                  method !== 'No especificado' && amount > 0 && method !== 'Efectivo' && (
+                    <p key={method}>🔹 {method}: ${amount.toLocaleString('es-CO')}</p>
+                  )
+                ))}
+                {paymentSummary['Efectivo'] > 0 && (
+                  <p>🔹 Efectivo: ${paymentSummary['Efectivo'].toLocaleString('es-CO')}</p>
+                )}
+              </div>
             </>
           )}
           <p className="font-medium text-gray-800 text-xs sm:text-sm">💰 Total: ${total.toLocaleString('es-CO')}</p>
