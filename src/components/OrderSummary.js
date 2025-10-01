@@ -450,16 +450,7 @@ const MealFields = ({ meal, commonFields, isWaiterView, isAdminView = false, all
 
   // Añadir campos de dirección cuando esté en vista de admin o se solicite explícitamente
   if ((commonFields.has('Dirección') || commonFields.has('all')) || isAdminView) {
-    if (meal?.address && meals.length > 1) {
-      fields.push(
-        <AddressSummary
-          key="address"
-          mealAddress={meal.address}
-          isCommon={false}
-          globalCommonAddressFields={{}}
-        />
-      );
-    }
+    // La lógica de la dirección se ha movido a MealGroup para evitar duplicados
   }
   
   if ((commonFields.has('Mesa') || commonFields.has('all')) && isWaiterView && meal.tableNumber) {
@@ -546,7 +537,7 @@ const MealGroup = ({ group, globalCommonFields, globalCommonAddressFields, isWai
     allSides={allSides}
     meals={group.meals}
   />
-      {count === 1 && !globalCommonFields.has('Dirección') && baseMeal.address && meals.length > 1 && (
+      {count === 1 && !globalCommonFields.has('Dirección') && baseMeal.address && (
         <AddressSummary
           mealAddress={baseMeal.address}
           isCommon={false}
