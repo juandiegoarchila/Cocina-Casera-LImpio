@@ -228,7 +228,7 @@ const AddressSummary = ({ commonAddressFields = {}, mealAddress, isCommon = fals
 };
 
 // Componente para renderizar campos de una comida
-const MealFields = ({ meal, commonFields, isWaiterView, isAdminView = false, allSides = [] }) => {
+const MealFields = ({ meal, commonFields, isWaiterView, isAdminView = false, allSides = [], meals = [] }) => {
   const hasSpecialRice = meal?.principle?.some(p => specialRiceOptions.includes(p.name));
 
   const fields = [];
@@ -450,7 +450,7 @@ const MealFields = ({ meal, commonFields, isWaiterView, isAdminView = false, all
 
   // Añadir campos de dirección cuando esté en vista de admin o se solicite explícitamente
   if ((commonFields.has('Dirección') || commonFields.has('all')) || isAdminView) {
-    if (meal?.address) {
+    if (meal?.address && meals.length > 1) {
       fields.push(
         <AddressSummary
           key="address"
@@ -543,9 +543,10 @@ const MealGroup = ({ group, globalCommonFields, globalCommonAddressFields, isWai
     commonFields={count > 1 ? group.commonFieldsInGroup : new Set(['all', 'Mesa'])} 
     isWaiterView={isWaiterView} 
     isAdminView={isAdminView}
-    allSides={allSides} 
+    allSides={allSides}
+    meals={group.meals}
   />
-      {count === 1 && !globalCommonFields.has('Dirección') && baseMeal.address && (
+      {count === 1 && !globalCommonFields.has('Dirección') && baseMeal.address && meals.length > 1 && (
         <AddressSummary
           mealAddress={baseMeal.address}
           isCommon={false}

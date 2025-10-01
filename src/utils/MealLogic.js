@@ -446,7 +446,7 @@ message += `───────────────\n`;
       if (!isWaitress && !allDeliveryDetailsCommon) {
         const addressLines = [];
         addressFields.forEach((addrField) => {
-          if (commonAddressFields[addrField]) return;
+          if (commonAddressFields[addrField] && safeMeals.length > 1) return;
           const value = baseMeal.address?.[addrField];
           const addrType = baseMeal.address?.addressType || '';
           if (addrField === 'address' && value) {
