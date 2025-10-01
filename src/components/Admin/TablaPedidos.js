@@ -1,4 +1,41 @@
 // src/components/Admin/TablaPedidos.js
+// Componente para mostrar dirección con cronómetro
+function DireccionConCronometro({ order }) {
+  const rawAddress = order.meals?.[0]?.address || order.breakfasts?.[0]?.address;
+  const migratedAddress = migrateOldAddressForDisplay(rawAddress);
+  const getMinutesElapsed = () => {
+    if (!order.createdAt) return 0;
+    const created = typeof order.createdAt.toDate === 'function' ? order.createdAt.toDate() : (order.createdAt instanceof Date ? order.createdAt : new Date(order.createdAt));
+    const now = new Date();
+    return Math.floor((now - created) / 60000);
+  };
+  const isFinal = ["Entregado", "Cancelado"].includes(order.status);
+  const [minutesElapsed, setMinutesElapsed] = React.useState(getMinutesElapsed());
+  React.useEffect(() => {
+    if (!order.createdAt) return;
+    if (isFinal) {
+      setMinutesElapsed(getMinutesElapsed());
+      return;
+    }
+    const interval = setInterval(() => {
+      setMinutesElapsed(getMinutesElapsed());
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [order.createdAt, order.status]);
+  return (
+    <div>
+      <div className="whitespace-nowrap overflow-hidden text-ellipsis flex items-center gap-2">
+        {migratedAddress?.address || 'Sin dirección'}
+        <span className={`ml-2 font-bold ${isFinal ? 'text-gray-500' : 'text-green-500'}`}>{minutesElapsed}min</span>
+      </div>
+      {migratedAddress?.details && (
+        <div className="whitespace-nowrap overflow-hidden text-ellipsis text-gray-400 text-xs">
+          ({migratedAddress.details})
+        </div>
+      )}
+    </div>
+  );
+}
 import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { classNames } from '../../utils/classNames.js';
 import { cleanText, getAddressDisplay } from './utils.js';
@@ -1595,26 +1632,7 @@ const TablaPedidos = ({
                               </button>
                             </td>
                             <td className="p-2 sm:p-3 text-gray-300 max-w-[250px] sm:max-w-xs">
-                              <div className="text-xs sm:text-sm">
-                                {(() => {
-                                  // Migrar direcciones del formato antiguo para mostrar correctamente
-                                  const rawAddress = order.meals?.[0]?.address || order.breakfasts?.[0]?.address;
-                                  const migratedAddress = migrateOldAddressForDisplay(rawAddress);
-                                  
-                                  return (
-                                    <>
-                                      <div className="whitespace-nowrap overflow-hidden text-ellipsis">
-                                        {migratedAddress?.address || 'Sin dirección'}
-                                      </div>
-                                      {migratedAddress?.details && (
-                                        <div className="whitespace-nowrap overflow-hidden text-ellipsis text-gray-400 text-xs">
-                                          ({migratedAddress.details})
-                                        </div>
-                                      )}
-                                    </>
-                                  );
-                                })()}
-                              </div>
+                              <DireccionConCronometro order={order} />
                             </td>
                             <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">
                               {order.meals?.[0]?.address?.phoneNumber ||
