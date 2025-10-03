@@ -23,6 +23,7 @@ import PrivacyPolicy from './components/PrivacyPolicy';
 import ProtectedRoute from './components/Auth/ProtectedRoute';
 import './styles/animations.css';
 import { calculateTotalBreakfastPrice } from './utils/BreakfastLogic';
+import CajaPOS from './components/Waiter/CajaPOS';
 
 const StaffHub = lazy(() => import('./components/Auth/StaffHub')); 
 const AdminPage = lazy(() => import('./components/Admin/AdminPage'));
@@ -720,6 +721,7 @@ await sendToWhatsApp(
           path="/delivery/*"
           element={<ProtectedRoute allowedRole={4}><DeliveryOrdersPage /></ProtectedRoute>}
         />
+        <Route path="/caja-pos" element={<ProtectedRoute allowedRoles={[2,3]}><CajaPOS /></ProtectedRoute>} />
         <Route path="/" element={
           <div className="min-h-screen bg-gray-200 flex flex-col relative">
             <Header />

@@ -21,6 +21,7 @@ const Settings = lazy(() => import('./Tasks'));
 const Notifications = lazy(() => import('./Payments'));
 const WaiterCashier = lazy(() => import('../Waiter/WaiterCashier'));
 const TableOrdersAdmin = lazy(() => import('./TableOrdersAdmin'));
+const CajaPOS = lazy(() => import('../Waiter/CajaPOS'));
 
 const AdminPage = () => {
   const navigate = useNavigate();
@@ -82,7 +83,7 @@ const AdminPage = () => {
     { name: 'Gestión de Usuarios', to: '/admin/users', icon: UserGroupIcon },
     { name: 'Tareas', to: '/admin/settings', icon: ClipboardDocumentListIcon },
     { name: 'Pagos', to: '/admin/Payments.js', icon: BellIcon },
-    { name: 'Caja', to: '/admin/cashier', icon: CurrencyDollarIcon },
+  { name: 'Caja registradora', to: '/admin/caja-pos', icon: CurrencyDollarIcon },
   ];
 
   return (
@@ -313,6 +314,10 @@ const AdminPage = () => {
             <Route
               path="/cashier"
               element={<WaiterCashier setError={setError} setSuccess={setSuccess} theme={theme} canDeleteAll={true} />}
+            />
+            <Route
+              path="/caja-pos"
+              element={<CajaPOS setError={setError} setSuccess={setSuccess} theme={theme} />}
             />
           </Routes>
         </Suspense>

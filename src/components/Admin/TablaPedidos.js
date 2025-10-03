@@ -3,6 +3,9 @@
 function DireccionConCronometro({ order }) {
   const rawAddress = order.meals?.[0]?.address || order.breakfasts?.[0]?.address;
   const migratedAddress = migrateOldAddressForDisplay(rawAddress);
+  // Construir URL de Google Maps (simple: usar address + details si existen)
+  const fullAddressString = [migratedAddress?.address, migratedAddress?.details].filter(Boolean).join(' ');
+  const mapsUrl = fullAddressString ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddressString)}` : null;
   const getMinutesElapsed = () => {
     if (!order.createdAt) return 0;
     const created = typeof order.createdAt.toDate === 'function' ? order.createdAt.toDate() : (order.createdAt instanceof Date ? order.createdAt : new Date(order.createdAt));
@@ -25,7 +28,19 @@ function DireccionConCronometro({ order }) {
   return (
     <div>
       <div className="whitespace-nowrap overflow-hidden text-ellipsis flex items-center gap-2">
-        {migratedAddress?.address || 'Sin dirección'}
+        {mapsUrl ? (
+          <a
+            href={mapsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-400 hover:text-blue-300 underline decoration-dotted"
+            title="Abrir en Google Maps"
+          >
+            {migratedAddress?.address || 'Sin dirección'}
+          </a>
+        ) : (
+          migratedAddress?.address || 'Sin dirección'
+        )}
         <span className={`ml-2 font-bold ${isFinal ? 'text-gray-500' : 'text-green-500'}`}>{minutesElapsed}min</span>
       </div>
       {migratedAddress?.details && (

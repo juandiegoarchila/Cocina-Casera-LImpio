@@ -3,26 +3,25 @@ import React from 'react';
 import { useAuth } from './AuthProvider';
 import { Navigate, useLocation } from 'react-router-dom';
 
-const ProtectedRoute = ({ children, allowedRole }) => {
+/*
+  Ahora soporta:
+  <ProtectedRoute allowedRole={3}> ...</ProtectedRoute>
+  o
+  <ProtectedRoute allowedRoles={[2,3]}> ...</ProtectedRoute>
+*/
+const ProtectedRoute = ({ children, allowedRole, allowedRoles }) => {
   const { user, role, loading } = useAuth();
   const location = useLocation();
 
-  // Si está cargando, no renderizamos nada hasta que se complete la autenticación
-  if (loading) {
-    return null; // Evita el renderizado mientras se verifica la autenticación
-  }
+  if (loading) return null;
+  if (!user) return <Navigate to="/staffhub" state={{ from: location }} replace />;
 
-  // Si no hay usuario autenticado, redirige a /staffhub
-  if (!user) {
+  // Normalizamos lista de roles permitidos
+  const rolesAllowed = allowedRoles ? allowedRoles : (allowedRole!=null ? [allowedRole] : []);
+  if (rolesAllowed.length && !rolesAllowed.includes(role)) {
     return <Navigate to="/staffhub" state={{ from: location }} replace />;
   }
 
-  // Si el rol no coincide con el permitido, redirige a /staffhub
-  if (role !== allowedRole) {
-    return <Navigate to="/staffhub" state={{ from: location }} replace />;
-  }
-
-  // Si pasa todas las verificaciones, renderiza el componente hijo
   return children;
 };
 

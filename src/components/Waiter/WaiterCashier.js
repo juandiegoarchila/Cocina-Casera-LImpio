@@ -14,7 +14,11 @@ import {
   CreditCardIcon,
   BanknotesIcon,
   DevicePhoneMobileIcon,
-  TrashIcon
+  TrashIcon,
+  PencilIcon,
+  PlusCircleIcon,
+  PhotoIcon,
+  ChartBarIcon
 } from '@heroicons/react/24/outline';
 
 const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) => {
@@ -72,8 +76,216 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
   const [quickAdditions, setQuickAdditions] = useState([]); // Adiciones para almuerzo
   const [quickBreakfastAdditions, setQuickBreakfastAdditions] = useState([]); // Adiciones para desayuno
 
+  // ================= NUEVO MODO POS =================
+  const [posMode, setPosMode] = useState(true); // Mostrar la nueva interfaz POS
+  const [posItems, setPosItems] = useState([]); // Artículos del catálogo POS (colección Firestore: posItems)
+  const [cartItems, setCartItems] = useState([]); // { id, name, price, quantity, refId }
+  const [posOrderType, setPosOrderType] = useState('almuerzo'); // almuerzo | desayuno | general
+  const [posTableNumber, setPosTableNumber] = useState('');
+  const [posPaymentMethod, setPosPaymentMethod] = useState('efectivo');
+  const [posCashAmount, setPosCashAmount] = useState('');
+  const [posCalculatedChange, setPosCalculatedChange] = useState(0);
+  // Etapa del flujo POS: 'select' (solo items y total) | 'pay' (resumen ticket + métodos de pago)
+  const [posStage, setPosStage] = useState('select');
+  const [posNote, setPosNote] = useState('');
+  const [showItemEditor, setShowItemEditor] = useState(false);
+  const [editingItem, setEditingItem] = useState(null); // objeto del item que se edita
+  const [itemEditorMode, setItemEditorMode] = useState('color'); // color | image
+  const [itemColor, setItemColor] = useState('#fb923c');
+  const [itemShape, setItemShape] = useState('circle'); // circle | square | hex | outline
+  const [itemName, setItemName] = useState('');
+  const [itemCategory, setItemCategory] = useState(''); // Nueva categoría para organizar artículos
+  const [itemPrice, setItemPrice] = useState('');
+  const [itemType, setItemType] = useState('almuerzo'); // almuerzo | desayuno | addition | other
+  const [itemImageData, setItemImageData] = useState(null); // base64 simple
+  const [itemActive, setItemActive] = useState(true);
+  const colorPalette = ['#f3f4f6', '#f87171', '#fb923c', '#f472b6', '#f59e0b', '#84cc16', '#22c55e', '#3b82f6', '#a855f7'];
+  const shapeOptions = [
+    { id: 'circle', label: 'Círculo' },
+    { id: 'square', label: 'Cuadrado' },
+    { id: 'hex', label: 'Hexágono' },
+    { id: 'outline', label: 'Borde' }
+  ];
+
+  // Suscripción a artículos POS
+  useEffect(() => {
+    if (!posMode) return; // sólo cuando el modo POS está activo
+    const unsubscribe = onSnapshot(collection(db, 'posItems'), (snapshot) => {
+      const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => (a.sortOrder||0) - (b.sortOrder||0));
+      setPosItems(docs);
+    }, (err) => console.error('Error cargando posItems:', err));
+    return () => unsubscribe && unsubscribe();
+  }, [posMode]);
+
+  // Añadir al carrito (un click suma)
+  const handleAddPosItem = (item) => {
+    setCartItems(prev => {
+      const existing = prev.find(ci => ci.refId === item.id);
+      if (existing) {
+        return prev.map(ci => ci.refId === item.id ? { ...ci, quantity: ci.quantity + 1 } : ci);
+      }
+      return [...prev, { id: `${item.id}-${Date.now()}`, refId: item.id, name: item.name, price: Number(item.price||0), quantity: 1 }];
+    });
+  };
+  const updateCartItemQuantity = (id, qty) => {
+    setCartItems(prev => prev.filter(ci => (ci.id === id && qty <= 0) ? false : true).map(ci => ci.id === id ? { ...ci, quantity: qty } : ci));
+  };
+  const removeCartItem = (id) => setCartItems(prev => prev.filter(ci => ci.id !== id));
+  const resetCart = () => {
+    setCartItems([]); setPosCashAmount(''); setPosCalculatedChange(0); setPosNote(''); setPosStage('select');
+  };
+  const cartTotal = useMemo(() => cartItems.reduce((s,i)=> s + (i.price * i.quantity), 0), [cartItems]);
+
+  // Recalcular vueltos POS
+  useEffect(()=> {
+    if (posPaymentMethod !== 'efectivo' || !posCashAmount) { setPosCalculatedChange(0); return; }
+    const paid = parseFloat(posCashAmount)||0;
+    setPosCalculatedChange(paid - cartTotal > 0 ? Math.round(paid - cartTotal) : 0);
+  }, [posCashAmount, posPaymentMethod, cartTotal]);
+
+  // Procesar venta rápida POS
+  const handleProcessPosSale = async () => {
+    if (cartItems.length === 0) { return setError('Agrega artículos antes de cobrar'); }
+    // Si todavía estamos en la etapa de selección, pasar a la etapa de pago y no procesar aún
+    if (posStage === 'select') {
+      setPosStage('pay');
+      return; // salir para que el usuario elija método, nota, etc.
+    }
+    try {
+      const payload = {
+        orderType: posOrderType === 'general' ? 'almuerzo' : posOrderType, // mapear general a almuerzo para colección
+        isPaid: true,
+        status: 'Completada',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        paymentDate: serverTimestamp(),
+        paymentMethod: posPaymentMethod,
+        paymentAmount: cartTotal,
+        total: cartTotal,
+        paymentNote: posNote || '',
+        items: cartItems.map(ci => ({ id: ci.refId, name: ci.name, unitPrice: ci.price, quantity: ci.quantity })),
+      };
+      if (posTableNumber.trim()) payload.tableNumber = posTableNumber.trim(); else payload.takeaway = true;
+      if (posPaymentMethod === 'efectivo' && posCashAmount) {
+        payload.cashReceived = parseFloat(posCashAmount)||0;
+        payload.changeGiven = posCalculatedChange;
+      }
+      const collectionName = (posOrderType === 'desayuno') ? 'breakfastOrders' : 'tableOrders';
+      await addDoc(collection(db, collectionName), payload);
+      setSuccess('✅ Venta registrada');
+      resetCart();
+    } catch (err) {
+      setError('Error registrando venta POS: ' + err.message);
+    }
+  };
+
+  // Abrir editor para crear nuevo artículo
+  const openNewItemEditor = () => {
+    setEditingItem(null);
+    setItemEditorMode('color');
+    setItemColor('#fb923c');
+    setItemShape('circle');
+    setItemName('');
+    setItemPrice('');
+    setItemType('almuerzo');
+    setItemCategory('');
+    setItemImageData(null);
+    setItemActive(true);
+    setShowItemEditor(true);
+  };
+
+  // Abrir editor para editar existente
+  const openEditItem = (item) => {
+    setEditingItem(item);
+    setItemEditorMode(item.imageData ? 'image' : 'color');
+    setItemColor(item.color || '#fb923c');
+    setItemShape(item.shape || 'circle');
+    setItemName(item.name || '');
+    setItemPrice(item.price != null ? String(item.price) : '');
+    setItemType(item.type || 'almuerzo');
+    setItemCategory(item.category || '');
+    setItemImageData(item.imageData || null);
+    setItemActive(item.active !== false);
+    setShowItemEditor(true);
+  };
+
+  const handleSaveItem = async () => {
+    if (!itemName.trim() || !itemPrice) return setError('Nombre y precio son obligatorios');
+    const data = {
+      name: itemName.trim(),
+      price: Math.round(Number(itemPrice)||0),
+      type: itemType,
+      category: itemCategory.trim() || null,
+      color: itemEditorMode === 'color' ? itemColor : null,
+      shape: itemEditorMode === 'color' ? itemShape : null,
+      imageData: itemEditorMode === 'image' ? itemImageData : null,
+      active: itemActive,
+      sortOrder: editingItem?.sortOrder || Date.now()
+    };
+    try {
+      if (editingItem) {
+        await updateDoc(doc(db, 'posItems', editingItem.id), data);
+        setSuccess('Artículo actualizado');
+      } else {
+        await addDoc(collection(db, 'posItems'), data);
+        setSuccess('Artículo creado');
+      }
+      setShowItemEditor(false);
+    } catch (err) {
+      setError('Error guardando artículo: ' + err.message);
+    }
+  };
+
+  const handleDeleteItem = async () => {
+    if (!editingItem) return; if(!window.confirm('¿Eliminar artículo?')) return;
+    try { await updateDoc(doc(db, 'posItems', editingItem.id), { active: false }); setSuccess('Artículo desactivado'); setShowItemEditor(false);} catch(err){ setError('Error eliminando: '+err.message);} }
+  ;
+
+  const handleImageFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => { setItemImageData(ev.target.result); };
+    reader.readAsDataURL(file);
+  };
+  // ================= FIN NUEVO MODO POS =================
+
   // Estados para calculadora de vueltos
   const [showChangeCalculator, setShowChangeCalculator] = useState(false);
+
+  // ================= CATEGORÍAS POS =================
+  const [categoryFilter, setCategoryFilter] = useState(''); // '' = todas
+  const activeItems = useMemo(()=> posItems.filter(i=>i.active!==false), [posItems]);
+  const categories = useMemo(()=> {
+    const set = new Set();
+    activeItems.forEach(i => { if (i.category) set.add(i.category); });
+    return Array.from(set).sort();
+  }, [activeItems]);
+  const filteredItems = useMemo(()=> categoryFilter ? activeItems.filter(i=> i.category === categoryFilter) : activeItems, [activeItems, categoryFilter]);
+  const groupedItems = useMemo(()=> {
+    const groupsMap = new Map();
+    filteredItems.forEach(item => {
+      const key = item.category || '';
+      if (!groupsMap.has(key)) groupsMap.set(key, []);
+      groupsMap.get(key).push(item);
+    });
+    return Array.from(groupsMap.entries()).map(([category, items]) => ({ category, items }));
+  }, [filteredItems]);
+
+  const CategoryFilter = ({ posItems, onSelect, current }) => {
+    return (
+      <div className="flex items-center gap-2 text-xs">
+        <select value={current} onChange={(e)=>onSelect(e.target.value)} className="px-2 py-1 rounded bg-gray-700 text-gray-200">
+          <option value="">Todas</option>
+          {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+        </select>
+        {current && (
+          <button onClick={()=>onSelect('')} className="px-2 py-1 bg-gray-600 hover:bg-gray-500 rounded text-gray-100">Limpiar</button>
+        )}
+      </div>
+    );
+  };
+  // =============== FIN CATEGORÍAS POS ===============
   const [calculatedChange, setCalculatedChange] = useState(0);
 
   // Cargar órdenes de mesas en tiempo real
@@ -1093,86 +1305,229 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
           </h2>
           <div className="flex items-center space-x-3">
             <div className="text-sm text-gray-400">{currentTime.toLocaleTimeString('es-CO')}</div>
-            <button onClick={() => {
-              setShowCreateModal(true);
-              setCreateMode('manual');
-              // Resetear estados
-              setManualOrder({ orderType: 'almuerzo', tableNumber: '', takeaway: false, total: '', paymentMethod: 'efectivo', note: '' });
-              setManualAddedItems([]);
-              setManualNewAddedName('');
-              setManualNewAddedAmount('');
-              setQuickOrderType('almuerzo');
-              setQuickTableNumber('');
-              setQuickPaymentMethod('efectivo');
-              setQuickNote('');
-              setQuickItems([]);
-            }} className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg">➕ Crear Pedido</button>
+            <button onClick={() => setPosMode(m => !m)} className={`px-3 py-1 ${posMode ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'} text-white text-xs rounded-lg`}>{posMode ? 'POS Activo' : 'Abrir POS'}</button>
+            {!posMode && (
+              <button onClick={() => {
+                setShowCreateModal(true);
+                setCreateMode('manual');
+                setManualOrder({ orderType: 'almuerzo', tableNumber: '', takeaway: false, total: '', paymentMethod: 'efectivo', note: '' });
+                setManualAddedItems([]); setManualNewAddedName(''); setManualNewAddedAmount('');
+                setQuickOrderType('almuerzo'); setQuickTableNumber(''); setQuickPaymentMethod('efectivo'); setQuickNote(''); setQuickItems([]);
+              }} className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg">➕ Crear Pedido</button>
+            )}
             {/* Botón global de eliminar todas removido: ahora se usa el icono por mesa */}
           </div>
         </div>
 
-        {/* Estadísticas del día */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4 mb-6 items-stretch">
-          {!canDeleteAll && (
-            <div className={`p-4 rounded-lg h-24 flex items-center ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'} border-l-4 border-green-500`}>
-              <div className="flex items-center w-full justify-between">
-                <div className="flex items-center">
-                  <CheckCircleIcon className="w-8 h-8 text-green-500 mr-3" />
+        {/* ===================== SECCIÓN POS RÁPIDO ===================== */}
+        {posMode && (
+          <div className="mb-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Catálogo */}
+            <div className="lg:col-span-2">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+                <h3 className="text-lg font-semibold text-gray-100 flex items-center">Artículos</h3>
+                <div className="flex flex-wrap gap-3 items-center">
+                  <CategoryFilter posItems={posItems} onSelect={setCategoryFilter} current={categoryFilter} />
+                  {role === 2 && (
+                    <button onClick={openNewItemEditor} className="flex items-center px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"><PlusCircleIcon className="w-5 h-5 mr-1"/>Nuevo</button>
+                  )}
+                </div>
+              </div>
+              <div className="space-y-6">
+                {groupedItems.map(group => (
+                  <div key={group.category || 'sin-cat'}>
+                    <div className="flex items-center mb-2">
+                      <span className="text-[10px] uppercase tracking-wide text-gray-400 bg-gray-700/40 px-2 py-1 rounded">{group.category || 'Sin Categoría'}</span>
+                      <span className="ml-2 text-[10px] text-gray-500">{group.items.length}</span>
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
+                      {group.items.map(item => {
+                        const shapeClass = item.shape === 'circle' ? 'rounded-full' : item.shape === 'square' ? 'rounded-lg' : item.shape === 'outline' ? 'rounded-full ring-2 ring-offset-2 ring-white' : '';
+                        const hexStyle = item.shape === 'hex' ? { clipPath: 'polygon(25% 5%,75% 5%,95% 50%,75% 95%,25% 95%,5% 50%)' } : {};
+                        const bg = item.imageData ? `url(${item.imageData})` : (item.color || '#374151');
+                        const isInCart = cartItems.find(ci => ci.refId === item.id);
+                        return (
+                          <div key={item.id} className="relative group">
+                            {role === 2 && (
+                              <button onClick={() => openEditItem(item)} className="absolute -top-2 -right-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition"><PencilIcon className="w-4 h-4"/></button>
+                            )}
+                            <button onClick={() => handleAddPosItem(item)} className={`w-24 h-24 mx-auto flex flex-col items-center justify-center text-center text-xs font-medium text-gray-900 dark:text-gray-100 shadow-md hover:shadow-lg transition relative overflow-hidden ${shapeClass}`} style={{ background: item.imageData ? bg : item.shape === 'outline' ? 'transparent' : bg, backgroundSize: 'cover', backgroundPosition: 'center', ...hexStyle }}>
+                              {!item.imageData && item.shape === 'outline' && <div className="absolute inset-0 rounded-full" style={{ boxShadow: `0 0 0 3px ${item.color || '#ffffff'}` }} />}
+                              <span className="z-10 px-1 drop-shadow">
+                                {item.name}
+                                {isInCart && <span className="block text-[10px] font-bold mt-1">x{isInCart.quantity}</span>}
+                              </span>
+                            </button>
+                            <div className="mt-1 text-center text-[11px] text-gray-400">{formatPrice(item.price||0)}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+                {groupedItems.length === 0 && (
+                  <div className="text-sm text-gray-400">No hay artículos. {role===2 && 'Crea uno nuevo.'}</div>
+                )}
+              </div>
+            </div>
+
+            {/* Carrito / Resumen */}
+            <div className={`${theme==='dark' ? 'bg-gray-800' : 'bg-white'} rounded-xl p-4 shadow-lg flex flex-col`}>
+              <h3 className="text-lg font-semibold text-gray-100 mb-3">{posStage==='select' ? 'Resumen' : 'Detalle del Pedido'}</h3>
+              {posStage==='select' && (
+                <div className="grid grid-cols-2 gap-2 mb-3 text-xs">
                   <div>
-                    <div className="text-2xl font-bold text-green-600">{dayStats.totalOrders}</div>
-                    <div className="text-xs text-gray-500">Pagadas Hoy</div>
+                    <label className="block text-gray-400 mb-1">Tipo Pedido</label>
+                    <select value={posOrderType} onChange={e=>setPosOrderType(e.target.value)} className="w-full px-2 py-1 rounded bg-gray-700 text-white text-xs">
+                      <option value="almuerzo">Almuerzo</option>
+                      <option value="desayuno">Desayuno</option>
+                      <option value="general">General</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-gray-400 mb-1">Mesa / vacío = Llevar</label>
+                    <input value={posTableNumber} onChange={e=>setPosTableNumber(e.target.value)} className="w-full px-2 py-1 rounded bg-gray-700 text-white text-xs"/>
                   </div>
                 </div>
+              )}
+              <div className="flex-1 overflow-y-auto space-y-2 mb-3 pr-1">
+                {cartItems.length === 0 && <div className="text-sm text-gray-400">Añade artículos con un click.</div>}
+                {cartItems.map(ci => (
+                  <div key={ci.id} className="flex items-center justify-between text-sm bg-gray-700 rounded p-2">
+                    <div className="flex-1 mr-2">
+                      <div className="font-medium text-gray-100 truncate">{ci.name}</div>
+                      <div className="text-[11px] text-gray-400">{formatPrice(ci.price)} c/u</div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button onClick={()=>updateCartItemQuantity(ci.id, ci.quantity-1)} className="w-6 h-6 bg-red-600 text-white rounded text-xs">-</button>
+                      <input type="number" value={ci.quantity} onChange={(e)=>updateCartItemQuantity(ci.id, Number(e.target.value||0))} className="w-10 px-1 py-0.5 text-center rounded bg-gray-800 text-white text-xs" />
+                      <button onClick={()=>updateCartItemQuantity(ci.id, ci.quantity+1)} className="w-6 h-6 bg-green-600 text-white rounded text-xs">+</button>
+                      <button onClick={()=>removeCartItem(ci.id)} className="w-6 h-6 bg-red-700 text-white rounded text-xs">x</button>
+                    </div>
+                  </div>
+                ))}
               </div>
-            </div>
-          )}
-          <div className={`p-4 rounded-lg h-24 flex items-center ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'} border-l-4 border-purple-500`}>
-            <div className="flex items-center w-full justify-between">
-              <div className="flex items-center">
-                <DevicePhoneMobileIcon className="w-6 h-6 text-purple-600 mr-2" />
-                <div>
-                  <div className="text-xl font-bold text-purple-600">{formatPrice(dayStats.nequi)}</div>
-                  <div className="text-xs text-gray-500">Total Nequi</div>
-                </div>
+              {posStage==='pay' && (
+                <>
+                  <div className="mb-3 border-t border-gray-700 pt-3">
+                    <label className="block text-gray-400 mb-1 text-xs">Nota</label>
+                    <input value={posNote} onChange={e=>setPosNote(e.target.value)} className="w-full px-2 py-1 rounded bg-gray-700 text-white text-xs"/>
+                  </div>
+                  <div className="mb-3">
+                    <label className="block text-gray-400 mb-1 text-xs">Método de Pago</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {['efectivo','nequi','daviplata'].map(m => (
+                        <button key={m} onClick={()=>setPosPaymentMethod(m)} className={`py-2 text-xs rounded border-2 ${posPaymentMethod===m ? 'border-blue-500 bg-blue-500/20 text-blue-300':'border-gray-600 text-gray-300 hover:bg-gray-700'}`}>{m}</button>
+                      ))}
+                    </div>
+                  </div>
+                  {posPaymentMethod==='efectivo' && (
+                    <div className="mb-3">
+                      <label className="block text-gray-400 mb-1 text-xs">Billetes Rápidos</label>
+                      <div className="grid grid-cols-2 gap-2 mb-2">
+                        {quickCashButtons.map(b => (
+                          <button key={b} onClick={()=>setPosCashAmount(String(b))} className="py-1 bg-green-600 hover:bg-green-700 text-white text-xs rounded">{formatPrice(b)}</button>
+                        ))}
+                      </div>
+                      <input type="number" placeholder="Monto recibido" value={posCashAmount} onChange={(e)=>setPosCashAmount(e.target.value)} className="w-full px-2 py-1 rounded bg-gray-700 text-white text-xs"/>
+                      {posCashAmount && <div className={`mt-1 text-xs ${posCalculatedChange>=0?'text-green-400':'text-red-400'}`}>Vueltos: {formatPrice(posCalculatedChange)}</div>}
+                    </div>
+                  )}
+                </>
+              )}
+              <div className="flex items-center justify-between mb-4">
+                <div className="text-sm text-gray-300 font-medium">Total:</div>
+                <div className="text-xl font-bold text-green-400">{formatPrice(cartTotal)}</div>
               </div>
+              <div className="flex gap-2">
+                <button onClick={resetCart} className="flex-1 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded text-sm">{posStage==='select' ? 'Limpiar' : 'Cancelar'}</button>
+                <button onClick={handleProcessPosSale} className={`flex-1 py-2 ${posStage==='select' ? 'bg-green-600 hover:bg-green-700':'bg-blue-600 hover:bg-blue-700'} text-white rounded text-sm font-semibold`} disabled={cartItems.length===0}>{posStage==='select' ? 'Cobrar' : 'Confirmar Pago'}</button>
+              </div>
+              {posStage==='pay' && (
+                <button onClick={()=>setPosStage('select')} className="mt-2 w-full py-1.5 text-xs text-gray-400 hover:text-gray-200 transition">← Volver a editar items</button>
+              )}
             </div>
           </div>
-          <div className={`p-4 rounded-lg h-24 flex items-center ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'} border-l-4 border-orange-500`}>
-            <div className="flex items-center w-full justify-between">
-              <div className="flex items-center">
-                <CreditCardIcon className="w-6 h-6 text-orange-600 mr-2" />
-                <div>
-                  <div className="text-xl font-bold text-orange-600">{formatPrice(dayStats.daviplata)}</div>
-                  <div className="text-xs text-gray-500">Total Daviplata</div>
-                </div>
-              </div>
-            </div>
+        )}
+        {/* ===================== FIN SECCIÓN POS ===================== */}
+
+        {/* ===================== RESUMEN DEL DÍA (Mejor separación visual) ===================== */}
+        <div className="mt-10 mb-8">
+          <div className="flex items-center gap-3 mb-4 select-none">
+            <span className="h-px flex-1 bg-gradient-to-r from-transparent via-gray-600/40 to-transparent" />
+            <h3 className="text-xs tracking-[0.15em] font-semibold uppercase text-gray-400 flex items-center gap-2">
+              <ChartBarIcon className="w-4 h-4 text-blue-400" /> Resumen del Día
+            </h3>
+            <span className="h-px flex-1 bg-gradient-to-r from-transparent via-gray-600/40 to-transparent" />
           </div>
-          {/* Efectivo - siempre visible (conteo) */}
-          <div className={`p-4 rounded-lg h-24 flex items-center ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'} border-l-4 border-gray-500`}>
-            <div className="flex items-center w-full justify-between">
-              <div className="flex items-center">
-                <BanknotesIcon className="w-6 h-6 text-gray-600 mr-2" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            {!canDeleteAll && (
+              <div className={`group relative overflow-hidden rounded-xl p-4 flex flex-col justify-between shadow-sm ring-1 ${theme === 'dark' ? 'bg-gradient-to-br from-gray-800/90 to-gray-900/70 ring-gray-700/60' : 'bg-white ring-gray-200'} border-l-4 border-green-500`}> 
+                <div className="flex items-start gap-3">
+                  <div className="shrink-0 mt-0.5">
+                    <CheckCircleIcon className="w-8 h-8 text-green-500 drop-shadow" />
+                  </div>
+                  <div className="flex flex-col">
+                    <div className="text-2xl font-bold tracking-tight text-green-500 leading-none">{dayStats.totalOrders}</div>
+                    <div className="mt-1 inline-flex items-center gap-1">
+                      <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20">Pagadas Hoy</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-br from-green-500/5 to-transparent" />
+              </div>
+            )}
+
+            {/* Nequi */}
+            <div className={`group relative overflow-hidden rounded-xl p-4 flex flex-col justify-between shadow-sm ring-1 ${theme === 'dark' ? 'bg-gradient-to-br from-gray-800/90 to-gray-900/70 ring-gray-700/60' : 'bg-white ring-gray-200'} border-l-4 border-purple-500`}>
+              <div className="flex items-start gap-3">
+                <DevicePhoneMobileIcon className="w-6 h-6 text-purple-500 mt-1" />
                 <div>
-                  <div className="text-xl font-bold text-gray-600">{formatPrice(dayStats.efectivo)}</div>
-                  <div className="text-xs text-gray-500">Total Efectivo</div>
+                  <div className="text-lg font-semibold text-purple-400 leading-tight">{formatPrice(dayStats.nequi)}</div>
+                  <div className="mt-1 text-[10px] uppercase tracking-wide text-purple-300/80 font-medium bg-purple-500/10 inline-block px-2 py-0.5 rounded-full border border-purple-500/20">Nequi</div>
                 </div>
               </div>
+              <div className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-br from-purple-500/5 to-transparent" />
             </div>
-          </div>
-          {/* Total Día - siempre visible */}
-          <div className={`p-4 rounded-lg h-24 flex items-center ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'} border-l-4 border-blue-500`}>
-            <div className="flex items-center w-full justify-between">
-              <div className="flex items-center">
-                <CurrencyDollarIcon className="w-6 h-6 text-blue-600 mr-2" />
+
+            {/* Daviplata */}
+            <div className={`group relative overflow-hidden rounded-xl p-4 flex flex-col justify-between shadow-sm ring-1 ${theme === 'dark' ? 'bg-gradient-to-br from-gray-800/90 to-gray-900/70 ring-gray-700/60' : 'bg-white ring-gray-200'} border-l-4 border-orange-500`}>
+              <div className="flex items-start gap-3">
+                <CreditCardIcon className="w-6 h-6 text-orange-500 mt-1" />
                 <div>
-                  <div className="text-xl font-bold text-blue-600">{formatPrice(dayStats.totalAmount)}</div>
-                  <div className="text-xs text-gray-500">Total General</div>
+                  <div className="text-lg font-semibold text-orange-400 leading-tight">{formatPrice(dayStats.daviplata)}</div>
+                  <div className="mt-1 text-[10px] uppercase tracking-wide text-orange-300/80 font-medium bg-orange-500/10 inline-block px-2 py-0.5 rounded-full border border-orange-500/20">Daviplata</div>
                 </div>
               </div>
+              <div className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-br from-orange-500/5 to-transparent" />
+            </div>
+
+            {/* Efectivo */}
+            <div className={`group relative overflow-hidden rounded-xl p-4 flex flex-col justify-between shadow-sm ring-1 ${theme === 'dark' ? 'bg-gradient-to-br from-gray-800/90 to-gray-900/70 ring-gray-700/60' : 'bg-white ring-gray-200'} border-l-4 border-gray-500`}>
+              <div className="flex items-start gap-3">
+                <BanknotesIcon className="w-6 h-6 text-gray-400 mt-1" />
+                <div>
+                  <div className="text-lg font-semibold text-gray-300 leading-tight">{formatPrice(dayStats.efectivo)}</div>
+                  <div className="mt-1 text-[10px] uppercase tracking-wide text-gray-400/80 font-medium bg-gray-500/10 inline-block px-2 py-0.5 rounded-full border border-gray-500/20">Efectivo</div>
+                </div>
+              </div>
+              <div className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-br from-gray-400/10 to-transparent" />
+            </div>
+
+            {/* Total General */}
+            <div className={`group relative overflow-hidden rounded-xl p-4 flex flex-col justify-between shadow-sm ring-1 ${theme === 'dark' ? 'bg-gradient-to-br from-gray-800/90 to-gray-900/70 ring-gray-700/60' : 'bg-white ring-gray-200'} border-l-4 border-blue-500`}>
+              <div className="flex items-start gap-3">
+                <CurrencyDollarIcon className="w-6 h-6 text-blue-500 mt-1" />
+                <div>
+                  <div className="text-lg font-bold text-blue-400 leading-tight">{formatPrice(dayStats.totalAmount)}</div>
+                  <div className="mt-1 text-[10px] uppercase tracking-wide text-blue-300/80 font-semibold bg-blue-500/10 inline-block px-2 py-0.5 rounded-full border border-blue-500/20">Total Día</div>
+                </div>
+              </div>
+              <div className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-br from-blue-500/5 to-transparent" />
             </div>
           </div>
         </div>
+        {/* ===================== FIN RESUMEN DEL DÍA ===================== */}
 
         {/* Búsqueda: separada y con padding lateral */}
         <div className="px-4">
@@ -2316,6 +2671,86 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
                   ✅ Confirmar Pago
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Editor Artículo POS */}
+      {showItemEditor && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className={`${theme==='dark'?'bg-gray-800':'bg-white'} w-full max-w-md rounded-xl shadow-2xl max-h-[90vh] overflow-y-auto p-6`}>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold text-gray-100">{editingItem ? 'Editar Artículo' : 'Nuevo Artículo'}</h3>
+              <button onClick={()=>setShowItemEditor(false)} className="text-gray-400 hover:text-gray-200"><XCircleIcon className="w-6 h-6"/></button>
+            </div>
+            <div className="mb-4 flex gap-4 text-xs">
+              <label className="flex items-center gap-1 cursor-pointer"><input type="radio" checked={itemEditorMode==='color'} onChange={()=>setItemEditorMode('color')} /> Color y forma</label>
+              <label className="flex items-center gap-1 cursor-pointer"><input type="radio" checked={itemEditorMode==='image'} onChange={()=>setItemEditorMode('image')} /> Imagen</label>
+            </div>
+            {itemEditorMode==='color' ? (
+              <div className="mb-4">
+                <div className="grid grid-cols-9 gap-2 mb-4">
+                  {colorPalette.map(c => (
+                    <button key={c} onClick={()=>setItemColor(c)} style={{ background:c }} className={`h-10 rounded ${itemColor===c? 'ring-2 ring-white':''}`}></button>
+                  ))}
+                </div>
+                <div className="flex gap-2 justify-center mb-2">
+                  {shapeOptions.map(opt => (
+                    <button key={opt.id} onClick={()=>setItemShape(opt.id)} className={`w-10 h-10 flex items-center justify-center text-[10px] uppercase tracking-wide border ${itemShape===opt.id? 'bg-blue-600 text-white border-blue-400':'bg-transparent text-gray-400 border-gray-500'}`}>{opt.id==='circle'?'○':opt.id==='square'?'▢':opt.id==='hex'?'⬢':'◌'}</button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="mb-4 space-y-3">
+                <div className="flex items-center gap-3">
+                  <label className="flex flex-col items-center justify-center w-32 h-32 border-2 border-dashed border-gray-600 rounded-lg cursor-pointer text-gray-400 hover:border-blue-500 hover:text-white transition relative overflow-hidden">
+                    {itemImageData ? (
+                      <img src={itemImageData} alt="preview" className="absolute inset-0 w-full h-full object-cover" />
+                    ) : (
+                      <PhotoIcon className="w-10 h-10" />
+                    )}
+                    <input type="file" accept="image/*" className="hidden" onChange={handleImageFile} />
+                  </label>
+                  {itemImageData && (
+                    <button onClick={()=>setItemImageData(null)} className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-xs">Quitar</button>
+                  )}
+                </div>
+              </div>
+            )}
+            <div className="space-y-3 text-sm">
+              <div>
+                <label className="block text-gray-300 mb-1">Nombre</label>
+                <input value={itemName} onChange={e=>setItemName(e.target.value)} className="w-full px-3 py-2 rounded bg-gray-700 text-white"/>
+              </div>
+              <div>
+                <label className="block text-gray-300 mb-1 flex items-center justify-between">Categoría <span className="text-[10px] text-gray-500 font-normal">(ej: Bebidas, Proteína, Postres)</span></label>
+                <input value={itemCategory} onChange={e=>setItemCategory(e.target.value)} placeholder="Opcional" className="w-full px-3 py-2 rounded bg-gray-700 text-white placeholder-gray-500"/>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-gray-300 mb-1">Precio</label>
+                  <input type="number" value={itemPrice} onChange={e=>setItemPrice(e.target.value)} className="w-full px-3 py-2 rounded bg-gray-700 text-white"/>
+                </div>
+                <div>
+                  <label className="block text-gray-300 mb-1">Tipo</label>
+                  <select value={itemType} onChange={e=>setItemType(e.target.value)} className="w-full px-3 py-2 rounded bg-gray-700 text-white">
+                    <option value="almuerzo">Almuerzo</option>
+                    <option value="desayuno">Desayuno</option>
+                    <option value="addition">Adición</option>
+                    <option value="other">Otro</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <input type="checkbox" checked={itemActive} onChange={e=>setItemActive(e.target.checked)} />
+                <span className="text-gray-300 text-xs">Activo</span>
+              </div>
+            </div>
+            <div className="mt-6 flex gap-2">
+              <button onClick={()=>setShowItemEditor(false)} className="flex-1 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded">Cancelar</button>
+              {editingItem && <button onClick={handleDeleteItem} className="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm">Desactivar</button>}
+              <button onClick={handleSaveItem} className="flex-1 py-2 bg-green-600 hover:bg-green-700 text-white rounded font-semibold">Guardar</button>
             </div>
           </div>
         </div>

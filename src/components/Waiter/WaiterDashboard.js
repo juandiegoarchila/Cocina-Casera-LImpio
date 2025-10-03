@@ -18,6 +18,7 @@ import OptionSelector from '../OptionSelector';
 import WaiterPayments from './WaiterPayments';
 import WaiterTasks from './WaiterTasks';
 import WaiterCashier from './WaiterCashier';
+import CajaPOS from './CajaPOS';
 import { initializeMealData, handleMealChange, addMeal, duplicateMeal, removeMeal } from '../../utils/MealLogic';
 import { calculateTotal, calculateMealPrice } from '../../utils/MealCalculations';
 import { initializeBreakfastData, handleBreakfastChange, addBreakfast, duplicateBreakfast, removeBreakfast, calculateBreakfastPrice, calculateTotalBreakfastPrice } from '../../utils/BreakfastLogic';
@@ -1038,9 +1039,9 @@ const WaiterDashboard = () => {
                     <button
                       onClick={() => { setCurrentView('cashier'); setIsSidebarOpen(false); }}
                       className={`flex items-center px-4 py-2 rounded-md text-sm font-medium ${
-                        currentView === 'cashier' 
-                          ? theme === 'dark' 
-                            ? 'bg-blue-700 text-white' 
+                        currentView === 'cashier'
+                          ? theme === 'dark'
+                            ? 'bg-blue-700 text-white'
                             : 'bg-blue-200 text-blue-800'
                           : theme === 'dark' 
                             ? 'text-gray-300 hover:text-white hover:bg-gray-700' 
@@ -1048,7 +1049,7 @@ const WaiterDashboard = () => {
                       } transition-all duration-200`}
                     >
                       <CurrencyDollarIcon className={`w-6 h-6 mr-2 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} />
-                      <span>💰 Caja</span>
+                      <span>Caja registradora</span>
                     </button>
                     <button
                       onClick={handleLogout}
@@ -1157,17 +1158,15 @@ const WaiterDashboard = () => {
           <button
             onClick={() => setCurrentView('cashier')}
             className={`relative flex items-center px-4 py-2 rounded-md text-sm font-medium min-w-[48px]
-              ${
-                currentView === 'cashier' 
-                  ? theme === 'dark' 
-                    ? 'bg-blue-700 text-white' 
-                    : 'bg-blue-200 text-blue-800'
-                  : isSidebarOpen
-                    ? theme === 'dark'
-                      ? 'text-gray-300 hover:text-white hover:bg-gray-700'
-                      : 'text-gray-700 hover:text-black hover:bg-gray-300'
-                    : 'justify-center'
-              } transition-all duration-300`}
+              ${currentView === 'cashier'
+                ? theme === 'dark'
+                  ? 'bg-blue-700 text-white'
+                  : 'bg-blue-200 text-blue-800'
+                : isSidebarOpen
+                  ? theme === 'dark'
+                    ? 'text-gray-300 hover:text-white hover:bg-gray-700'
+                    : 'text-gray-700 hover:text-black hover:bg-gray-300'
+                  : 'justify-center'} transition-all duration-300`}
           >
             <CurrencyDollarIcon
               className={`w-6 h-6 ${isSidebarOpen ? 'mr-2' : 'mr-0'} ${
@@ -1175,7 +1174,7 @@ const WaiterDashboard = () => {
               }`}
             />
             <span className={`transition-opacity duration-200 ${isSidebarOpen ? 'opacity-100 block' : 'opacity-0 hidden'}`}>
-              💰 Caja
+              Caja registradora
             </span>
           </button>
 
@@ -1219,12 +1218,14 @@ const WaiterDashboard = () => {
             theme={theme} 
           />
         ) : currentView === 'cashier' ? (
-          // Vista de Caja Registradora
-          <WaiterCashier 
-            setError={setErrorMessage} 
-            setSuccess={setSuccessMessage} 
-            theme={theme} 
-          />
+          // Vista de Caja Registradora (CajaPOS embebida)
+          <div className="-mt-4">
+            <CajaPOS 
+              setError={setErrorMessage} 
+              setSuccess={setSuccessMessage} 
+              theme={theme} 
+            />
+          </div>
         ) : (
           // Vista de Órdenes (contenido original)
           <>
