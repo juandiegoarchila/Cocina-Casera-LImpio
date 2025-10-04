@@ -59,10 +59,14 @@ const ensureAddress = (addr = {}, fallback = {}) => ({
   details: addr.details ?? fallback.details ?? '',
 });
 
+// === POS editing: catálogo de Caja ===
+const currencyCO = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
+
 // ===== Helpers NUEVOS / ROBUSTOS para pago =====
 const formatValue = (value) => {
-  if (!value) return 'N/A';
+  if (value === null || value === undefined) return 'N/A';
   if (typeof value === 'string') return value;
+  if (typeof value === 'number') return String(value);
   const candidates = [
     value.name, value.label, value.title, value.method, value.type, value.payment, value.value,
     value?.method?.name, value?.payment?.name, value?.value?.name, value?.type?.name
@@ -166,13 +170,26 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
       const win = window.open('', 'PRINT', 'height=700,width=400');
       if (!win) return;
       const isBreakfast = order.type === 'breakfast';
-      const table = formatValue(order.meals?.[0]?.tableNumber || order.breakfasts?.[0]?.tableNumber);
-      const pago = paymentMethodsOnly(order);
-      const total = order.total?.toLocaleString('es-CO') || 'N/A';
-      const tipo = isBreakfast ? 'Desayuno' : 'Almuerzo';
-      // Mostrar fecha y hora actual en formato local
+      const isPOS = Array.isArray(order.items) && order.items.length && !Array.isArray(order.breakfasts) && !Array.isArray(order.meals);
+      const table = formatValue(order.tableNumber || order.meals?.[0]?.tableNumber || order.breakfasts?.[0]?.tableNumber);
+      const pago = isPOS ? (() => {
+        const raw = (typeof order.paymentMethod === 'string' ? order.paymentMethod : order.paymentMethod?.name || '').toString().toLowerCase();
+        if (raw.includes('efect')) return 'Efectivo';
+        if (raw.includes('nequi')) return 'Nequi';
+        if (raw.includes('davi')) return 'Daviplata';
+        return order.paymentMethod?.name || order.paymentMethod || '';
+      })() : paymentMethodsOnly(order);
+      const fmt = (v) => (Number(v)||0).toLocaleString('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
+      const total = fmt(order.total);
+      // Para POS usamos la fecha guardada; para el resto, la actual
+      const savedDate = order.paymentDate?.toDate ? order.paymentDate.toDate() : (order.createdAt?.toDate ? order.createdAt.toDate() : (order.paymentDate || order.createdAt ? new Date(order.paymentDate || order.createdAt) : new Date()));
       const now = new Date();
-      const fecha = now.toLocaleDateString('es-CO') + ' ' + now.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+      const fecha = (isPOS ? savedDate : now).toLocaleString('es-CO');
+      // Tipo combinado para POS
+      const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
+      const kind = (order.orderTypeNormalized?.split('_')[0] || order.orderType || (isBreakfast ? 'desayuno' : 'almuerzo')).toLowerCase();
+      const svc = (order.orderTypeNormalized?.split('_')[1] || order.serviceType || (order.tableNumber ? 'mesa' : (order.takeaway ? 'llevar' : ''))).toLowerCase();
+      const tipo = isPOS ? `${cap(kind)} ${svc ? cap(svc) : ''}`.trim() : (isBreakfast ? 'Desayuno' : 'Almuerzo');
       
       // Variable para almacenar el QR code data URL
       let qrCodeDataUrl = null;
@@ -195,7 +212,7 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
           return null;
         }
       };
-      let resumen = '';
+  let resumen = '';
       if (!isBreakfast && Array.isArray(order.meals)) {
         resumen += `<div style='font-weight:bold;margin-bottom:4px;'>✅ Resumen del Pedido</div>`;
         resumen += `<div>🍽 ${order.meals.length} almuerzos en total</div>`;
@@ -234,7 +251,7 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
           // Tipo
           resumen += `<div>Tipo: ${m.orderType === 'table' ? 'Para mesa' : m.orderType === 'takeaway' ? 'Para llevar' : ''}</div>`;
         });
-      } else if (isBreakfast && Array.isArray(order.breakfasts)) {
+  } else if (isBreakfast && Array.isArray(order.breakfasts)) {
         resumen += `<div style='font-weight:bold;margin-bottom:4px;'>✅ Resumen del Pedido</div>`;
         resumen += `<div>🍽 ${order.breakfasts.length} desayunos en total</div>`;
         order.breakfasts.forEach((b, idx) => {
@@ -264,44 +281,107 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
       generateQRCode().then(qrUrl => {
         qrCodeDataUrl = qrUrl;
         
-        win.document.write(`
-          <html><head><title>Recibo</title>
-          <style>
-            body { font-family: monospace; font-size: 14px; margin: 0; padding: 0 10px; }
-            h2 { margin: 5px 0 8px 0; font-size: 18px; text-align: center; }
-            .line { border-bottom: 2px solid #000; margin: 10px 0; height: 0; }
-            .logo { text-align: center; margin-bottom: 8px; }
-            .thanks { text-align: center; margin-top: 16px; font-weight: bold; }
-            .contact { text-align: center; margin-top: 8px; }
-            .qr-container { text-align: center; margin-top: 15px; }
-            .qr-text { font-size: 12px; margin-bottom: 5px; text-align: center; }
-            div { padding-left: 5px; padding-right: 5px; }
-          </style>
-          </head><body>
-          <div class='logo'>
-            <img src="/formato finak.png" alt="Logo" style="width:100px; height:auto; display:block; margin:0 auto; filter:brightness(0);" />
-            <h2>Cocina Casera</h2>
-            <div style='text-align:center; font-size:12px; color:#000; margin-top:5px; font-weight:bold;'>(Uso interno - No es factura DIAN)</div>
-          </div>
-          <div class='line'></div>
-          <div><b>Tipo:</b> ${tipo}</div>
-          <div><b>Mesa:</b> ${table}</div>
-          <div><b>Pago:</b> ${pago}</div>
-          <div><b>Total:</b> $${total}</div>
-          <div><b>Fecha:</b> ${fecha}</div>
-          <div class='line'></div>
-          ${resumen}
-          <div class='line'></div>
-          <div class='thanks'>¡Gracias por su compra!</div>
-          <div class='contact'>Te esperamos mañana con un nuevo menú.<br>Escríbenos al <strong>301 6476916</strong><br><strong>Calle 133#126c-09</strong></div>
-          
-          <div class='qr-container'>
-            <div class='qr-text'>Escanea este código QR para unirte a nuestro canal de WhatsApp<br>y recibir nuestro menú diario:</div>
-            ${qrCodeDataUrl ? `<img src="${qrCodeDataUrl}" width="150" height="150" alt="QR Code" />` : ''}
-          </div>
-          <br><br><br><br><br><br>
-          </body></html>
-        `);
+        // Plantilla: si es POS, imprimimos en formato de ticket de Caja POS
+        if (isPOS) {
+          const items = Array.isArray(order.items) ? order.items : [];
+          const itemsHtml = items.map(it => {
+            const qty = Number(it.quantity||0);
+            const unit = Number(it.unitPrice||0);
+            const lineTotal = qty * unit;
+            return `<div class='it-row'><div class='it-left'><div class='it-name'>${it.name}</div><div class='it-line'>${qty}x ${fmt(unit)}</div></div><div class='it-right'>${fmt(lineTotal)}</div></div>`;
+          }).join('');
+          const efectivo = (pago || '').toLowerCase().includes('efect');
+          win.document.write(`
+            <html><head><title>Recibo</title>
+            <meta charset='utf-8'/>
+            <style>
+              body { font-family: monospace; font-size: 13px; margin:0; padding:0 12px; }
+              h2 { margin:4px 0 6px; font-size:18px; text-align:center; }
+              .line { border-bottom:2px solid #000; margin:8px 0; height:0; }
+              .logo { text-align:center; margin-top:6px; }
+              .logo img { width:110px; filter:brightness(0); }
+              .meta div { padding:2px 0; }
+              .thanks { text-align:center; margin-top:14px; font-weight:bold; }
+              .contact { text-align:center; margin-top:8px; }
+              .qr-container { text-align:center; margin-top:14px; }
+              .qr-text { font-size:11px; margin-bottom:4px; }
+              .it-row { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px; }
+              .it-left { flex:1; min-width:0; }
+              .it-name { font-weight:bold; }
+              .it-line { padding-left:4px; }
+              .it-right { min-width:70px; text-align:right; font-weight:bold; }
+            </style>
+            </head><body>
+              <div class='logo'>
+                <img src="/formato finak.png" alt="Logo" />
+                <h2>Cocina Casera</h2>
+                <div style='text-align:center; font-size:12px; margin-top:4px; font-weight:bold;'>(Uso interno - No es factura DIAN)</div>
+              </div>
+              <div class='line'></div>
+              <div class='meta'>
+                <div><b>Tipo:</b> ${tipo}</div>
+                ${order.tableNumber ? `<div><b>Mesa:</b> ${order.tableNumber}</div>` : ''}
+                <div><b>Fecha:</b> ${fecha}</div>
+                ${order.paymentNote ? `<div><b>Nota:</b> ${order.paymentNote}</div>`:''}
+              </div>
+              <div class='line'></div>
+              <div><b>Items:</b></div>
+              ${itemsHtml}
+              <div class='line'></div>
+              <div><b>Total:</b> ${fmt(order.total)}</div>
+              <div><b>Pago:</b> ${pago}</div>
+              ${efectivo ? `<div><b>Recibido:</b> ${fmt(order.cashReceived||0)}</div>`:''}
+              ${efectivo ? `<div><b>Vueltos:</b> ${fmt(order.changeGiven||0)}</div>`:''}
+              <div class='line'></div>
+              <div class='thanks'>¡Gracias por su compra!</div>
+              <div class='contact'>Te esperamos mañana con un<br>nuevo menú.<br>Escríbenos al <strong>301 6476916</strong><br><strong>Calle 133#126c-09</strong></div>
+              <div class='qr-container'>
+                <div class='qr-text'>Escanea este código QR para unirte a nuestro canal de WhatsApp<br>y recibir nuestro menú diario:</div>
+                ${qrCodeDataUrl ? `<img src='${qrCodeDataUrl}' width='140' height='140' />` : ''}
+              </div>
+              <br/><br/>
+            </body></html>
+          `);
+        } else {
+          // Plantilla clásica para pedidos estructurados (mesera)
+          win.document.write(`
+            <html><head><title>Recibo</title>
+            <style>
+              body { font-family: monospace; font-size: 14px; margin: 0; padding: 0 10px; }
+              h2 { margin: 5px 0 8px 0; font-size: 18px; text-align: center; }
+              .line { border-bottom: 2px solid #000; margin: 10px 0; height: 0; }
+              .logo { text-align: center; margin-bottom: 8px; }
+              .thanks { text-align: center; margin-top: 16px; font-weight: bold; }
+              .contact { text-align: center; margin-top: 8px; }
+              .qr-container { text-align: center; margin-top: 15px; }
+              .qr-text { font-size: 12px; margin-bottom: 5px; text-align: center; }
+              div { padding-left: 5px; padding-right: 5px; }
+            </style>
+            </head><body>
+            <div class='logo'>
+              <img src="/formato finak.png" alt="Logo" style="width:100px; height:auto; display:block; margin:0 auto; filter:brightness(0);" />
+              <h2>Cocina Casera</h2>
+              <div style='text-align:center; font-size:12px; color:#000; margin-top:5px; font-weight:bold;'>(Uso interno - No es factura DIAN)</div>
+            </div>
+            <div class='line'></div>
+            <div><b>Tipo:</b> ${tipo}</div>
+            <div><b>Mesa:</b> ${table}</div>
+            <div><b>Pago:</b> ${pago}</div>
+            <div><b>Total:</b> ${fmt(order.total)}</div>
+            <div><b>Fecha:</b> ${fecha}</div>
+            <div class='line'></div>
+            ${resumen}
+            <div class='line'></div>
+            <div class='thanks'>¡Gracias por su compra!</div>
+            <div class='contact'>Te esperamos mañana con un nuevo menú.<br>Escríbenos al <strong>301 6476916</strong><br><strong>Calle 133#126c-09</strong></div>
+            <div class='qr-container'>
+              <div class='qr-text'>Escanea este código QR para unirte a nuestro canal de WhatsApp<br>y recibir nuestro menú diario:</div>
+              ${qrCodeDataUrl ? `<img src="${qrCodeDataUrl}" width="150" height="150" alt="QR Code" />` : ''}
+            </div>
+            <br><br><br><br><br><br>
+            </body></html>
+          `);
+        }
         win.document.close();
         win.focus();
         setTimeout(() => {
@@ -711,6 +791,12 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
     if (!catalogsLoaded) return;
     if (hydratedRef.current === editingOrder.id) return;
 
+    // Si es una orden POS (Caja) con items planos, no hidratar a breakfasts/meals
+    if (Array.isArray(editingOrder.items) && !Array.isArray(editingOrder.breakfasts) && !Array.isArray(editingOrder.meals)) {
+      hydratedRef.current = editingOrder.id;
+      return;
+    }
+
     const isBreakfast = Array.isArray(editingOrder.breakfasts);
     const fallbackAddress = editingOrder.address || {};
 
@@ -836,6 +922,15 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
     }
   }, [editingOrder && editingOrder.total]);
 
+  // Recalcular total automáticamente para órdenes POS (items) al editar cantidades
+  useEffect(() => {
+    if (!editingOrder || !Array.isArray(editingOrder.items)) return;
+    const total = editingOrder.items.reduce((s, it) => s + (Number(it.unitPrice || it.price || 0) * Number(it.quantity || 0)), 0);
+    if ((editingOrder.total || 0) !== total) {
+      setEditingOrder(prev => ({ ...prev, total }));
+    }
+  }, [editingOrder && JSON.stringify(editingOrder.items)]); // depende de items
+
   const setMealField = (i, key, value) => {
     setEditingOrder((prev) => {
       const list = [...(prev.meals || [])];
@@ -881,14 +976,17 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
   const handleSaveEdit = async () => {
     try {
       setIsLoading(true);
-      const isBreakfast = Array.isArray(editingOrder.breakfasts);
-      const collectionName = isBreakfast ? 'breakfastOrders' : 'tableOrders';
+  const isPOS = Array.isArray(editingOrder.items) && !Array.isArray(editingOrder.breakfasts) && !Array.isArray(editingOrder.meals);
+  const isBreakfast = !isPOS && Array.isArray(editingOrder.breakfasts);
+  const collectionName = editingOrder.__collection || (isBreakfast ? 'breakfastOrders' : 'tableOrders');
       const orderRef = doc(db, collectionName, editingOrder.id);
 
       // Recalcular total actualizado
-      const newTotal = isBreakfast
-        ? Number(calculateTotalBreakfastPrice(editingOrder.breakfasts, role, breakfastTypes) || 0)
-        : Number(calculateTotal(editingOrder.meals, role) || 0);
+      const newTotal = isPOS
+        ? Number((editingOrder.items || []).reduce((s, it) => s + (Number(it.unitPrice || it.price || 0) * Number(it.quantity || 0)), 0))
+        : isBreakfast
+          ? Number(calculateTotalBreakfastPrice(editingOrder.breakfasts, role, breakfastTypes) || 0)
+          : Number(calculateTotal(editingOrder.meals, role) || 0);
 
       // --- Split de pagos sincronizado ---
       let payments = Array.isArray(editingOrder.payments) && editingOrder.payments.length
@@ -923,7 +1021,32 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
       }
 
       let payload;
-      if (isBreakfast) {
+      if (isPOS) {
+        // Mantener estructura POS
+        const items = (editingOrder.items || []).map(ci => ({
+          id: ci.id || ci.refId,
+          name: ci.name,
+          unitPrice: Number(ci.unitPrice || ci.price || 0),
+          quantity: Number(ci.quantity || 0),
+          type: ci.type || null,
+          category: ci.category || null,
+        }));
+        payload = {
+          items,
+          total: newTotal,
+          paymentAmount: newTotal,
+          payments,
+          updatedAt: new Date(),
+        };
+        // preservar normalizados si existen
+        if (editingOrder.orderTypeNormalized) payload.orderTypeNormalized = editingOrder.orderTypeNormalized;
+        if (editingOrder.serviceType) payload.serviceType = editingOrder.serviceType;
+        if (editingOrder.tableNumber) payload.tableNumber = editingOrder.tableNumber;
+        if (editingOrder.takeaway) payload.takeaway = true;
+        if (editingOrder.paymentMethod) payload.paymentMethod = editingOrder.paymentMethod;
+        if (typeof editingOrder.cashReceived !== 'undefined') payload.cashReceived = editingOrder.cashReceived;
+        if (typeof editingOrder.changeGiven !== 'undefined') payload.changeGiven = editingOrder.changeGiven;
+      } else if (isBreakfast) {
         // Actualizar paymentMethod y payment en cada desayuno
         const updatedBreakfasts = editingOrder.breakfasts.map(b => ({
           ...b,
@@ -957,6 +1080,33 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
       setIsLoading(false);
     }
   };
+
+  // =====================
+  // Catálogo POS para edición de órdenes creadas en Caja
+  // =====================
+  const [posItems, setPosItems] = useState([]);
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'posItems'), (snap) => {
+      const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+      setPosItems(docs);
+    });
+    return () => unsub && unsub();
+  }, []);
+
+  const activePosItems = useMemo(() => posItems.filter(i => i.active !== false), [posItems]);
+  const posCategories = useMemo(() => {
+    const s = new Set();
+    activePosItems.forEach(i => { if (i.category) s.add(i.category); });
+    return Array.from(s).sort();
+  }, [activePosItems]);
+  const [posCategoryFilter, setPosCategoryFilter] = useState('');
+  const filteredPosItems = useMemo(() => posCategoryFilter ? activePosItems.filter(i => i.category === posCategoryFilter) : activePosItems, [activePosItems, posCategoryFilter]);
+  const groupedPosItems = useMemo(() => {
+    const map = new Map();
+    filteredPosItems.forEach(it => { const k = it.category || ''; if (!map.has(k)) map.set(k, []); map.get(k).push(it); });
+    return Array.from(map.entries()).map(([category, items]) => ({ category, items }));
+  }, [filteredPosItems]);
 
   // ===== Exportaciones =====
   const exportToExcel = () => {
@@ -1368,7 +1518,7 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
                             {order.type === 'breakfast' ? 'Desayuno' : 'Almuerzo'}
                           </td>
                           <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">
-                            {formatValue(order.meals?.[0]?.tableNumber || order.breakfasts?.[0]?.tableNumber)}
+                            {formatValue(order.tableNumber || order.meals?.[0]?.tableNumber || order.breakfasts?.[0]?.tableNumber)}
                           </td>
                           <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">{paymentDisplay}</td>
                           <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">
@@ -1488,7 +1638,7 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
                         showMealDetails.type === 'breakfast' 
                           ? orders.filter(o => o.type === 'breakfast').findIndex(o => o.id === showMealDetails.id) + 1
                           : orders.filter(o => o.type === 'lunch').findIndex(o => o.id === showMealDetails.id) + 1
-                      } - Mesa {formatValue(showMealDetails.meals?.[0]?.tableNumber || showMealDetails.breakfasts?.[0]?.tableNumber)} - #{showMealDetails.id.slice(-4)}
+                      } - Mesa {formatValue(showMealDetails.tableNumber || showMealDetails.meals?.[0]?.tableNumber || showMealDetails.breakfasts?.[0]?.tableNumber)} - #{showMealDetails.id.slice(-4)}
                     </h3>
                     <div className="relative">
                       <span className="text-gray-600">⋮</span>
@@ -1498,17 +1648,117 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
                   {/* Usar los mismos componentes que el WaiterDashboard */}
                   <div className="bg-white rounded-lg p-4">
                     {showMealDetails.type === 'breakfast' ? (
-                      <BreakfastOrderSummary
-                        items={showMealDetails.breakfasts}
-                        user={{ role: 3 }}
-                        breakfastTypes={breakfastTypes}
-                        isWaiterView={true}
-                        statusClass={''} 
-                        showSaveButton={false}
-                      />
+                      Array.isArray(showMealDetails.breakfasts) && showMealDetails.breakfasts.length ? (
+                        <BreakfastOrderSummary
+                          items={showMealDetails.breakfasts}
+                          user={{ role: 3 }}
+                          breakfastTypes={breakfastTypes}
+                          isWaiterView={true}
+                          statusClass={''}
+                          showSaveButton={false}
+                        />
+                      ) : (
+                        // Fallback para órdenes de desayuno creadas desde Caja POS (sin estructura breakfasts)
+                        (() => {
+                          const order = showMealDetails || {};
+                          const kind = (order.orderTypeNormalized?.split('_')[0] || order.orderType || 'desayuno').toLowerCase();
+                          const svc = (order.orderTypeNormalized?.split('_')[1] || order.serviceType || (order.tableNumber ? 'mesa' : (order.takeaway ? 'llevar' : ''))).toLowerCase();
+                          const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
+                          const tipoLabel = `${cap(kind)} ${svc ? cap(svc) : ''}`.trim();
+                          const fecha = (() => {
+                            try { return order.createdAt?.toDate ? order.createdAt.toDate() : new Date(order.createdAt) } catch(_) { return new Date(); }
+                          })();
+                          const items = Array.isArray(order.items) ? order.items : [];
+                          const fmt = (v) => (Number(v)||0).toLocaleString('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
+                          const payName = (() => {
+                            const raw = (typeof order.paymentMethod === 'string' ? order.paymentMethod : order.paymentMethod?.name || '').toLowerCase();
+                            if (raw.includes('efect')) return 'Efectivo';
+                            if (raw.includes('nequi')) return 'Nequi';
+                            if (raw.includes('davi')) return 'Daviplata';
+                            return order.paymentMethod?.name || order.paymentMethod || '';
+                          })();
+                          return (
+                            <div className={classNames('rounded-lg border p-4', theme==='dark' ? 'bg-gray-900 border-gray-700 text-gray-100' : 'bg-gray-50 border-gray-200 text-gray-900')}>
+                              <div className="text-sm">Tipo: <strong>{tipoLabel}</strong></div>
+                              {order.tableNumber ? <div className="text-sm">Mesa: <strong>{order.tableNumber}</strong></div> : null}
+                              <div className="text-sm">Fecha: {fecha.toLocaleString('es-CO')}</div>
+                              {order.paymentNote ? <div className="text-sm">Nota: {order.paymentNote}</div> : null}
+                              <hr className={theme==='dark' ? 'border-gray-700 my-2' : 'border-gray-200 my-2'} />
+                              <div className="font-semibold mb-1">Items:</div>
+                              <div className="space-y-1">
+                                {items.map((it, idx) => {
+                                  const qty = Number(it.quantity||0);
+                                  const unit = Number(it.unitPrice||0);
+                                  const lineTotal = qty * unit;
+                                  return (
+                                    <div key={idx} className="flex items-center justify-between gap-2">
+                                      <div>
+                                        <div className="font-medium">{it.name}</div>
+                                        <div className="text-xs opacity-80">{qty}x {fmt(unit)}</div>
+                                      </div>
+                                      <div className="text-sm font-semibold">{fmt(lineTotal)}</div>
+                                    </div>
+                                  );
+                                })}
+                                {items.length === 0 && <div className="text-sm opacity-70">Sin items</div>}
+                              </div>
+                              <hr className={theme==='dark' ? 'border-gray-700 my-2' : 'border-gray-200 my-2'} />
+                              <div className="text-sm">Total: <strong>{fmt(order.total)}</strong></div>
+                              <div className="text-sm">Pago: <strong>{payName}</strong></div>
+                              {typeof order.cashReceived !== 'undefined' && <div className="text-sm">Recibido: <strong>{fmt(order.cashReceived)}</strong></div>}
+                              {typeof order.changeGiven !== 'undefined' && <div className="text-sm">Vueltos: <strong>{fmt(order.changeGiven)}</strong></div>}
+                            </div>
+                          );
+                        })()
+                      )
                     ) : (
                       (() => {
-                        const rawMeals = Array.isArray(showMealDetails.meals) ? showMealDetails.meals : [];
+                        const order = showMealDetails || {};
+                        const isPOS = Array.isArray(order.items) && !Array.isArray(order.meals);
+                        if (isPOS) {
+                          const kind = (order.orderTypeNormalized?.split('_')[0] || order.orderType || 'almuerzo').toLowerCase();
+                          const svc = (order.orderTypeNormalized?.split('_')[1] || order.serviceType || (order.tableNumber ? 'mesa' : (order.takeaway ? 'llevar' : ''))).toLowerCase();
+                          const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
+                          const tipoLabel = `${cap(kind)} ${svc ? cap(svc) : ''}`.trim();
+                          const fecha = (() => {
+                            try { return order.createdAt?.toDate ? order.createdAt.toDate() : new Date(order.createdAt) } catch(_) { return new Date(); }
+                          })();
+                          const items = Array.isArray(order.items) ? order.items : [];
+                          const fmt = (v) => (Number(v)||0).toLocaleString('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
+                          const payName = (() => {
+                            const raw = (typeof order.paymentMethod === 'string' ? order.paymentMethod : order.paymentMethod?.name || '').toLowerCase();
+                            if (raw.includes('efect')) return 'Efectivo';
+                            if (raw.includes('nequi')) return 'Nequi';
+                            if (raw.includes('davi')) return 'Daviplata';
+                            return order.paymentMethod?.name || order.paymentMethod || '';
+                          })();
+                          return (
+                            <div className={classNames('rounded-lg border p-4', theme==='dark' ? 'bg-gray-900 border-gray-700 text-gray-100' : 'bg-gray-50 border-gray-200 text-gray-900')}>
+                              <div className="text-sm">Tipo: <strong>{tipoLabel}</strong></div>
+                              {order.tableNumber ? <div className="text-sm">Mesa: <strong>{order.tableNumber}</strong></div> : null}
+                              <div className="text-sm">Fecha: {fecha.toLocaleString('es-CO')}</div>
+                              {order.paymentNote ? <div className="text-sm">Nota: {order.paymentNote}</div> : null}
+                              <hr className={theme==='dark' ? 'border-gray-700 my-2' : 'border-gray-200 my-2'} />
+                              <div className="font-semibold mb-1">Items:</div>
+                              <div className="space-y-1">
+                                {items.map((it, idx) => (
+                                  <div key={idx}>
+                                    <div className="font-medium">{it.name}</div>
+                                    <div className="text-xs opacity-80">{it.quantity}x {fmt(it.unitPrice)}</div>
+                                  </div>
+                                ))}
+                                {items.length === 0 && <div className="text-sm opacity-70">Sin items</div>}
+                              </div>
+                              <hr className={theme==='dark' ? 'border-gray-700 my-2' : 'border-gray-200 my-2'} />
+                              <div className="text-sm">Total: <strong>{fmt(order.total)}</strong></div>
+                              <div className="text-sm">Pago: <strong>{payName}</strong></div>
+                              {typeof order.cashReceived !== 'undefined' && <div className="text-sm">Recibido: <strong>{fmt(order.cashReceived)}</strong></div>}
+                              {typeof order.changeGiven !== 'undefined' && <div className="text-sm">Vueltos: <strong>{fmt(order.changeGiven)}</strong></div>}
+                            </div>
+                          );
+                        }
+                        // Si no es POS, usar el resumen clásico de almuerzos
+                        const rawMeals = Array.isArray(order.meals) ? order.meals : [];
                         const normalizedMeals = rawMeals.map(m => {
                           const principleRaw = Array.isArray(m.principle) ? m.principle : [];
                           // Detect placeholder inside principle to derive replacement
@@ -1562,7 +1812,7 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
                           <OrderSummary
                             meals={normalizedMeals}
                             isTableOrder={true}
-                            calculateTotal={() => showMealDetails.total}
+                            calculateTotal={() => order.total}
                             isWaiterView={true}
                             statusClass={''}
                             userRole={3}
@@ -1594,8 +1844,86 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
                     Editar Orden #{editingOrder.id.slice(0, 8)}
                   </h3>
 
-                  {/* === Desayuno === */}
-                  {Array.isArray(editingOrder.breakfasts) ? (
+                  {/* === POS (Caja) === */}
+                  {Array.isArray(editingOrder.items) && !Array.isArray(editingOrder.breakfasts) && !Array.isArray(editingOrder.meals) ? (
+                    <>
+                      {/* Resumen editable similar a Caja POS */}
+                      <div className="mb-4">
+                        <h4 className="text-sm font-semibold mb-2">Resumen</h4>
+                        <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                          {(Array.isArray(editingOrder.items) ? editingOrder.items : []).map((ci, idx) => (
+                            <div key={ci.id || idx} className="flex items-center justify-between text-sm border rounded p-2">
+                              <div className="flex-1 mr-2">
+                                <div className="font-medium truncate">{ci.name}</div>
+                                <div className="text-[11px] opacity-75">{currencyCO.format(ci.unitPrice || ci.price || 0)} c/u</div>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <button onClick={() => setEditingOrder(prev => {
+                                  const items = [...(prev.items || [])];
+                                  const row = { ...(items[idx] || {}) };
+                                  const q = Number(row.quantity || 0) - 1;
+                                  if (q <= 0) { items.splice(idx, 1); }
+                                  else { row.quantity = q; items[idx] = row; }
+                                  return { ...prev, items };
+                                })} className="w-6 h-6 bg-red-600 text-white rounded text-xs">-</button>
+                                <input type="number" value={ci.quantity || 0} onChange={(e)=>{
+                                  const val = Number(e.target.value || 0);
+                                  setEditingOrder(prev => { const items = [...(prev.items || [])]; items[idx] = { ...(items[idx] || {}), quantity: val }; return { ...prev, items }; });
+                                }} className="w-10 px-1 py-0.5 text-center rounded border text-xs" />
+                                <button onClick={() => setEditingOrder(prev => {
+                                  const items = [...(prev.items || [])];
+                                  items[idx] = { ...(items[idx] || {}), quantity: (Number(items[idx]?.quantity || 0) + 1) };
+                                  return { ...prev, items };
+                                })} className="w-6 h-6 bg-green-600 text-white rounded text-xs">+</button>
+                                <button onClick={() => setEditingOrder(prev => { const items = (prev.items || []).filter((_,i)=>i!==idx); return { ...prev, items }; })} className="w-6 h-6 bg-red-700 text-white rounded text-xs">x</button>
+                                <button onClick={() => setEditingOrder(prev => { const items = [...(prev.items || [])]; items.splice(idx+1, 0, { ...(items[idx] || {}), id: (items[idx]?.id || items[idx]?.refId) + '-dup-' + Date.now() }); return { ...prev, items }; })} className="ml-1 px-2 h-6 bg-yellow-600 text-white rounded text-xs">dup</button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Catálogo Caja POS para agregar más */}
+                      <div className="mb-2 flex items-center justify-between">
+                        <div className="text-sm font-semibold">Selecciona artículos y procesa el pago rápido</div>
+                        <div>
+                          <select value={posCategoryFilter} onChange={(e)=>setPosCategoryFilter(e.target.value)} className="px-2 py-1 rounded border text-xs">
+                            <option value="">Todas</option>
+                            {posCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <div className="max-h-64 overflow-y-auto pr-1 space-y-4">
+                        {groupedPosItems.map(g => (
+                          <div key={g.category || 'sin-cat'}>
+                            <div className="flex items-center mb-2">
+                              <span className="text-[10px] uppercase tracking-wide opacity-70 bg-gray-200 dark:bg-gray-700/40 px-2 py-1 rounded">{g.category || 'Sin Categoría'}</span>
+                              <span className="ml-2 text-[10px] opacity-60">{g.items.length}</span>
+                            </div>
+                            <div className="grid gap-3 sm:grid-cols-3 md:grid-cols-4">
+                              {g.items.map(item => (
+                                <button key={item.id} onClick={() => setEditingOrder(prev => {
+                                  const items = Array.isArray(prev.items) ? [...prev.items] : [];
+                                  const existingIdx = items.findIndex(ci => (ci.id||ci.refId) === item.id);
+                                  if (existingIdx >= 0) {
+                                    items[existingIdx] = { ...items[existingIdx], quantity: (Number(items[existingIdx].quantity||0) + 1) };
+                                  } else {
+                                    items.push({ id: item.id, refId: item.id, name: item.name, unitPrice: Number(item.price||0), quantity: 1, type: item.type||null, category: item.category||null });
+                                  }
+                                  return { ...prev, items };
+                                })} className="p-3 rounded-lg border bg-white dark:bg-gray-800 dark:border-gray-700 text-left shadow">
+                                  <div className="font-medium text-sm">{item.name}</div>
+                                  <div className="text-[11px] opacity-70">{currencyCO.format(item.price||0)}</div>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                        {groupedPosItems.length===0 && <div className="text-sm opacity-60">No hay artículos</div>}
+                      </div>
+                    </>
+                  ) : Array.isArray(editingOrder.breakfasts) ? (
+                  /* === Desayuno === */
                     !breakfastAdditions.length ? (
                       <div className="flex justify-center items-center h-32">
                         <LoadingIndicator />

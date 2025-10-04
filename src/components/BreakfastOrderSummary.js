@@ -174,8 +174,8 @@ const useBreakfastOrderSummary = (items, isWaiterView, selectedPaymentNameFallba
         additions: item.additions?.map(a => ({ name: a.name, price: a.price, quantity: a.quantity }))
       }))
     });
-
-    const calculatedTotal = items.reduce((sum, item, index) => {
+    const safeItems = Array.isArray(items) ? items : [];
+    const calculatedTotal = safeItems.reduce((sum, item, index) => {
       console.log(`🔍 [BreakfastOrderSummary] Procesando item ${index + 1}/${items.length}:`, {
         item: {
           type: item.type?.name,
@@ -209,8 +209,9 @@ const useBreakfastOrderSummary = (items, isWaiterView, selectedPaymentNameFallba
   }, [items, breakfastTypes]);
 
   const paymentSummary = useMemo(() => {
-    if (!items || items.length === 0) return {};
-    return items.reduce((acc, item) => {
+    const safeItems = Array.isArray(items) ? items : [];
+    if (safeItems.length === 0) return {};
+    return safeItems.reduce((acc, item) => {
       const price = calculateBreakfastPrice(item, 3, breakfastTypes);
       const pName = getPaymentName(item, selectedPaymentNameFallback);
       acc[pName] = (acc[pName] || 0) + price;
