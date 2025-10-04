@@ -379,9 +379,9 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
   return (
   <div className="w-full mx-auto px-3 sm:px-6 py-4 lg:py-3 lg:h-[calc(100vh-5rem)] lg:overflow-hidden">
 
-      <div className={`grid grid-cols-1 ${posStage==='pay' ? 'lg:grid-cols-[280px_1fr]' : 'lg:grid-cols-3'} gap-6 items-start h-full`}>
+  <div className={`grid grid-cols-1 ${posStage==='pay' ? 'lg:grid-cols-[440px_1fr]' : 'lg:grid-cols-3'} gap-4 items-start h-full`}>
         {/* Catálogo (columna izquierda 2/3) */}
-        <div className={`${posStage==='select' ? 'lg:col-span-2' : 'lg:w-[280px]'} flex flex-col h-full relative min-w-0 min-h-0`}>
+  <div className={`${posStage==='select' ? 'lg:col-span-2' : 'lg:w-[440px]'} flex flex-col h-full relative min-w-0 min-h-0`}>
           {posStage==='select' ? (
             <>
               {/* Header Catálogo */}
@@ -411,7 +411,7 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
               </div>
               {/* Listado con scroll vertical */}
               <div className="flex-1 relative min-h-0">
-                <div className="h-full max-h-full lg:max-h-[calc(100vh-12rem)] overflow-y-auto overscroll-contain pr-6 space-y-6 custom-scrollbar pt-1">
+                <div className="h-full max-h-full lg:max-h-[calc(100vh-12rem)] overflow-y-auto overscroll-contain pr-4 space-y-4 custom-scrollbar pt-1">
                   {groupedItems.map(g => {
                     const cat = g.category || 'Sin Categoría';
                     return (
@@ -451,27 +451,27 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
           ) : (
             // Detalle del Pedido en fase de pago (una sola tarjeta)
             <div className="flex flex-col h-full">
-              <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar">
+              <div className="flex-1 overflow-y-auto overflow-x-auto pr-1 custom-scrollbar">
                 {cartItems.length===0 ? (
                   <div className="text-sm text-gray-400">Vacío</div>
                 ) : (
-                  <div className="bg-gray-800/70 rounded-xl border border-gray-700/70 shadow-inner overflow-hidden flex flex-col">
-                    <div className="sticky top-0 z-10 bg-gray-800/80 backdrop-blur px-4 py-3 flex items-center justify-between border-b border-gray-700/60">
+                  <div className="bg-gray-800/70 rounded-xl border border-gray-700/70 shadow-inner flex flex-col overflow-x-auto">
+                    <div className="sticky top-0 z-10 bg-gray-800/80 backdrop-blur px-2 py-1 flex items-center justify-between border-b border-gray-700/60 min-w-[440px]">
                       <h2 className="text-lg sm:text-xl font-bold text-white">Detalle del Pedido</h2>
-                      <button onClick={()=>setPosStage('select')} className="text-xs px-3 py-1.5 rounded bg-emerald-500 hover:bg-emerald-600 text-white font-medium shadow">← Seguir agregando</button>
+                      <button onClick={()=>setPosStage('select')} className="text-xs px-2 py-1 rounded bg-emerald-500 hover:bg-emerald-600 text-white font-medium shadow">← Seguir agregando</button>
                     </div>
-                    <div className="divide-y divide-gray-700/60">
+                    <div className="divide-y divide-gray-700/60 min-w-[440px]">
                       {cartItems.map(ci => (
-                        <div key={ci.id} className="flex items-center justify-between p-3 text-sm hover:bg-gray-700/40 transition">
-                          <div className="flex-1 mr-3">
+                        <div key={ci.id} className="flex items-center justify-between p-1.5 text-sm hover:bg-gray-700/40 transition">
+                          <div className="flex-1 mr-2">
                             <div className="font-semibold text-gray-100 leading-tight truncate">{ci.name}</div>
                             <div className="text-[11px] text-gray-400">{formatPrice(ci.price)} c/u</div>
                           </div>
-                          <div className="flex items-center gap-1">
-                            <button onClick={()=>updateCartItemQuantity(ci.id, ci.quantity-1)} className="w-7 h-7 bg-red-600 hover:bg-red-700 text-white rounded text-xs font-bold">-</button>
-                            <input type="number" value={ci.quantity} onChange={(e)=>updateCartItemQuantity(ci.id, Number(e.target.value||0))} className="w-11 px-1 py-1 text-center rounded bg-gray-800 text-white text-xs" />
-                            <button onClick={()=>updateCartItemQuantity(ci.id, ci.quantity+1)} className="w-7 h-7 bg-green-600 hover:bg-green-700 text-white rounded text-xs font-bold">+</button>
-                            <button onClick={()=>removeCartItem(ci.id)} className="w-7 h-7 bg-red-700 hover:bg-red-800 text-white rounded text-xs font-bold">x</button>
+                          <div className="flex items-center gap-0.5">
+                            <button onClick={()=>updateCartItemQuantity(ci.id, ci.quantity-1)} className="w-6 h-6 bg-red-600 hover:bg-red-700 text-white rounded text-[11px] font-bold">-</button>
+                            <input type="number" value={ci.quantity} onChange={(e)=>updateCartItemQuantity(ci.id, Number(e.target.value||0))} className="w-9 px-1 py-0.5 text-center rounded bg-gray-800 text-white text-xs" />
+                            <button onClick={()=>updateCartItemQuantity(ci.id, ci.quantity+1)} className="w-6 h-6 bg-green-600 hover:bg-green-700 text-white rounded text-[11px] font-bold">+</button>
+                            <button onClick={()=>removeCartItem(ci.id)} className="w-6 h-6 bg-red-700 hover:bg-red-800 text-white rounded text-[11px] font-bold">x</button>
                           </div>
                         </div>
                       ))}
@@ -484,11 +484,11 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
         </div>
 
         {/* Resumen / Pago (panel lateral derecho) */}
-  <div className={`${theme==='dark' ? 'bg-gray-800':'bg-white'} rounded-xl p-4 shadow-lg flex flex-col lg:sticky lg:top-0 self-start h-full lg:h-full ${posStage==='pay' ? 'min-w-0' : ''}`}>
+  <div className={`${theme==='dark' ? 'bg-gray-800':'bg-white'} rounded-xl p-3 shadow-lg flex flex-col lg:sticky lg:top-0 self-start h-full lg:h-full min-h-0 ${posStage==='pay' ? 'min-w-0' : ''}`}>
           {posStage==='select' ? (
             <>
               <h3 className="text-lg font-semibold text-gray-100 mb-3">Resumen</h3>
-              <div className="flex-1 overflow-y-auto space-y-2 mb-3 pr-1 custom-scrollbar">
+              <div className="flex-1 min-h-0 overflow-y-auto space-y-2 mb-3 pr-1 custom-scrollbar">
                 {cartItems.length===0 && <div className="text-sm text-gray-400">Añade artículos con un click.</div>}
                 {cartItems.map(ci => (
                   <div key={ci.id} className="flex items-center justify-between text-sm bg-gray-700 rounded p-2">
@@ -526,62 +526,64 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
           ) : (
             // Panel de Pago (nuevo diseño)
             <>
-              <div className="mb-4 text-center">
-                <div className="text-[11px] uppercase tracking-wide text-gray-400 font-medium">Total a pagar</div>
-                <div className="text-3xl font-extrabold text-green-400 leading-tight">{formatPrice(cartTotal)}</div>
-                {posPaymentMethod==='efectivo' && !posCashAmount && (
-                  <div className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-600/15 border border-emerald-500/30 text-[10px] font-medium text-emerald-300">
-                    Exacto
-                  </div>
-                )}
-              </div>
-              <div className="mb-4">
-                <label className="block text-gray-400 mb-2 text-xs font-medium">Método de Pago</label>
-                <div className="grid grid-cols-3 gap-2 mb-3">
-                  {['efectivo','nequi','daviplata'].map(m => (
-                    <button key={m} onClick={()=>setPosPaymentMethod(m)} className={`py-2 text-xs rounded border-2 transition ${posPaymentMethod===m ? 'border-blue-500 bg-blue-600/30 text-blue-300 shadow':'border-gray-600 text-gray-300 hover:bg-gray-700'}`}>{m}</button>
-                  ))}
+              <div className="flex-1 min-h-0 overflow-y-auto pr-1 custom-scrollbar">
+                <div className="mb-4 text-center">
+                  <div className="text-[11px] uppercase tracking-wide text-gray-400 font-medium">Total a pagar</div>
+                  <div className="text-3xl font-extrabold text-green-400 leading-tight">{formatPrice(cartTotal)}</div>
+                  {posPaymentMethod==='efectivo' && !posCashAmount && (
+                    <div className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-600/15 border border-emerald-500/30 text-[10px] font-medium text-emerald-300">
+                      Exacto
+                    </div>
+                  )}
                 </div>
-                {posPaymentMethod==='efectivo' && (
-                  <div className="mb-4">
-                    {quickCashSuggestions.length>0 && (
-                      <>
-                        <label className="block text-gray-400 mb-1 text-xs">Sugerencias</label>
-                        <div className={`grid ${quickCashSuggestions.length>4 ? 'grid-cols-3' : 'grid-cols-2'} gap-2 mb-2`}>
-                          {quickCashSuggestions.map((b,idx) => (
-                            <button
-                              key={b}
-                              onClick={()=>setPosCashAmount(String(b))}
-                              className={`py-1.5 rounded font-medium text-[11px] transition border whitespace-nowrap
-                                ${idx===0
-                                  ? 'bg-green-500/90 hover:bg-green-500 text-white shadow border-green-400'
-                                  : 'bg-green-600 hover:bg-green-700 text-white border-green-500/40'}`}
-                            >{formatPrice(b)}</button>
+                <div className="mb-4">
+                  <label className="block text-gray-400 mb-2 text-xs font-medium">Método de Pago</label>
+                  <div className="grid grid-cols-3 gap-2 mb-3">
+                    {['efectivo','nequi','daviplata'].map(m => (
+                      <button key={m} onClick={()=>setPosPaymentMethod(m)} className={`py-2 text-xs rounded border-2 transition ${posPaymentMethod===m ? 'border-blue-500 bg-blue-600/30 text-blue-300 shadow':'border-gray-600 text-gray-300 hover:bg-gray-700'}`}>{m}</button>
+                    ))}
+                  </div>
+                  {posPaymentMethod==='efectivo' && (
+                    <div className="mb-4">
+                      {quickCashSuggestions.length>0 && (
+                        <>
+                          <label className="block text-gray-400 mb-1 text-xs">Sugerencias</label>
+                          <div className={`grid ${quickCashSuggestions.length>4 ? 'grid-cols-3' : 'grid-cols-2'} gap-2 mb-2`}>
+                            {quickCashSuggestions.map((b,idx) => (
+                              <button
+                                key={b}
+                                onClick={()=>setPosCashAmount(String(b))}
+                                className={`py-1.5 rounded font-medium text-[11px] transition border whitespace-nowrap
+                                  ${idx===0
+                                    ? 'bg-green-500/90 hover:bg-green-500 text-white shadow border-green-400'
+                                    : 'bg-green-600 hover:bg-green-700 text-white border-green-500/40'}`}
+                              >{formatPrice(b)}</button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                      <input type="number" placeholder="Monto recibido" value={posCashAmount} onChange={(e)=>setPosCashAmount(e.target.value)} className="w-full px-2 py-2 rounded bg-gray-700 text-white text-xs"/>
+                      {posCashAmount && (
+                        <div className={`mt-1 text-xs ${posCalculatedChange>=0?'text-green-400':'text-red-400'}`}>
+                          Vueltos: {formatPrice(posCalculatedChange)}
+                        </div>
+                      )}
+                      {changeBreakdown.length>0 && (
+                        <div className="mt-2 text-[10px] text-gray-400 flex flex-wrap items-center gap-1">
+                          <span className="text-gray-500">Cambio sugerido:</span>
+                          {changeBreakdown.map(p => (
+                            <span key={p.d} className="px-1.5 py-0.5 rounded bg-gray-700/60 text-gray-200 border border-gray-600/60">
+                              {p.q}x {formatPrice(p.d)}
+                            </span>
                           ))}
                         </div>
-                      </>
-                    )}
-                    <input type="number" placeholder="Monto recibido" value={posCashAmount} onChange={(e)=>setPosCashAmount(e.target.value)} className="w-full px-2 py-2 rounded bg-gray-700 text-white text-xs"/>
-                    {posCashAmount && (
-                      <div className={`mt-1 text-xs ${posCalculatedChange>=0?'text-green-400':'text-red-400'}`}>
-                        Vueltos: {formatPrice(posCalculatedChange)}
-                      </div>
-                    )}
-                    {changeBreakdown.length>0 && (
-                      <div className="mt-2 text-[10px] text-gray-400 flex flex-wrap items-center gap-1">
-                        <span className="text-gray-500">Cambio sugerido:</span>
-                        {changeBreakdown.map(p => (
-                          <span key={p.d} className="px-1.5 py-0.5 rounded bg-gray-700/60 text-gray-200 border border-gray-600/60">
-                            {p.q}x {formatPrice(p.d)}
-                          </span>
-                        ))}
-                      </div>
-                    )}
+                      )}
+                    </div>
+                  )}
+                  <div className="mb-4">
+                    <label className="block text-gray-400 mb-1 text-xs">Nota</label>
+                    <input value={posNote} onChange={e=>setPosNote(e.target.value)} className="w-full px-2 py-2 rounded bg-gray-700 text-white text-xs"/>
                   </div>
-                )}
-                <div className="mb-4">
-                  <label className="block text-gray-400 mb-1 text-xs">Nota</label>
-                  <input value={posNote} onChange={e=>setPosNote(e.target.value)} className="w-full px-2 py-2 rounded bg-gray-700 text-white text-xs"/>
                 </div>
               </div>
               <div className="mt-auto pt-2 border-t border-gray-700">
