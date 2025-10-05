@@ -1126,7 +1126,7 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
           order.type === 'lunch'
             ? order.meals
                 .map((meal, index) =>
-                  (() => { const sel = Array.isArray(meal.sides)? meal.sides.map(s=>s?.name).filter(Boolean):[]; const hasNone=sel.includes('Ninguno'); const all=allSides.map(s=>s.name).filter(n=>n && n!=='Ninguno'); const missing=!hasNone && sel.length>0? all.filter(n=>!sel.includes(n)):[]; return `Almuerzo #${index + 1}: Sopa: ${formatValue(meal.soup || meal.soupReplacement)}, Principio: ${formatValue(meal.principle)}, Proteína: ${formatValue(meal.protein)}, Bebida: ${formatValue(meal.drink)}, Acompañamientos: ${formatValue(meal.sides)}${missing.length? ' | No Incluir: '+missing.join(', '):''}, Notas: ${meal.notes || 'Ninguna'}` })()
+                  (() => { const sel = Array.isArray(meal.sides)? meal.sides.map(s=>s?.name).filter(Boolean):[]; const hasNone=sel.includes('Ninguno'); const all=allSides.map(s=>s.name).filter(n=>n && n!=='Ninguno' && n!=='Todo incluído' && n!=='Todo incluido'); const missing=!hasNone && sel.length>0? all.filter(n=>!sel.includes(n)):[]; return `Almuerzo #${index + 1}: Sopa: ${formatValue(meal.soup || meal.soupReplacement)}, Principio: ${formatValue(meal.principle)}, Proteína: ${formatValue(meal.protein)}, Bebida: ${formatValue(meal.drink)}, Acompañamientos: ${formatValue(meal.sides)}${missing.length? ' | No Incluir: '+missing.join(', '):''}, Notas: ${meal.notes || 'Ninguna'}` })()
                 )
                 .join('; ')
             : order.breakfasts
@@ -1164,7 +1164,7 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
           order.type === 'lunch'
             ? order.meals
                 .map((meal, index) =>
-                  (() => { const sel = Array.isArray(meal.sides)? meal.sides.map(s=>s?.name).filter(Boolean):[]; const hasNone=sel.includes('Ninguno'); const all=allSides.map(s=>s.name).filter(n=>n && n!=='Ninguno'); const missing=!hasNone && sel.length>0? all.filter(n=>!sel.includes(n)):[]; return `Almuerzo #${index + 1}: Sopa: ${formatValue(meal.soup || meal.soupReplacement)}, Principio: ${formatValue(meal.principle)}, Proteína: ${formatValue(meal.protein)}, Bebida: ${formatValue(meal.drink)}, Acompañamientos: ${formatValue(meal.sides)}${missing.length? ' | No Incluir: '+missing.join(', '):''}` })()
+                  (() => { const sel = Array.isArray(meal.sides)? meal.sides.map(s=>s?.name).filter(Boolean):[]; const hasNone=sel.includes('Ninguno'); const all=allSides.map(s=>s.name).filter(n=>n && n!=='Ninguno' && n!=='Todo incluído' && n!=='Todo incluido'); const missing=!hasNone && sel.length>0? all.filter(n=>!sel.includes(n)):[]; return `Almuerzo #${index + 1}: Sopa: ${formatValue(meal.soup || meal.soupReplacement)}, Principio: ${formatValue(meal.principle)}, Proteína: ${formatValue(meal.protein)}, Bebida: ${formatValue(meal.drink)}, Acompañamientos: ${formatValue(meal.sides)}${missing.length? ' | No Incluir: '+missing.join(', '):''}` })()
                 )
                 .join('; ')
             : order.breakfasts
@@ -1198,7 +1198,7 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
             order.type === 'lunch'
               ? order.meals
                   .map((meal, index) =>
-                    (() => { const sel = Array.isArray(meal.sides)? meal.sides.map(s=>s?.name).filter(Boolean):[]; const hasNone=sel.includes('Ninguno'); const all=allSides.map(s=>s.name).filter(n=>n && n!=='Ninguno'); const missing=!hasNone && sel.length>0? all.filter(n=>!sel.includes(n)):[]; return `Almuerzo #${index + 1}: Sopa: ${formatValue(meal.soup || meal.soupReplacement)}, Principio: ${formatValue(meal.principle)}, Proteína: ${formatValue(meal.protein)}, Bebida: ${formatValue(meal.drink)}, Acompañamientos: ${formatValue(meal.sides)}${missing.length? ' | No Incluir: '+missing.join(', '):''}, Notas: ${meal.notes || 'Ninguna'}` })()
+                    (() => { const sel = Array.isArray(meal.sides)? meal.sides.map(s=>s?.name).filter(Boolean):[]; const hasNone=sel.includes('Ninguno'); const all=allSides.map(s=>s.name).filter(n=>n && n!=='Ninguno' && n!=='Todo incluído' && n!=='Todo incluido'); const missing=!hasNone && sel.length>0? all.filter(n=>!sel.includes(n)):[]; return `Almuerzo #${index + 1}: Sopa: ${formatValue(meal.soup || meal.soupReplacement)}, Principio: ${formatValue(meal.principle)}, Proteína: ${formatValue(meal.protein)}, Bebida: ${formatValue(meal.drink)}, Acompañamientos: ${formatValue(meal.sides)}${missing.length? ' | No Incluir: '+missing.join(', '):''}, Notas: ${meal.notes || 'Ninguna'}` })()
                   )
                   .join('; ')
               : order.breakfasts

@@ -429,8 +429,14 @@ message += `───────────────\n`;
       // Mostrar acompañamientos NO seleccionados
       const posiblesAcompanamientos = ['Patacon', 'Ensalada', 'Arepuelas', 'Arroz'];
       if (!hasSpecialRice) {
-        const seleccionados = baseMeal.sides?.map(s => cleanText(s.name)) || [];
-        const noIncluidos = posiblesAcompanamientos.filter(a => !seleccionados.includes(a));
+        const normalize = (n) => (n || '')
+          .normalize('NFD')
+          .replace(/\p{Diacritic}/gu, '')
+          .trim();
+        const seleccionados = (baseMeal.sides?.map(s => cleanText(s.name)) || []).map(normalize);
+        const noIncluidos = posiblesAcompanamientos
+          .map(normalize)
+          .filter(a => a !== 'todo incluido' && !seleccionados.includes(a));
         if (noIncluidos.length > 0) {
           message += `No Incluir: ${noIncluidos.join(', ')}\n`;
         }

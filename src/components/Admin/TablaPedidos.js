@@ -170,7 +170,7 @@ const getExcludedSides = (meal, allSides) => {
   const hasNinguno = selectedSides.includes('Ninguno');
   
   if (selectedSides.length > 0 && !hasNinguno) {
-    const allAvailableSides = allSides.map(s => s.name).filter(n => n && n !== 'Ninguno');
+    const allAvailableSides = allSides.map(s => s.name).filter(n => n && n !== 'Ninguno' && n !== 'Todo incluído' && n !== 'Todo incluido');
     const excludedSides = allAvailableSides.filter(n => !selectedSides.includes(n));
     return excludedSides;
   }

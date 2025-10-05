@@ -413,12 +413,16 @@ const MealFields = ({ meal, commonFields, isWaiterView, isAdminView = false, all
       </p>
     );
     if (!hasSpecialRice && !hasNinguno && selectedSides.length > 0) {
-      // Normalizar nombres (remover etiqueta NUEVO y trim)
-      const normalize = (n) => (n || '').replace(/\s*NUEVO\s*$/i,'').trim();
+      // Normalizar nombres: quitar acentos, quitar etiqueta NUEVO y trim
+      const normalize = (n) => (n || '')
+        .normalize('NFD')
+        .replace(/\p{Diacritic}/gu, '')
+        .replace(/\s*NUEVO\s*$/i,'')
+        .trim();
       const selectedNormalized = selectedSides.map(normalize);
       const allSideNames = (allSides || [])
         .map(s => normalize(cleanText(s.name)))
-        .filter(n => n && n.toLowerCase() !== 'ninguno');
+        .filter(n => n && n.toLowerCase() !== 'ninguno' && n.toLowerCase() !== 'todo incluido');
       // Evitar duplicados
       const uniqueAll = [...new Set(allSideNames)];
       const missing = uniqueAll.filter(n => !selectedNormalized.includes(n));
