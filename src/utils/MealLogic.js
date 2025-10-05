@@ -241,7 +241,13 @@ export const formatNotes = (notes) => {
     .join('. ');
 };
 
-export const isValidTime = (time) => time && time.name && time.name !== 'Lo antes posible';
+export const isValidTime = (time) => {
+  if (!time || !time.name) return false;
+  const n = time.name.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().trim();
+  // permitir 'lo más pronto posible' y 'lo antes posible'
+  if (n === 'lo mas pronto posible' || n === 'lo antes posible') return true;
+  return true; // cualquier otra hora con name presente se valida en el nivel de UI
+};
 
 const fieldsToCheck = ['Sopa', 'Principio', 'Proteína', 'Bebida', 'Cubiertos', 'Acompañamientos', 'Hora', 'Dirección', 'Pago', 'Adiciones', 'Mesa'];
 const addressFields = ['address', 'phoneNumber', 'details'];

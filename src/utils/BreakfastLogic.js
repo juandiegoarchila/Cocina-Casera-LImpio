@@ -346,7 +346,12 @@ const formatNotes = (notes) => {
     .join('. ');
 };
 
-const isValidTime = (time) => time && time.name && time.name !== 'Lo antes posible';
+const isValidTime = (time) => {
+  if (!time || !time.name) return false;
+  const n = time.name.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().trim();
+  if (n === 'lo mas pronto posible' || n === 'lo antes posible') return true;
+  return true;
+};
 
 const fieldsToCheck = ['type', 'eggs', 'broth', 'riceBread', 'drink', 'Cubiertos', 'Hora', 'Dirección', 'Pago', 'Adiciones'];
 const addressFields = ['address', 'phoneNumber', 'details'];

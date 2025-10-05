@@ -77,6 +77,12 @@ const BreakfastTimeSelector = ({ times, selectedTime, setSelectedTime, onConfirm
     }
   };
 
+  const normalize = (s = '') => s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().trim();
+  const isASAP = (name = '') => {
+    const n = normalize(name);
+    return n === 'lo mas pronto posible' || n === 'lo antes posible';
+  };
+
   const handleConfirm = () => {
     if (!selectedTime || !selectedTime.name) {
       setError('Por favor, ingresa una hora válida (Ej: 8:00 AM)');
@@ -88,6 +94,13 @@ const BreakfastTimeSelector = ({ times, selectedTime, setSelectedTime, onConfirm
 
     if (process.env.NODE_ENV === 'development') {
       console.log(`Confirmando hora: ${selectedTime.name}, id: ${selectedTime.id}`);
+    }
+
+    // Aceptar siempre la opción especial "lo más pronto posible"
+    if (isASAP(selectedTime.name)) {
+      setError('');
+      onConfirm();
+      return;
     }
 
     if (selectedTime.id === 0) {

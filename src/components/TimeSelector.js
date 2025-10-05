@@ -72,12 +72,25 @@ const TimeSelector = ({ times, selectedTime, setSelectedTime, onConfirm }) => {
     }
   };
 
+  const normalize = (s = '') => s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().trim();
+  const isASAP = (name = '') => {
+    const n = normalize(name);
+    return n === 'lo mas pronto posible' || n === 'lo antes posible';
+  };
+
   const handleConfirm = () => {
     if (!selectedTime || !selectedTime.name) {
       setError('Por favor, ingresa una hora válida (Ej: 1:00 PM)');
       if (process.env.NODE_ENV === 'development') {
         console.log('Error: selectedTime es nulo o no tiene name');
       }
+      return;
+    }
+
+    // Aceptar siempre la opción especial "lo más pronto posible"
+    if (isASAP(selectedTime.name)) {
+      setError('');
+      onConfirm();
       return;
     }
 
