@@ -13,7 +13,7 @@ const Header = () => {
         </h1>
 
         <a
-          href="https://wa.me/573023931292"
+          href="https://wa.me/573016476916"
           className="back-to-whatsapp text-xs xs:text-sm sm:text-base hover:underline hover:text-white transition-all flex items-center"
           aria-label="Volver a WhatsApp para contactar con Cocina Casera"
         >

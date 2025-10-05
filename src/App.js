@@ -582,7 +582,7 @@ const order = {
       setAddress(address.address);
       setPhoneNumber(address.phoneNumber);
 
-      const phone = '573023931292';
+  const phone = '573016476916';
       const encodedMessage = encodeURIComponent(message);
       window.open(`https://wa.me/${phone}?text=${encodedMessage}`, '_blank');
       await registerClientAndSaveOrder(breakfasts, false, true);

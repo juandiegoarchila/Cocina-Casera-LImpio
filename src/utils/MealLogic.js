@@ -213,15 +213,15 @@ const message = generateMessageFromMeals(meals, calculateMealPrice, total, isWai
     const encodedMessage = encodeMessage(message);
 
     if (isMobile()) {
-      const whatsappUrl = `whatsapp://send?phone=573023931292&text=${encodedMessage}`;
-      const fallbackUrl = `https://wa.me/573023931292?text=${encodedMessage}`;
+      const whatsappUrl = `whatsapp://send?phone=573016476916&text=${encodedMessage}`;
+      const fallbackUrl = `https://wa.me/573016476916?text=${encodedMessage}`;
       const startTime = Date.now();
       window.location = whatsappUrl;
       setTimeout(() => {
         if (Date.now() - startTime < 2000) window.open(fallbackUrl, '_blank');
       }, 2000);
     } else {
-      window.open(`https://web.whatsapp.com/send?phone=573023931292&text=${encodedMessage}`, '_blank');
+      window.open(`https://web.whatsapp.com/send?phone=573016476916&text=${encodedMessage}`, '_blank');
     }
 
     setSuccessMessage('¡Pedido enviado correctamente a WhatsApp!');
