@@ -37,6 +37,7 @@ const BreakfastItem = ({
   isTableOrder = false,
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
+  const [isAddressValid, setIsAddressValid] = useState(false);
   const [isAdditionsExpanded, setIsAdditionsExpanded] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [collapseTimeout, setCollapseTimeout] = useState(null);
@@ -582,11 +583,17 @@ const BreakfastItem = ({
                 </p>
                 <AddressInput
                   onConfirm={handleAddressConfirm}
+                  onValidityChange={(valid) => setIsAddressValid(valid)}
                   initialAddress={breakfast?.address || savedAddress}
                 />
-                {!breakfast?.address?.address && (
+                {!breakfast?.address?.address && isAddressValid === false && (
                   <p className="text-[10px] text-red-600 mt-1">
                     Por favor, completa tu dirección y teléfono.
+                  </p>
+                )}
+                {!breakfast?.address?.address && isAddressValid === true && (
+                  <p className="text-[10px] text-gray-600 mt-1">
+                    Todo listo. Pulsa <span className="font-semibold">“Confirmar dirección”</span> para guardar.
                   </p>
                 )}
               </div>

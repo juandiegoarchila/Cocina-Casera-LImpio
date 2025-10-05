@@ -130,7 +130,7 @@ const InputField = ({
   </div>
 );
 
-const AddressInput = ({ onConfirm }) => {
+const AddressInput = ({ onConfirm, onValidityChange, initialAddress }) => {
   const [formData, setFormData] = useLocalStorage("addressForm", {
     streetType: "Calle",
     streetNumber: "",
@@ -189,6 +189,11 @@ const AddressInput = ({ onConfirm }) => {
   };
 
   const isFormValid = Object.keys(errors).length === 0;
+
+  // Notificar validez al padre (para ocultar/mostrar mensajes contextuales)
+  useEffect(() => {
+    onValidityChange?.(isFormValid);
+  }, [isFormValid, onValidityChange]);
 
   const handleConfirm = () => {
     if (!isFormValid) return;

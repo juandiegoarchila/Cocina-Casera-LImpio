@@ -49,6 +49,7 @@ const MealItem = ({
   const slideRef = useRef(null);
   const containerRef = useRef(null);
   const [tables, setTables] = useState([]);
+  const [isAddressValid, setIsAddressValid] = useState(false);
   useEffect(() => {
     if (!isTableOrder) return;
     const q = query(collection(db, 'tables'), orderBy('name', 'asc'));
@@ -507,10 +508,19 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
                 <p className="mb-2 text-sm text-gray-600 text-center md:text-left">
                   🎉 Ingresa tu dirección y teléfono <strong className="text-green-700">una sola vez</strong>. La próxima vez, solo haz clic en <strong className="text-blue-600">"Confirmar" ¡y listo!</strong>
                 </p>
-                <AddressInput onConfirm={handleAddressConfirm} initialAddress={meal?.address || {}} />
-                {!meal?.address?.address && (
+                <AddressInput
+                  onConfirm={handleAddressConfirm}
+                  onValidityChange={(valid) => setIsAddressValid(valid)}
+                  initialAddress={meal?.address || {}}
+                />
+                {!meal?.address?.address && isAddressValid === false && (
                   <p className="text-[10px] text-red-600 mt-1">
                     Por favor, completa tu dirección y teléfono.
+                  </p>
+                )}
+                {!meal?.address?.address && isAddressValid === true && (
+                  <p className="text-[10px] text-gray-600 mt-1">
+                    Todo listo. Pulsa <span className="font-semibold">“Confirmar dirección”</span> para guardar.
                   </p>
                 )}
               </div>
