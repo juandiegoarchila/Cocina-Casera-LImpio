@@ -60,6 +60,18 @@ const TimeSelector = ({ times, selectedTime, setSelectedTime, onConfirm }) => {
     setError('');
   };
 
+  // Deshabilitar automáticamente horas pasadas (como en BreakfastTimeSelector)
+  const isTimeDisabled = (time) => {
+    try {
+      const timeMinutes = timeToMinutes(time.name);
+      const now = new Date();
+      const currentMinutes = now.getHours() * 60 + now.getMinutes();
+      return timeMinutes < currentMinutes;
+    } catch {
+      return false; // Si no es HH:MM AM/PM, no deshabilitar
+    }
+  };
+
   const handleConfirm = () => {
     if (!selectedTime || !selectedTime.name) {
       setError('Por favor, ingresa una hora válida (Ej: 1:00 PM)');
@@ -118,9 +130,12 @@ const TimeSelector = ({ times, selectedTime, setSelectedTime, onConfirm }) => {
                 console.log(`Hora seleccionada: ${time.name}, id: ${time.id}`);
               }
             }}
+            disabled={isTimeDisabled(time)}
             className={`relative p-1 xs:p-2 rounded-lg text-[10px] xs:text-xs sm:text-sm font-medium transition-all duration-200 flex items-center justify-center text-center min-h-[30px] xs:min-h-[40px] shadow-sm ${
               selectedTime?.id === time.id
                 ? 'bg-green-200 text-green-800 border border-green-300'
+                : isTimeDisabled(time)
+                ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                 : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
             }`}
             aria-label={`Seleccionar hora ${time.name}`}
