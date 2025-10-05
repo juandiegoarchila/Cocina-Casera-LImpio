@@ -33,6 +33,11 @@ const OptionSelector = ({
 
   useEffect(() => {
     let initialSelection = multiple ? (Array.isArray(selected) ? selected : []) : selected;
+
+    // En Acompañamiento, nunca conservar "Todo incluído" como parte de la selección persistida
+    if (title === 'Acompañamiento' && multiple && Array.isArray(initialSelection)) {
+      initialSelection = initialSelection.filter(opt => opt?.name !== 'Todo incluído');
+    }
     
     // Debug específico para Principio
     if (title === 'Principio' && process.env.NODE_ENV === 'development') {
@@ -350,6 +355,20 @@ const OptionSelector = ({
             }
           }
         } else if (title === 'Acompañamiento' && multiple) {
+          // Opción rápida: "Todo incluído" marca todas las opciones disponibles excepto "Ninguno" y la propia
+          if (option.name === 'Todo incluído') {
+            const allAvailable = (options || [])
+              .filter(o => !o?.isFinished && o?.name !== 'Ninguno' && o?.name !== 'Todo incluído');
+            updatedSelection = allAvailable;
+            const hadNinguno = updatedSelection.some(opt => opt.name === 'Ninguno');
+            if (hadNinguno) {
+              updatedSelection = updatedSelection.filter(opt => opt.name !== 'Ninguno');
+            }
+            setPendingSelection(updatedSelection);
+            onImmediateSelect(updatedSelection);
+            setShowReplacement(false);
+            return; // salir porque ya aplicamos el select-all
+          }
           if (option.name === 'Ninguno') {
             if (isCurrentlySelected) {
               updatedSelection = updatedSelection.filter((opt) => opt.id !== option.id);
@@ -365,6 +384,8 @@ const OptionSelector = ({
             if (hasNinguno) {
               updatedSelection = updatedSelection.filter(opt => opt.name !== 'Ninguno');
             }
+            // Si el usuario selecciona una opción individual, asegurarnos de remover "Todo incluído" si por alguna razón estuviera en selección
+            updatedSelection = updatedSelection.filter(opt => opt.name !== 'Todo incluído');
             const optionIndex = updatedSelection.findIndex((opt) => opt.id === option.id);
             if (optionIndex > -1) {
               updatedSelection.splice(optionIndex, 1);
