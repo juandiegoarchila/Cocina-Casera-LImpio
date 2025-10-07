@@ -3,13 +3,13 @@ import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 const firebaseConfig = {
-  apiKey: "AIzaSyCqKu4l9cXM3oX0VxmGKOHQpwxakBV2UzI",
-  authDomain: "prubeas-b510c.firebaseapp.com",
-  projectId: "prubeas-b510c",
-  storageBucket: "prubeas-b510c.firebasestorage.app",
-  messagingSenderId: "120258334668",
-  appId: "1:120258334668:web:4470273ea328836f0c9769",
-  measurementId: "G-P2ZX4GGMX0"
+  apiKey: "AIzaSyCNeAkQJYhR8i1yYxaKwvBzE9okr00Pq_Q",
+  authDomain: "cocina-casera-bca8d.firebaseapp.com",
+  projectId: "cocina-casera-bca8d",
+  storageBucket: "cocina-casera-bca8d.firebasestorage.app",
+  messagingSenderId: "741265643266",
+  appId: "1:741265643266:web:c51cd02ced73671f80141b",
+  measurementId: "G-9PNKWZL0JP"
 };
 
 const app = initializeApp(firebaseConfig);

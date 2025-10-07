@@ -1,5 +1,7 @@
 {
   "projects": {
-    "default": "servi-96624"
-  }
+    "default": "cocina-casera-bca8d"
+  },
+  "targets": {},
+  "etags": {}
 }
