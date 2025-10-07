@@ -2,8 +2,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from './AuthProvider';
 import { useNavigate, Link } from 'react-router-dom';
-import { query, collection, where, getDocs } from 'firebase/firestore';
-import { db } from '../../config/firebase';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -12,7 +10,7 @@ const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const { login, user, loading } = useAuth();
+  const { login, user, loading, role } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -25,27 +23,13 @@ const Login = () => {
 
   useEffect(() => {
     if (!loading && user) {
-      // Check if user is admin
-      const checkAdmin = async () => {
-        try {
-          const q = query(
-            collection(db, 'users'),
-            where('email', '==', user.email),
-            where('role', '==', 2)
-          );
-          const snapshot = await getDocs(q);
-          if (!snapshot.empty) {
-            navigate('/admin');
-          } else {
-            setError('No tienes permisos de administrador');
-          }
-        } catch (err) {
-          setError('Error verificando permisos');
-        }
-      };
-      checkAdmin();
+      if (role === 2) {
+        navigate('/admin');
+      } else {
+        setError('No tienes permisos de administrador');
+      }
     }
-  }, [user, loading, navigate]);
+  }, [user, loading, role, navigate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
