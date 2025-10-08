@@ -1,5 +1,6 @@
 //src/components/OptionSelector.js
 import React, { useState, useEffect, useCallback } from 'react';
+import Modal from './Modal';
 
 export const isMobile = () => window.innerWidth < 768;
 
@@ -30,6 +31,8 @@ const OptionSelector = ({
   const [showWarning, setShowWarning] = useState(false);
   // NUEVO: nombres de opciones removidas por haberse agotado en tiempo real
   const [outOfStockRemovedNames, setOutOfStockRemovedNames] = useState([]);
+  // NUEVO: previsualización de imagen
+  const [previewImage, setPreviewImage] = useState(null);
 
   useEffect(() => {
     let initialSelection = multiple ? (Array.isArray(selected) ? selected : []) : selected;
@@ -629,12 +632,29 @@ const OptionSelector = ({
     return baseName;
   };
 
+  const EyeButton = ({ url, small = false, className = '' }) => (
+    <span
+      role="button"
+      tabIndex={0}
+      onClick={(e) => { e.stopPropagation(); setPreviewImage(url); }}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); setPreviewImage(url); } }}
+      className={`absolute top-1/2 -translate-y-1/2 right-3 sm:right-4 ${small ? 'p-1' : 'p-1.5'} rounded-full bg-white/90 text-gray-700 hover:bg-white shadow cursor-pointer ${className}`}
+      aria-label="Ver imagen"
+      title="Ver imagen"
+      style={{ zIndex: 5 }}
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={`${small ? 'w-4 h-4' : 'w-5 h-5'}`}>
+        <path d="M12 5c-7.633 0-11 7-11 7s3.367 7 11 7 11-7 11-7-3.367-7-11-7Zm0 12a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-2.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" />
+      </svg>
+    </span>
+  );
+
   const mobileLayout = (option, index, isSelected, quantity) => (
     <div key={option.id || index} className="relative">
       <button
         onClick={() => handleOptionClick(option)}
         disabled={disabled || option.isFinished}
-        className={`relative w-full p-2 rounded-t-lg text-sm font-medium transition-all duration-200 flex flex-col items-start justify-between text-left min-h-[60px] shadow-sm ${
+        className={`relative w-full p-2 ${option.imageUrl ? 'pr-12' : ''} rounded-t-lg text-sm font-medium transition-all duration-200 flex flex-col items-start justify-between text-left min-h-[60px] shadow-sm ${
           disabled || option.isFinished
             ? 'bg-gray-100 text-gray-400 border border-gray-300 cursor-not-allowed'
             : isSelected
@@ -767,6 +787,7 @@ const OptionSelector = ({
                       <span className="text-xs text-gray-500 block mt-1">{replacement.description}</span>
                     )}
                   </button>
+                  {!!replacement.imageUrl && <EyeButton url={replacement.imageUrl} small className="right-3 sm:right-4" />}
                   {replacement.isNew && !replacement.isFinished && (
                     <span className="absolute top-0 right-7 transform translate-x-1/2 -translate-y-1/2 bg-red-500 text-white text-[10px] font-semibold rounded-full px-2 py-0.5">
                       NUEVO
@@ -798,6 +819,7 @@ const OptionSelector = ({
           AGOTADO
         </span>
       )}
+  {!!option.imageUrl && <EyeButton url={option.imageUrl} small className="right-3 sm:right-4" />}
     </div>
   );
 
@@ -806,7 +828,7 @@ const OptionSelector = ({
       <button
         onClick={() => handleOptionClick(option)}
         disabled={disabled || option.isFinished}
-        className={`relative w-full p-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-between text-left min-h-[60px] shadow-sm ${
+        className={`relative w-full p-2 ${option.imageUrl ? 'pr-12' : ''} rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-between text-left min-h-[60px] shadow-sm ${
           disabled || option.isFinished
             ? 'bg-gray-100 text-gray-400 border border-gray-300 cursor-not-allowed'
             : isSelected
@@ -824,6 +846,7 @@ const OptionSelector = ({
             )}
           </div>
         </div>
+        {/* Marca de seleccionado */}
         {(title === 'Adiciones (por almuerzo)' || title === 'Adiciones (por desayuno)') && isSelected && (
           <div className="flex items-center space-x-1">
             <div
@@ -859,6 +882,7 @@ const OptionSelector = ({
           </svg>
         )}
       </button>
+  {!!option.imageUrl && <EyeButton url={option.imageUrl} className="right-3 sm:right-4" />}
       {option.isNew && !option.isFinished && (
         <span className="absolute top-0 right-7 transform translate-x-1/2 -translate-y-1/2 bg-red-500 text-white text-[10px] font-semibold rounded-full px-2 py-0.5">
           NUEVO
@@ -951,6 +975,7 @@ const OptionSelector = ({
                     <span className="text-xs text-gray-500 block mt-1">{replacement.description}</span>
                   )}
                 </button>
+                {!!replacement.imageUrl && <EyeButton url={replacement.imageUrl} className="right-3 sm:right-4" />}
                 {replacement.isNew && !replacement.isFinished && (
                   <span className="absolute top-0 right-7 transform translate-x-1/2 -translate-y-1/2 bg-red-500 text-white text-[10px] font-semibold rounded-full px-2 py-0.5">
                     NUEVO
@@ -1010,6 +1035,15 @@ const OptionSelector = ({
           )}
         </div>
       )}
+      <Modal isOpen={!!previewImage} onClose={() => setPreviewImage(null)}>
+        <div className="flex flex-col items-center justify-center">
+          <img
+            src={previewImage || ''}
+            alt="Vista previa"
+            className="max-w-full max-h-[70vh] object-contain rounded shadow"
+          />
+        </div>
+      </Modal>
     </div>
   );
 };

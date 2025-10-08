@@ -1,8 +1,10 @@
 // src/components/Admin/MenuManagement.js
 import React, { useState, useEffect, useRef } from 'react';
-import { db } from '../../config/firebase';
-import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, query, orderBy, setDoc } from 'firebase/firestore';
+import { db, storage } from '../../config/firebase';
+import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, query, orderBy, setDoc, getDoc, where, limit } from 'firebase/firestore';
 import { XMarkIcon, PencilIcon, TrashIcon, CheckCircleIcon, MinusCircleIcon, MagnifyingGlassIcon, PlusIcon } from '@heroicons/react/24/outline';
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import Modal from '../Modal';
 
 // Componente para una checkbox personalizada
 const CustomCheckbox = ({ id, label, checked, onChange, theme }) => (
@@ -34,9 +36,9 @@ const CustomCheckbox = ({ id, label, checked, onChange, theme }) => (
 const MenuManagement = ({ setError, setSuccess, theme }) => {
   const [selectedCollection, setSelectedCollection] = useState('soups');
   const [items, setItems] = useState([]);
-  const [newItem, setNewItem] = useState({ name: '', description: '', emoji: '', price: '', isNew: false, steps: [] });
+  const [newItem, setNewItem] = useState({ name: '', description: '', emoji: '', price: '', isNew: false, steps: [], imageUrl: '' });
   const [editingItem, setEditingItem] = useState(null);
-  const [editItem, setEditItem] = useState({ name: '', description: '', emoji: '', price: '', isNew: false, isFinished: false, steps: [] });
+  const [editItem, setEditItem] = useState({ name: '', description: '', emoji: '', price: '', isNew: false, isFinished: false, steps: [], imageUrl: '' });
   const [showAddItemForm, setShowAddItemForm] = useState(false);
   const [showConfirmDeleteModal, setShowConfirmDeleteModal] = useState(false);
   const [itemToDelete, setItemToDelete] = useState(null);
@@ -48,6 +50,13 @@ const MenuManagement = ({ setError, setSuccess, theme }) => {
     lunchEnd: '15:50',
   });
   const [breakfastProteins, setBreakfastProteins] = useState([]); // Added to validate protein step
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [previewImage, setPreviewImage] = useState(null);
+  const [librarySuggestionAdd, setLibrarySuggestionAdd] = useState(null);
+  const [librarySuggestionEdit, setLibrarySuggestionEdit] = useState(null);
+  const [libraryPool, setLibraryPool] = useState([]); // imágenes de biblioteca para la colección actual
+  const [libraryMatchesAdd, setLibraryMatchesAdd] = useState([]);
+  const [libraryMatchesEdit, setLibraryMatchesEdit] = useState([]);
 
   const collectionNames = {
     soups: 'Sopas',
@@ -168,6 +177,12 @@ const MenuManagement = ({ setError, setSuccess, theme }) => {
         isNew: newItem.isNew,
         createdAt: new Date(),
       };
+      // Si no hay imagen cargada, intentar usar biblioteca
+      if (!newItem.imageUrl && librarySuggestionAdd?.imageUrl) {
+        itemData.imageUrl = librarySuggestionAdd.imageUrl;
+      } else if (newItem.imageUrl) {
+        itemData.imageUrl = newItem.imageUrl;
+      }
       if (selectedCollection === 'additions' || selectedCollection === 'breakfastAdditions') {
         itemData.price = parseFloat(newItem.price);
       }
@@ -187,7 +202,10 @@ const MenuManagement = ({ setError, setSuccess, theme }) => {
       } else {
         await addDoc(collection(db, selectedCollection), itemData);
       }
-      setNewItem({ name: '', description: '', emoji: '', price: '', isNew: false, steps: [] });
+      // Guardar/actualizar en biblioteca si hay imagen
+      if (itemData.imageUrl) await saveImageToLibrary(selectedCollection, itemData.name, itemData.imageUrl);
+      // Reset
+      setNewItem({ name: '', description: '', emoji: '', price: '', isNew: false, steps: [], imageUrl: '' });
       setShowAddItemForm(false);
       window.dispatchEvent(new Event('optionsUpdated'));
       setSuccess(`"${itemData.name}" agregado exitosamente.`);
@@ -281,6 +299,10 @@ const MenuManagement = ({ setError, setSuccess, theme }) => {
         isFinished: editItem.isFinished || false,
         updatedAt: new Date(),
       };
+      // Prioridad: imagen editada, luego biblioteca
+      if (editItem.imageUrl) itemData.imageUrl = editItem.imageUrl;
+      else if (librarySuggestionEdit?.imageUrl) itemData.imageUrl = librarySuggestionEdit.imageUrl;
+
       if (selectedCollection === 'additions' || selectedCollection === 'breakfastAdditions') {
         itemData.price = parseFloat(editItem.price);
       }
@@ -289,6 +311,7 @@ const MenuManagement = ({ setError, setSuccess, theme }) => {
         itemData.requiresProtein = editItem.steps.includes('protein');
       }
       await updateDoc(doc(db, selectedCollection, editingItem.id), itemData);
+      if (itemData.imageUrl) await saveImageToLibrary(selectedCollection, itemData.name, itemData.imageUrl);
       setEditingItem(null);
       setSuccess(`"${itemData.name}" actualizado exitosamente.`);
     } catch (error) {
@@ -331,6 +354,167 @@ const MenuManagement = ({ setError, setSuccess, theme }) => {
     { id: 'drink', label: 'Bebida' },
     { id: 'protein', label: 'Proteína' },
   ];
+
+  const handleImageUpload = async (file, forEdit = false) => {
+    if (!file) return;
+    try {
+      setUploadingImage(true);
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      const nameBase = (forEdit ? (editItem?.name || 'item') : (newItem?.name || 'item'))
+        .toString()
+        .toLowerCase()
+        .replace(/[^a-z0-9\-\s]/g, '')
+        .trim()
+        .replace(/\s+/g, '-');
+      const col = selectedCollection || 'misc';
+      const path = `menu/${col}/${nameBase}-${Date.now()}.${ext}`;
+      const ref = storageRef(storage, path);
+      await uploadBytes(ref, file);
+      const url = await getDownloadURL(ref);
+      if (forEdit) {
+        setEditItem(prev => ({ ...prev, imageUrl: url }));
+      } else {
+        setNewItem(prev => ({ ...prev, imageUrl: url }));
+      }
+      setSuccess('Imagen subida correctamente.');
+    } catch (e) {
+      setError(`Error al subir imagen: ${e.message}`);
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  const getNameSlug = (text) => {
+    if (!text) return 'item';
+    return text
+      .toString()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9\-\s]/g, '')
+      .trim()
+      .replace(/\s+/g, '-');
+  };
+
+  const fetchImageFromLibrary = async (col, name) => {
+    try {
+      const slug = getNameSlug(name);
+      const id = `${col}_${slug}`;
+      const ref = doc(db, 'menuImageLibrary', id);
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        const data = snap.data();
+        return { imageUrl: data.imageUrl, name: data.name, nameSlug: data.nameSlug };
+      }
+      return null;
+    } catch (e) {
+      if (process.env.NODE_ENV === 'development') console.error('fetchImageFromLibrary error', e);
+      return null;
+    }
+  };
+
+  // Normalizar texto para búsqueda (ignora tildes y mayúsculas)
+  const normalizeText = (txt) => {
+    return (txt || '')
+      .toString()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
+
+  // Cargar pool de la biblioteca para la colección actual (en vivo)
+  useEffect(() => {
+    if (!selectedCollection || selectedCollection === 'schedules' || selectedCollection === 'times' || selectedCollection === 'breakfastTimes' || selectedCollection === 'paymentMethods') {
+      setLibraryPool([]);
+      return;
+    }
+    const qLib = query(
+      collection(db, 'menuImageLibrary'),
+      where('collection', '==', selectedCollection),
+      orderBy('updatedAt', 'desc'),
+      limit(100)
+    );
+    const unsub = onSnapshot(qLib, (snap) => {
+      const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setLibraryPool(items);
+    });
+    return () => unsub();
+  }, [selectedCollection]);
+
+  const saveImageToLibrary = async (col, name, imageUrl) => {
+    try {
+      if (!imageUrl) return;
+      const slug = getNameSlug(name);
+      const id = `${col}_${slug}`;
+      const ref = doc(db, 'menuImageLibrary', id);
+      await setDoc(ref, {
+        collection: col,
+        name,
+        nameSlug: slug,
+        imageUrl,
+        updatedAt: new Date(),
+        createdAt: new Date(),
+      }, { merge: true });
+    } catch (e) {
+      if (process.env.NODE_ENV === 'development') console.error('saveImageToLibrary error', e);
+    }
+  };
+
+  // Sugerencia al escribir nombre en formulario de alta
+  useEffect(() => {
+    let active = true;
+    const run = async () => {
+      if (!newItem?.name || selectedCollection === 'schedules' || selectedCollection === 'times' || selectedCollection === 'breakfastTimes' || selectedCollection === 'paymentMethods') {
+        setLibrarySuggestionAdd(null);
+        return;
+      }
+      const suggestion = await fetchImageFromLibrary(selectedCollection, newItem.name);
+      if (active) setLibrarySuggestionAdd(suggestion);
+    };
+    run();
+    return () => { active = false; };
+  }, [newItem?.name, selectedCollection]);
+
+  // Coincidencias múltiples en alta (tipo autocompletar)
+  useEffect(() => {
+    if (!newItem?.name || libraryPool.length === 0) {
+      setLibraryMatchesAdd([]);
+      return;
+    }
+    const needle = normalizeText(newItem.name);
+    if (needle.length < 2) { setLibraryMatchesAdd([]); return; }
+    const matches = libraryPool.filter(x => normalizeText(x.name).includes(needle)).slice(0, 6);
+    setLibraryMatchesAdd(matches);
+  }, [newItem?.name, libraryPool]);
+
+  // Sugerencia al editar nombre
+  useEffect(() => {
+    let active = true;
+    const run = async () => {
+      if (!editingItem || !editItem?.name) {
+        setLibrarySuggestionEdit(null);
+        return;
+      }
+      const suggestion = await fetchImageFromLibrary(selectedCollection, editItem.name);
+      if (active) setLibrarySuggestionEdit(suggestion);
+    };
+    run();
+    return () => { active = false; };
+  }, [editingItem, editItem?.name, selectedCollection]);
+
+  // Coincidencias múltiples en edición
+  useEffect(() => {
+    if (!editItem?.name || libraryPool.length === 0) {
+      setLibraryMatchesEdit([]);
+      return;
+    }
+    const needle = normalizeText(editItem.name);
+    if (needle.length < 2) { setLibraryMatchesEdit([]); return; }
+    const matches = libraryPool.filter(x => normalizeText(x.name).includes(needle)).slice(0, 6);
+    setLibraryMatchesEdit(matches);
+  }, [editItem?.name, libraryPool]);
 
   return (
     <div className={`min-h-screen ${getContainerBgClasses(true)} text-gray-100 p-4 sm:p-6 lg:p-8 flex flex-col md:flex-row gap-6`}>
@@ -445,6 +629,72 @@ const MenuManagement = ({ setError, setSuccess, theme }) => {
                     className={getInputFieldClasses()}
                   />
                 </div>
+                {selectedCollection !== 'times' && selectedCollection !== 'breakfastTimes' && selectedCollection !== 'paymentMethods' && (
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-200 dark:text-white mb-1">Imagen (opcional)</label>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => handleImageUpload(e.target.files?.[0] || null)}
+                        className={`${getInputFieldClasses()} !p-2`}
+                      />
+                      {uploadingImage && <p className="text-xs text-blue-300 mt-1">Subiendo imagen...</p>}
+                      {/* Sugerencia en formulario de alta */}
+                      {selectedCollection !== 'times' && selectedCollection !== 'breakfastTimes' && selectedCollection !== 'paymentMethods' && librarySuggestionAdd?.imageUrl && !newItem.imageUrl && (
+                        <div className={`${getContainerBgClasses()} mt-3 p-3 rounded border ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
+                          <div className="flex items-center gap-3">
+                            <img src={librarySuggestionAdd.imageUrl} alt="Sugerencia" className="w-16 h-16 object-cover rounded border" />
+                            <div className="flex-1">
+                              <div className="text-sm font-semibold">Imagen guardada para "{newItem.name}"</div>
+                              <div className="text-xs opacity-75">Usa la imagen que ya subiste anteriormente.</div>
+                            </div>
+                            <button type="button" onClick={() => setNewItem(prev => ({ ...prev, imageUrl: librarySuggestionAdd.imageUrl }))} className="px-3 py-1 text-xs bg-blue-600 text-white rounded">Usar</button>
+                          </div>
+                        </div>
+                      )}
+                      {/* Coincidencias múltiples en vivo */}
+                      {libraryMatchesAdd.length > 0 && !newItem.imageUrl && (
+                        <div className="mt-3">
+                          <div className="text-xs mb-1 opacity-75">Coincidencias sugeridas</div>
+                          <div className="flex flex-wrap gap-2">
+                            {libraryMatchesAdd.map(sug => (
+                              <button
+                                key={sug.id}
+                                type="button"
+                                onClick={() => setNewItem(prev => ({ ...prev, imageUrl: sug.imageUrl }))}
+                                className="group border rounded overflow-hidden hover:ring-2 hover:ring-blue-500 transition"
+                                title={sug.name}
+                              >
+                                <img src={sug.imageUrl} alt={sug.name} className="w-16 h-16 object-cover block" />
+                                <div className="text-[10px] px-1 py-0.5 truncate max-w-[64px] group-hover:bg-blue-600 group-hover:text-white">
+                                  {sug.name}
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    {newItem.imageUrl && (
+                      <div className="flex items-center gap-2">
+                        <img
+                          src={newItem.imageUrl}
+                          alt="Vista previa"
+                          className="w-20 h-20 object-cover rounded cursor-pointer border border-gray-600"
+                          onClick={() => setPreviewImage(newItem.imageUrl)}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setNewItem(prev => ({ ...prev, imageUrl: '' }))}
+                          className="px-3 py-1 text-xs bg-gray-600 hover:bg-gray-700 rounded"
+                        >
+                          Quitar imagen
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <textarea
                   value={newItem.description}
                   onChange={e => setNewItem({ ...newItem, description: e.target.value })}
@@ -560,6 +810,16 @@ const MenuManagement = ({ setError, setSuccess, theme }) => {
                           <p className={`text-sm mt-1 font-medium ${theme === 'dark' ? 'text-gray-200' : 'text-gray-800'}`}>
                             Precio: ${item.price.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                           </p>
+                        )}
+                        {item.imageUrl && (
+                          <div className="mt-2">
+                            <img
+                              src={item.imageUrl}
+                              alt={`Imagen de ${item.name}`}
+                              className="w-24 h-24 object-cover rounded border border-gray-600 cursor-pointer"
+                              onClick={() => setPreviewImage(item.imageUrl)}
+                            />
+                          </div>
                         )}
                         {item.steps && (
                           <p className={`text-sm mt-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
@@ -698,6 +958,68 @@ const MenuManagement = ({ setError, setSuccess, theme }) => {
                   theme={theme}
                 />
               )}
+              <div>
+                <label className="block text-sm font-medium text-gray-200 dark:text-white mb-1">Imagen (opcional)</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => handleImageUpload(e.target.files?.[0] || null, true)}
+                  className={`${getInputFieldClasses(false)} !p-2`}
+                />
+                {uploadingImage && <p className="text-xs text-blue-300 mt-1">Subiendo imagen...</p>}
+                {editItem.imageUrl && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <img
+                      src={editItem.imageUrl}
+                      alt={`Imagen de ${editItem.name}`}
+                      className="w-24 h-24 object-cover rounded border border-gray-600 cursor-pointer"
+                      onClick={() => setPreviewImage(editItem.imageUrl)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setEditItem(prev => ({ ...prev, imageUrl: '' }))}
+                      className="px-3 py-1 text-xs bg-gray-600 hover:bg-gray-700 rounded"
+                    >
+                      Quitar imagen
+                    </button>
+                  </div>
+                )}
+                {/* Sugerencia en formulario de edición */}
+                {selectedCollection !== 'times' && selectedCollection !== 'breakfastTimes' && selectedCollection !== 'paymentMethods' && editingItem && librarySuggestionEdit?.imageUrl && !editItem.imageUrl && (
+                  <div className={`${getContainerBgClasses()} p-3 rounded border mt-2 ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
+                    <div className="flex items-center gap-3">
+                      <img src={librarySuggestionEdit.imageUrl} alt="Sugerencia" className="w-16 h-16 object-cover rounded border" />
+                      <div className="flex-1">
+                        <div className="text-sm font-semibold">Imagen guardada para "{editItem.name}"</div>
+                        <div className="text-xs opacity-75">Usa la imagen que ya subiste anteriormente.</div>
+                      </div>
+                      <button type="button" onClick={() => setEditItem(prev => ({ ...prev, imageUrl: librarySuggestionEdit.imageUrl }))} className="px-3 py-1 text-xs bg-blue-600 text-white rounded">Usar</button>
+                    </div>
+                  </div>
+                )}
+                {/* Coincidencias múltiples en vivo (editar) */}
+                {libraryMatchesEdit.length > 0 && !editItem.imageUrl && (
+                  <div className="mt-3">
+                    <div className="text-xs mb-1 opacity-75">Coincidencias sugeridas</div>
+                    <div className="flex flex-wrap gap-2">
+                      {libraryMatchesEdit.map(sug => (
+                        <button
+                          key={sug.id}
+                          type="button"
+                          onClick={() => setEditItem(prev => ({ ...prev, imageUrl: sug.imageUrl }))}
+                          className="group border rounded overflow-hidden hover:ring-2 hover:ring-blue-500 transition"
+                          title={sug.name}
+                        >
+                          <img src={sug.imageUrl} alt={sug.name} className="w-16 h-16 object-cover block" />
+                          <div className="text-[10px] px-1 py-0.5 truncate max-w-[64px] group-hover:bg-blue-600 group-hover:text-white">
+                            {sug.name}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
             <div className="flex gap-4 mt-6">
               <button onClick={handleSaveEdit} className="flex-1 py-3 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-semibold rounded-lg shadow-md transition-all duration-300 transform hover:scale-105">Guardar Cambios</button>
@@ -730,6 +1052,13 @@ const MenuManagement = ({ setError, setSuccess, theme }) => {
           </div>
         </div>
       )}
+
+      <Modal isOpen={!!previewImage} onClose={() => setPreviewImage(null)}>
+        <div className="flex flex-col items-center justify-center">
+          <img src={previewImage || ''} alt="Vista previa" className="max-w-full max-h-[70vh] object-contain rounded shadow" />
+        </div>
+      </Modal>
+
     </div>
   );
 };
