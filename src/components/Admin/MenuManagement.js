@@ -5,6 +5,9 @@ import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, query, order
 import { XMarkIcon, PencilIcon, TrashIcon, CheckCircleIcon, MinusCircleIcon, MagnifyingGlassIcon, PlusIcon } from '@heroicons/react/24/outline';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import Modal from '../Modal';
+import ReactCrop from 'react-image-crop';
+import 'react-image-crop/dist/ReactCrop.css';
+import { getCroppedImageBlob, blobToFile } from '../../utils/imageCrop';
 
 // Componente para una checkbox personalizada
 const CustomCheckbox = ({ id, label, checked, onChange, theme }) => (
@@ -52,6 +55,14 @@ const MenuManagement = ({ setError, setSuccess, theme }) => {
   const [breakfastProteins, setBreakfastProteins] = useState([]); // Added to validate protein step
   const [uploadingImage, setUploadingImage] = useState(false);
   const [previewImage, setPreviewImage] = useState(null);
+  // Crop state (react-image-crop)
+  const [cropModalOpen, setCropModalOpen] = useState(false);
+  const [cropSrc, setCropSrc] = useState('');
+  const [cropRect, setCropRect] = useState(null); // { unit: 'px', x, y, width, height }
+  const [aspectMode, setAspectMode] = useState('free'); // 'free' | '1:1' | '4:3' | '16:9'
+  const [imgNatural, setImgNatural] = useState({ width: 0, height: 0 });
+  const [imgDisplay, setImgDisplay] = useState({ width: 0, height: 0 });
+  const [cropTarget, setCropTarget] = useState('add'); // 'add' | 'edit'
   const [librarySuggestionAdd, setLibrarySuggestionAdd] = useState(null);
   const [librarySuggestionEdit, setLibrarySuggestionEdit] = useState(null);
   const [libraryPool, setLibraryPool] = useState([]); // imágenes de biblioteca para la colección actual
@@ -355,32 +366,58 @@ const MenuManagement = ({ setError, setSuccess, theme }) => {
     { id: 'protein', label: 'Proteína' },
   ];
 
-  const handleImageUpload = async (file, forEdit = false) => {
+  const openCropper = (file, forEdit = false) => {
     if (!file) return;
+    const reader = new FileReader();
+    reader.addEventListener('load', () => {
+      setCropSrc(reader.result);
+      setCropRect(null);
+      setAspectMode('free');
+      setCropTarget(forEdit ? 'edit' : 'add');
+      setCropModalOpen(true);
+    });
+    reader.readAsDataURL(file);
+  };
+
+  const applyCropAndUpload = async () => {
+    if (!cropSrc || !cropRect) {
+      setCropModalOpen(false);
+      return;
+    }
     try {
       setUploadingImage(true);
-      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
-      const nameBase = (forEdit ? (editItem?.name || 'item') : (newItem?.name || 'item'))
-        .toString()
-        .toLowerCase()
-        .replace(/[^a-z0-9\-\s]/g, '')
-        .trim()
-        .replace(/\s+/g, '-');
+      // Escalar de tamaño mostrado -> tamaño natural
+      const sx = imgDisplay.width ? (imgNatural.width / imgDisplay.width) : 1;
+      const sy = imgDisplay.height ? (imgNatural.height / imgDisplay.height) : 1;
+      const origCrop = {
+        x: Math.round((cropRect.x || 0) * sx),
+        y: Math.round((cropRect.y || 0) * sy),
+        width: Math.round((cropRect.width || imgDisplay.width) * sx),
+        height: Math.round((cropRect.height || imgDisplay.height) * sy),
+      };
+      const blob = await getCroppedImageBlob(cropSrc, origCrop, 0, 'image/jpeg', 0.9);
+      const baseName = cropTarget === 'edit' ? (editItem?.name || 'item') : (newItem?.name || 'item');
+      const fileName = `${baseName.toString().toLowerCase().replace(/[^a-z0-9\-\s]/g, '').trim().replace(/\s+/g, '-')}-${Date.now()}.jpg`;
+      const file = blobToFile(blob, fileName);
+
       const col = selectedCollection || 'misc';
-      const path = `menu/${col}/${nameBase}-${Date.now()}.${ext}`;
+      const path = `menu/${col}/${file.name}`;
       const ref = storageRef(storage, path);
       await uploadBytes(ref, file);
       const url = await getDownloadURL(ref);
-      if (forEdit) {
+      if (cropTarget === 'edit') {
         setEditItem(prev => ({ ...prev, imageUrl: url }));
       } else {
         setNewItem(prev => ({ ...prev, imageUrl: url }));
       }
-      setSuccess('Imagen subida correctamente.');
+      setSuccess('Imagen recortada y subida correctamente.');
     } catch (e) {
-      setError(`Error al subir imagen: ${e.message}`);
+      setError(`Error al recortar/subir imagen: ${e.message}`);
     } finally {
       setUploadingImage(false);
+      setCropModalOpen(false);
+      setCropSrc('');
+    setCropRect(null);
     }
   };
 
@@ -636,7 +673,7 @@ const MenuManagement = ({ setError, setSuccess, theme }) => {
                       <input
                         type="file"
                         accept="image/*"
-                        onChange={(e) => handleImageUpload(e.target.files?.[0] || null)}
+                        onChange={(e) => openCropper(e.target.files?.[0] || null, false)}
                         className={`${getInputFieldClasses()} !p-2`}
                       />
                       {uploadingImage && <p className="text-xs text-blue-300 mt-1">Subiendo imagen...</p>}
@@ -684,6 +721,13 @@ const MenuManagement = ({ setError, setSuccess, theme }) => {
                           className="w-20 h-20 object-cover rounded cursor-pointer border border-gray-600"
                           onClick={() => setPreviewImage(newItem.imageUrl)}
                         />
+                        <button
+                          type="button"
+                          onClick={() => setCropTarget('add') || setCropSrc(newItem.imageUrl) || setCropModalOpen(true)}
+                          className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded"
+                        >
+                          Re-recortar
+                        </button>
                         <button
                           type="button"
                           onClick={() => setNewItem(prev => ({ ...prev, imageUrl: '' }))}
@@ -963,7 +1007,7 @@ const MenuManagement = ({ setError, setSuccess, theme }) => {
                 <input
                   type="file"
                   accept="image/*"
-                  onChange={(e) => handleImageUpload(e.target.files?.[0] || null, true)}
+                  onChange={(e) => openCropper(e.target.files?.[0] || null, true)}
                   className={`${getInputFieldClasses(false)} !p-2`}
                 />
                 {uploadingImage && <p className="text-xs text-blue-300 mt-1">Subiendo imagen...</p>}
@@ -975,6 +1019,13 @@ const MenuManagement = ({ setError, setSuccess, theme }) => {
                       className="w-24 h-24 object-cover rounded border border-gray-600 cursor-pointer"
                       onClick={() => setPreviewImage(editItem.imageUrl)}
                     />
+                    <button
+                      type="button"
+                      onClick={() => setCropTarget('edit') || setCropSrc(editItem.imageUrl) || setCropModalOpen(true)}
+                      className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded"
+                    >
+                      Re-recortar
+                    </button>
                     <button
                       type="button"
                       onClick={() => setEditItem(prev => ({ ...prev, imageUrl: '' }))}
@@ -1056,6 +1107,57 @@ const MenuManagement = ({ setError, setSuccess, theme }) => {
       <Modal isOpen={!!previewImage} onClose={() => setPreviewImage(null)}>
         <div className="flex flex-col items-center justify-center">
           <img src={previewImage || ''} alt="Vista previa" className="max-w-full max-h-[70vh] object-contain rounded shadow" />
+        </div>
+      </Modal>
+
+      {/* Modal de recorte (ReactCrop) */}
+      <Modal isOpen={cropModalOpen} onClose={() => setCropModalOpen(false)}>
+        <div className="w-[95vw] max-w-[900px]">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-sm opacity-80">Modo de aspecto</div>
+            <div className="flex gap-2">
+              {['free','1:1','4:3','16:9'].map(mode => (
+                <button key={mode} onClick={() => setAspectMode(mode)} className={`px-2 py-1 text-xs rounded ${aspectMode===mode ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-800'}`}>{mode}</button>
+              ))}
+            </div>
+          </div>
+          <div className="relative w-full h-[55vh] sm:h-[60vh] bg-black rounded overflow-hidden flex items-center justify-center">
+            {cropSrc && (
+              <ReactCrop
+                crop={cropRect || undefined}
+                onChange={(c) => setCropRect(c)}
+                aspect={aspectMode==='free' ? undefined : (aspectMode==='1:1'? 1 : aspectMode==='4:3'? (4/3) : (16/9))}
+                keepSelection
+                className="h-full w-full"
+              >
+                <img
+                  src={cropSrc}
+                  alt="crop"
+                  onLoad={(e) => {
+                    const img = e.currentTarget;
+                    const natW = img.naturalWidth;
+                    const natH = img.naturalHeight;
+                    const dispW = img.clientWidth;
+                    const dispH = img.clientHeight;
+                    setImgNatural({ width: natW, height: natH });
+                    setImgDisplay({ width: dispW, height: dispH });
+                    if (!cropRect) {
+                      // Inicial: caja centrada utilizando tamaño mostrado
+                      const minSideDisp = Math.min(dispW, dispH);
+                      const size = Math.round(minSideDisp * 0.8);
+                      setCropRect({ unit: 'px', x: Math.round((dispW - size)/2), y: Math.round((dispH - size)/2), width: size, height: size });
+                    }
+                  }}
+                  style={{ height: '100%', width: 'auto', objectFit: 'contain' }}
+                />
+              </ReactCrop>
+            )}
+          </div>
+          <div className="mt-4 flex gap-3 justify-end">
+            <button onClick={() => setCropModalOpen(false)} className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded">Cancelar</button>
+            <button onClick={applyCropAndUpload} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded">Aplicar recorte</button>
+          </div>
+          <p className="text-xs mt-2 opacity-60">Sugerencia: arrastra las esquinas para estirar a tu gusto. Cambia el modo para bloquear o liberar el aspecto.</p>
         </div>
       </Modal>
 
