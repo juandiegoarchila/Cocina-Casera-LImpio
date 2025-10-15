@@ -271,7 +271,17 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
         h2 { margin:4px 0 6px; font-size:18px; text-align:center; }
         .line { border-bottom:2px solid #000; margin:8px 0; height:0; }
         .logo { text-align:center; margin-top:6px; }
-        .logo img { width:110px; filter:brightness(0); }
+        .logo img { 
+          width:110px; 
+          height:auto; 
+          filter:brightness(0) contrast(1.5); 
+          image-rendering: crisp-edges;
+          display: block;
+          margin: 0 auto;
+          max-width: 110px;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+        }
         .meta div { padding:2px 0; }
         .thanks { text-align:center; margin-top:14px; font-weight:bold; }
         .contact { text-align:center; margin-top:8px; }
@@ -286,7 +296,7 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
       </style>
       </head><body>
         <div class='logo'>
-          <img src="/formato finak.png" alt="Logo" />
+          <img src="/logo.png" alt="Logo" />
           <h2>Cocina Casera</h2>
           <div style='text-align:center; font-size:12px; margin-top:4px; font-weight:bold;'>(Uso interno - No es factura DIAN)</div>
         </div>

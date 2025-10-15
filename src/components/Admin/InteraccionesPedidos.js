@@ -463,7 +463,7 @@ const handlePrintDeliveryReceipt = async (order) => {
     </style>
     </head><body>
     <div class='logo'>
-      <img src="/formato finak.png" alt="Logo" style="width:100px; height:auto; display:block; margin:0 auto; filter:brightness(0);" />
+      <img src="/logo.png" alt="Logo" style="width:100px; height:auto; display:block; margin:0 auto; filter:brightness(0) contrast(1.5); image-rendering: crisp-edges; -webkit-print-color-adjust: exact; print-color-adjust: exact;" />
       <h2>Cocina Casera</h2>
     </div>
     <div class='line'></div>
