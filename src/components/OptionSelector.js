@@ -654,7 +654,7 @@ const OptionSelector = ({
       <button
         onClick={() => handleOptionClick(option)}
         disabled={disabled || option.isFinished}
-        className={`relative w-full p-2 ${option.imageUrl ? 'pr-12' : ''} rounded-t-lg text-sm font-medium transition-all duration-200 flex flex-col items-start justify-between text-left min-h-[60px] shadow-sm ${
+        className={`relative w-full p-2 ${option.imageUrl ? 'pr-12' : ''} rounded-t-lg text-sm font-medium transition-all duration-200 flex items-center justify-between text-left min-h-[60px] shadow-sm ${
           disabled || option.isFinished
             ? 'bg-gray-100 text-gray-400 border border-gray-300 cursor-not-allowed'
             : isSelected
@@ -668,26 +668,28 @@ const OptionSelector = ({
         }`}
         aria-label={`Seleccionar ${option.name}${isSelected ? ' (seleccionado)' : ''}`}
       >
-        <div className="flex items-center w-full">
+        <div className="flex items-center flex-grow">
           {option.emoji && <span className="mr-2 text-base sm:text-sm">{option.emoji}</span>}
           <div className="flex-grow">
             {getDisplayText(option)}
+            {option.description && (
+              <span className="text-xs text-gray-500 block mt-1">{option.description}</span>
+            )}
           </div>
-          {isSelected && (title !== 'Adiciones (por almuerzo)' && title !== 'Adiciones (por desayuno)') && (
-            <svg className="h-4 w-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-              <path
-                fillRule="evenodd"
-                d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                clipRule="evenodd"
-              />
-            </svg>
-          )}
         </div>
-        {option.description && (
-          <span className="text-xs text-gray-500 block mt-1">{option.description}</span>
+        {/* Checkmark para opciones normales */}
+        {isSelected && (title !== 'Adiciones (por almuerzo)' && title !== 'Adiciones (por desayuno)') && (
+          <svg className="h-4 w-4 text-green-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+            <path
+              fillRule="evenodd"
+              d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+              clipRule="evenodd"
+            />
+          </svg>
         )}
+        {/* Controles para adiciones */}
         {(title === 'Adiciones (por almuerzo)' || title === 'Adiciones (por desayuno)') && isSelected && (
-          <div className="flex items-center space-x-1 mt-1">
+          <div className="flex items-center space-x-1 flex-shrink-0">
             <div
               onClick={(e) => {
                 e.stopPropagation();
