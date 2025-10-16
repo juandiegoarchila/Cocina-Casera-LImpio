@@ -3,9 +3,8 @@
 function DireccionConCronometro({ order }) {
   const rawAddress = order.meals?.[0]?.address || order.breakfasts?.[0]?.address;
   const migratedAddress = migrateOldAddressForDisplay(rawAddress);
-  // Construir URL de Google Maps (simple: usar address + details si existen)
-  const fullAddressString = [migratedAddress?.address, migratedAddress?.details].filter(Boolean).join(' ');
-  const mapsUrl = fullAddressString ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddressString)}` : null;
+  // Construir URL de Google Maps (solo usar la dirección principal, no las instrucciones)
+  const mapsUrl = migratedAddress?.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(migratedAddress.address)}` : null;
   const getMinutesElapsed = () => {
     if (!order.createdAt) return 0;
     const created = typeof order.createdAt.toDate === 'function' ? order.createdAt.toDate() : (order.createdAt instanceof Date ? order.createdAt : new Date(order.createdAt));
