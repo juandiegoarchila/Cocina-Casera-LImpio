@@ -335,9 +335,11 @@ return () => {
 
       await setDoc(userRef, clientData, { merge: true });
 
-      const collectionName = isTableOrder
-        ? (isBreakfast ? 'breakfastOrders' : 'tableOrders')
-        : (isBreakfast ? 'deliveryBreakfastOrders' : 'orders');
+      const collectionName = currentUser.isAnonymous || !user
+        ? 'clientOrders'  // Para usuarios no autenticados/anónimos
+        : isTableOrder
+          ? (isBreakfast ? 'breakfastOrders' : 'tableOrders')
+          : (isBreakfast ? 'deliveryBreakfastOrders' : 'orders');
 
       if (process.env.NODE_ENV === 'development') console.log('Guardando pedido en colección:', collectionName);
 

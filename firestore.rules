@@ -1,30 +1,19 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // -------------------- Helpers --------------------
+    // -------------------- Helpers SIMPLIFICADOS --------------------
     function isAuthenticated() {
       return request.auth != null;
     }
-    function userDoc() {
-      return isAuthenticated() ? get(/databases/$(database)/documents/users/$(request.auth.uid)) : null;
+    function isAdmin() { 
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 2; 
     }
-    function hasUser() {
-      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
-    }
-    function userRole() {
-      return hasUser() ? userDoc().data.role : null;
-    }
-    function isAdmin() { return userRole() == 2; }
-    function isWaiter() { return userRole() == 3; }
-    function isCourier() { return userRole() == 4; }
-
-    // changedKeys helper: if resource doesn't exist (create) use request.resource
-    function changedKeys() {
-      return request.resource != null && resource != null
-        ? request.resource.data.diff(resource.data).changedKeys()
-        : request.resource != null
-          ? request.resource.data.keys()
-          : [];
+    function isStaff() { 
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in [2, 3, 4]; 
     }
 
     // -------------------- Users --------------------
@@ -35,87 +24,53 @@ service cloud.firestore {
 
     // -------------------- Tasks --------------------
     match /tasks/{taskId} {
-      allow read: if isAuthenticated();
-      // Crear: admin y roles de campo pueden crear tareas
-      allow create: if isAuthenticated() && (isAdmin() || isCourier() || isWaiter());
-      // Actualizar: admin puede todo; courier/waiter limitados a tareas asignadas a ellos y campos concretos
-      allow update: if isAuthenticated() && (
-        isAdmin() ||
-        (isCourier() && request.resource.data.assignedTo == 'domiciliario' &&
-          request.resource.data.diff(resource.data).changedKeys().hasOnly(['status','startedAt','completedAt','updatedAt','lastCompletedDate'])) ||
-        (isWaiter() && request.resource.data.assignedTo == 'mesero' &&
-          request.resource.data.diff(resource.data).changedKeys().hasOnly(['status','startedAt','completedAt','updatedAt','lastCompletedDate','needsReset','resetAt','dailyResetCount']))
-      );
-      allow delete: if isAuthenticated() && isAdmin();
+      allow read, write: if isStaff();
+      allow delete: if isAdmin();
     }
 
     // -------------------- Orders (generic) --------------------
     match /orders/{orderId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && (isAdmin() || isCourier() || isWaiter());
-      // Update: admin full, courier limited to status/payments, waiter limited to allowed fields
-      allow update: if isAuthenticated() && (
-        isAdmin() ||
-        (isCourier() && request.resource.data.diff(resource.data).changedKeys().hasOnly(['status','deliveryPerson','updatedAt','payments','paymentUpdatedAt','paymentUpdatedBy'])) ||
-        (isWaiter() && request.resource.data.diff(resource.data).changedKeys().hasOnly(['status','meals','breakfasts','items','addedItems','total','paymentMethod','paymentAmount','paymentLines','paymentNote','updatedAt']))
-      );
-      allow delete: if isAuthenticated() && isAdmin();
+      allow read, write: if request.auth != null;
+      allow delete: if isAdmin();
+    }
+
+    // -------------------- Client Orders (público para clientes) --------------------
+    match /clientOrders/{orderId} {
+      // Permitir creación pública para clientes no autenticados
+      allow create: if true;
+      // Lectura y actualización solo para staff autenticado
+      allow read, update: if isStaff();
+      allow delete: if isAdmin();
     }
 
     // -------------------- Table Orders --------------------
     match /tableOrders/{orderId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && (isAdmin() || isWaiter());
-      allow update: if isAuthenticated() && (
-        isAdmin() ||
-        (isWaiter() && request.resource.data.diff(resource.data).changedKeys().hasOnly(['status','meals','breakfasts','items','addedItems','total','paymentMethod','paymentAmount','paymentLines','paymentNote','updatedAt']))
-      );
-      allow delete: if isAuthenticated() && isAdmin();
+      allow read, write: if isStaff();
+      allow delete: if isAdmin();
     }
 
     // -------------------- Breakfast Orders --------------------
     match /breakfastOrders/{orderId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && (isAdmin() || isWaiter());
-      allow update: if isAuthenticated() && (
-        isAdmin() ||
-        (isWaiter() && request.resource.data.diff(resource.data).changedKeys().hasOnly(['status','meals','breakfasts','items','addedItems','total','paymentMethod','paymentAmount','paymentLines','paymentNote','updatedAt']))
-      );
-      allow delete: if isAuthenticated() && isAdmin();
+      allow read, write: if request.auth != null;
+      allow delete: if isAdmin();
     }
 
     // -------------------- Delivery Breakfast Orders --------------------
     match /deliveryBreakfastOrders/{orderId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && (isAdmin() || isWaiter() || isCourier());
-      allow update: if isAuthenticated() && (
-        isAdmin() || isWaiter() ||
-        (isCourier() && request.resource.data.diff(resource.data).changedKeys().hasOnly(['status','deliveryPerson','updatedAt','payments','paymentUpdatedAt','paymentUpdatedBy']))
-      );
-      allow delete: if isAuthenticated() && isAdmin();
+      allow read, write: if request.auth != null;
+      allow delete: if isAdmin();
     }
 
     // -------------------- Payments --------------------
-    // Recomendación: almacenar createdByUid en los pagos para comparaciones robustas
     match /payments/{paymentId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && (isAdmin() || isWaiter() || isCourier());
-      allow update: if isAuthenticated() && (
-        isAdmin() || isWaiter() ||
-        // Courier puede actualizar sólo si es el creador del pago
-        (isCourier() && (
-          (resource.data.createdByUid != null && resource.data.createdByUid == request.auth.uid) ||
-          (resource.data.createdBy != null && resource.data.createdBy == request.auth.token.email)
-        ))
-      );
-      allow delete: if isAuthenticated() && isAdmin();
+      allow read, write: if isStaff();
+      allow delete: if isAdmin();
     }
 
     // -------------------- PaymentsByDay --------------------
     match /paymentsByDay/{dayId} {
-      allow read: if isAuthenticated();
-      allow create, update: if isAuthenticated() && (isAdmin() || isCourier());
-      allow delete: if isAuthenticated() && isAdmin();
+      allow read, write: if isStaff();
+      allow delete: if isAdmin();
     }
 
     // -------------------- Settings (lectura pública segura) --------------------
@@ -131,32 +86,30 @@ service cloud.firestore {
     // Lecturas públicas; escrituras restringidas a admin (y en algunos casos mesero si se requiere operar rápido).
     // Ajusta esta lista si agregas nuevas colecciones de catálogo.
     // Almuerzos
-    match /sides/{docId} { allow read: if true; allow write: if isAuthenticated() && isAdmin(); }
-    match /additions/{docId} { allow read: if true; allow write: if isAuthenticated() && isAdmin(); }
+    match /sides/{docId} { allow read: if true; allow write: if isAdmin(); }
+    match /additions/{docId} { allow read: if true; allow write: if isAdmin(); }
     match /dailyProteins/{docId} {
-      // Lectura pública para mostrar disponibilidad; escritura: admin y mesero (actualizan sobrantes / entrada diaria)
+      // Lectura pública para mostrar disponibilidad; escritura: admin y mesero
       allow read: if true;
-      allow create, update: if isAuthenticated() && (isAdmin() || isWaiter());
-      allow delete: if isAuthenticated() && isAdmin();
+      allow create, update: if isStaff();
+      allow delete: if isAdmin();
     }
     // Desayunos
-    match /breakfastAdditions/{docId} { allow read: if true; allow write: if isAuthenticated() && isAdmin(); }
-    match /breakfastProteins/{docId} { allow read: if true; allow write: if isAuthenticated() && isAdmin(); }
-    match /breakfastTypes/{docId} { allow read: if true; allow write: if isAuthenticated() && isAdmin(); }
-    match /breakfastEggs/{docId} { allow read: if true; allow write: if isAuthenticated() && isAdmin(); }
-    match /breakfastBroths/{docId} { allow read: if true; allow write: if isAuthenticated() && isAdmin(); }
-    match /breakfastRiceBread/{docId} { allow read: if true; allow write: if isAuthenticated() && isAdmin(); }
-    match /breakfastDrinks/{docId} { allow read: if true; allow write: if isAuthenticated() && isAdmin(); }
+    match /breakfastAdditions/{docId} { allow read: if true; allow write: if isAdmin(); }
+    match /breakfastProteins/{docId} { allow read: if true; allow write: if isAdmin(); }
+    match /breakfastTypes/{docId} { allow read: if true; allow write: if isAdmin(); }
+    match /breakfastEggs/{docId} { allow read: if true; allow write: if isAdmin(); }
+    match /breakfastBroths/{docId} { allow read: if true; allow write: if isAdmin(); }
+    match /breakfastRiceBread/{docId} { allow read: if true; allow write: if isAdmin(); }
+    match /breakfastDrinks/{docId} { allow read: if true; allow write: if isAdmin(); }
 
-    // Mesas visibles públicamente (para permitir elección sin login si aplica). Si no deseas esto, cambia read a isAuthenticated().
-    match /tables/{docId} { allow read: if true; allow write: if isAuthenticated() && isAdmin(); }
+    // Mesas visibles públicamente
+    match /tables/{docId} { allow read: if true; allow write: if isAdmin(); }
 
     // -------------------- Fallback (catch-all) --------------------
-    // Ajuste intermedio: permitir lectura pública de todo para garantizar carga de menú.
-    // Próximo paso recomendado: enumerar explícitamente colecciones públicas y volver a cerrar aquí.
     match /{collection}/{document=**} {
       allow read: if true; // público (temporal)
-      allow write: if isAuthenticated() && isAdmin();
+      allow write: if isAdmin();
     }
   }
 }
