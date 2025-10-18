@@ -220,9 +220,48 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
       }
     );
 
+    // Listener para pedidos de clientes no autenticados (clientOrders)  
+    const unsubClient = onSnapshot(
+      collection(db, 'clientOrders'),
+      (snapshot) => {
+        const clientOrders = snapshot.docs.map((doc) => {
+          const data = doc.data();
+          // Determinar si es desayuno o almuerzo
+          const isBreakfast = data.breakfasts && data.breakfasts.length > 0;
+          
+          return {
+            id: doc.id,
+            type: isBreakfast ? 'breakfast' : 'meal',
+            source: 'client', // Marcar como pedido de cliente
+            ...data,
+            payment: data.payment || (data.breakfasts?.[0]?.payment?.name || data.meals?.[0]?.payment?.name || 'Efectivo'),
+            paymentSummary: data.paymentSummary || { Efectivo: 0, Daviplata: 0, Nequi: 0 },
+            total: data.total || 0,
+            deliveryPerson: data.deliveryPerson || 'Sin asignar',
+            status: data.status || 'Pendiente'
+          };
+        });
+        
+        // Separar y agregar a las listas correspondientes
+        const clientBreakfasts = clientOrders.filter(order => order.type === 'breakfast');
+        const clientMeals = clientOrders.filter(order => order.type === 'meal');
+        
+        // Agregar a las listas globales
+        latestBreakfast = [...latestBreakfast, ...clientBreakfasts];
+        latestLunch = [...latestLunch, ...clientMeals];
+        
+        recompute();
+      },
+      (error) => {
+        setError(`Error al cargar pedidos de clientes: ${error.message}`);
+        setIsLoading(false);
+      }
+    );
+
     return () => {
       unsubLunch();
       unsubBreakfast();
+      unsubClient();
     };
   }, [setError]);
 
@@ -805,7 +844,10 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
         }));
 
         updateDataBase = { ...updateDataBase, breakfasts: updatedBreakfastsForDB };
-        await updateDoc(doc(db, 'deliveryBreakfastOrders', editingOrder.id), updateDataBase);
+        
+        // Determinar colección correcta para desayunos
+        const breakfastCollection = editingOrder.source === 'client' ? 'clientOrders' : 'deliveryBreakfastOrders';
+        await updateDoc(doc(db, breakfastCollection, editingOrder.id), updateDataBase);
 
         logActivity(`Editó (desayuno) el pedido ${editingOrder.id}`, {
           orderId: editingOrder.id,
@@ -859,7 +901,10 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
         }));
 
         updateDataBase = { ...updateDataBase, meals: updatedMealsForDB };
-        await updateDoc(doc(db, 'orders', editingOrder.id), updateDataBase);
+        
+        // Determinar colección correcta para almuerzos
+        const mealCollection = editingOrder.source === 'client' ? 'clientOrders' : 'orders';
+        await updateDoc(doc(db, mealCollection, editingOrder.id), updateDataBase);
 
         logActivity(`Editó (almuerzo) el pedido ${editingOrder.id}`, {
           orderId: editingOrder.id,
@@ -881,7 +926,16 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
     setIsLoading(true);
     try {
       const orderToDelete = orders.find((o) => o.id === orderId);
-      await deleteDoc(doc(db, orderToDelete.type === 'breakfast' ? 'deliveryBreakfastOrders' : 'orders', orderId));
+      
+      // Determinar la colección correcta
+      let collectionName;
+      if (orderToDelete.source === 'client') {
+        collectionName = 'clientOrders';
+      } else {
+        collectionName = orderToDelete.type === 'breakfast' ? 'deliveryBreakfastOrders' : 'orders';
+      }
+      
+      await deleteDoc(doc(db, collectionName, orderId));
       setSuccess('Pedido eliminado correctamente.');
       if (orderToDelete) {
         logActivity(`Eliminó el pedido con ID: ${orderId}`, {
@@ -980,7 +1034,13 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
     try {
       const oldOrder = orders.find((o) => o.id === orderId);
       const previousStatus = oldOrder ? oldOrder.status : 'Desconocido';
-      const collectionName = oldOrder.type === 'breakfast' ? 'deliveryBreakfastOrders' : 'orders';
+      
+      let collectionName;
+      if (oldOrder.source === 'client') {
+        collectionName = 'clientOrders';
+      } else {
+        collectionName = oldOrder.type === 'breakfast' ? 'deliveryBreakfastOrders' : 'orders';
+      }
 
       await updateDoc(doc(db, collectionName, orderId), { status: newStatus, updatedAt: new Date() });
 
@@ -1042,7 +1102,14 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
   const handleDeliveryChange = async (orderId, deliveryPerson) => {
     try {
       const oldOrder = orders.find((o) => o.id === orderId);
-      const collectionName = oldOrder.type === 'breakfast' ? 'deliveryBreakfastOrders' : 'orders';
+      
+      let collectionName;
+      if (oldOrder.source === 'client') {
+        collectionName = 'clientOrders';
+      } else {
+        collectionName = oldOrder.type === 'breakfast' ? 'deliveryBreakfastOrders' : 'orders';
+      }
+      
       const previousDeliveryPerson = oldOrder ? oldOrder.deliveryPerson : 'Desconocido';
 
       await updateDoc(doc(db, collectionName, orderId), {
