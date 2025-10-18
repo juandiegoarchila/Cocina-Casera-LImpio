@@ -1,7 +1,7 @@
 //src/App.js
 import React, { useState, useEffect, lazy, Suspense, useRef } from 'react';
 import { db, auth } from './config/firebase';
-import { collection, onSnapshot, doc, addDoc, setDoc, getDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, addDoc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { signInAnonymously } from 'firebase/auth';
 import useLocalStorage from './hooks/useLocalStorage';
 import Header from './components/Header';
@@ -24,6 +24,7 @@ import ProtectedRoute from './components/Auth/ProtectedRoute';
 import './styles/animations.css';
 import { calculateTotalBreakfastPrice } from './utils/BreakfastLogic';
 import CajaPOS from './components/Waiter/CajaPOS';
+import { getColombiaLocalDateString } from './utils/bogotaDate';
 
 const StaffHub = lazy(() => import('./components/Auth/StaffHub')); 
 const AdminPage = lazy(() => import('./components/Admin/AdminPage'));
@@ -191,15 +192,12 @@ const App = () => {
         return newMenuType;
       });
     };
-// ...
-updateMenuType();
-// 15s es suficiente y evita el warning del ResizeObserver
-const interval = setInterval(updateMenuType, 15000);
-return () => {
-  clearInterval(interval);
-  unsubscribe();
-};
-// ...
+    updateMenuType();
+    const interval = setInterval(updateMenuType, 15000);
+    return () => {
+      clearInterval(interval);
+      unsubscribe();
+    };
 
   }, [isOrderingDisabled, schedules.breakfastStart, schedules.breakfastEnd, schedules.lunchStart, schedules.lunchEnd, meals.length, breakfasts.length]);
 
@@ -211,7 +209,6 @@ return () => {
       return () => clearTimeout(timer);
     }
   }, [showCookieBanner]);
-
   useEffect(() => {
     if (errorMessage) {
       const timer = setTimeout(() => setErrorMessage(null), 10000);
@@ -313,139 +310,207 @@ return () => {
   const registerClientAndSaveOrder = async (orders, isTableOrder = false, isBreakfast = false) => {
     try {
       setIsLoading(true);
-      let currentUser = user;
 
-      if (!currentUser) {
-        const userCredential = await signInAnonymously(auth);
-        currentUser = userCredential.user;
-        if (process.env.NODE_ENV === 'development') console.log('Usuario anónimo creado:', currentUser.uid);
+      if (!Array.isArray(orders) || orders.length === 0) {
+        throw new Error('No hay pedidos para guardar.');
       }
 
-      const userRef = doc(db, 'users', currentUser.uid);
-      const userDoc = await getDoc(userRef);
-      const currentRole = userDoc.exists() ? userDoc.data().role || 1 : 1;
+      let currentUser = user;
+      let anonymousSignInError = null;
 
-      const clientData = {
-        email: currentUser.email || `anon_${currentUser.uid}@example.com`,
-        role: currentRole,
-        lastOrder: new Date(),
-        totalOrders: userDoc.exists() ? (userDoc.data().totalOrders || 0) + 1 : 1,
-        ...(userDoc.exists() ? {} : { createdAt: new Date() }),
+      if (!currentUser) {
+        try {
+          const userCredential = await signInAnonymously(auth);
+          currentUser = userCredential?.user || null;
+          if (process.env.NODE_ENV === 'development') console.log('Usuario anónimo creado:', currentUser?.uid);
+        } catch (anonError) {
+          anonymousSignInError = anonError;
+          if (process.env.NODE_ENV === 'development') console.warn('Fallo signInAnonymously, se seguirá sin sesión:', anonError);
+        }
+      }
+
+      const resolvedUserId = currentUser?.uid || null;
+      let clientEmail = currentUser?.email || null;
+      let currentRole = 1;
+      let totalOrdersCount = 1;
+
+      if (resolvedUserId) {
+        try {
+          const userRef = doc(db, 'users', resolvedUserId);
+          const userDoc = await getDoc(userRef);
+          const userDocData = userDoc.exists() ? userDoc.data() : null;
+          currentRole = userDocData?.role || 1;
+          totalOrdersCount = userDocData ? (userDocData.totalOrders || 0) + 1 : 1;
+          if (!clientEmail) {
+            clientEmail = userDocData?.email || `anon_${resolvedUserId}@example.com`;
+          }
+
+          const clientData = {
+            email: clientEmail,
+            role: currentRole,
+            lastOrder: new Date(),
+            totalOrders: totalOrdersCount,
+            ...(userDocData ? {} : { createdAt: new Date() }),
+          };
+
+          await setDoc(userRef, clientData, { merge: true });
+        } catch (userDocError) {
+          if (process.env.NODE_ENV === 'development') console.warn('No se pudo actualizar el perfil del usuario:', userDocError);
+        }
+      }
+
+      if (!clientEmail) {
+        const fallbackPhone = orders?.[0]?.address?.phoneNumber || phoneNumber || '';
+        clientEmail = fallbackPhone
+          ? `pedido_${fallbackPhone}@cocinacasera.app`
+          : `public_${Date.now()}@cocinacasera.app`;
+      }
+
+      const derivePrimaryAddress = () => {
+        if (isTableOrder) return null;
+        const firstOrderAddress = orders?.[0]?.address || {};
+        return {
+          address: firstOrderAddress.address || address || '',
+          neighborhood: firstOrderAddress.neighborhood || neighborhood || '',
+          phoneNumber: firstOrderAddress.phoneNumber || phoneNumber || '',
+          details: firstOrderAddress.details || details || '',
+        };
       };
 
-      await setDoc(userRef, clientData, { merge: true });
+      const clientContact = derivePrimaryAddress();
 
-      const collectionName = currentUser.isAnonymous || !user
-        ? 'clientOrders'  // Para usuarios no autenticados/anónimos
+      const collectionName = (!resolvedUserId || currentUser?.isAnonymous || !user)
+        ? 'clientOrders'
         : isTableOrder
           ? (isBreakfast ? 'breakfastOrders' : 'tableOrders')
           : (isBreakfast ? 'deliveryBreakfastOrders' : 'orders');
 
-      if (process.env.NODE_ENV === 'development') console.log('Guardando pedido en colección:', collectionName);
+      console.log('🔍 [registerClientAndSaveOrder] Parámetros:', {
+        isBreakfast,
+        isTableOrder,
+        ordersLength: orders.length,
+        currentUserIsAnonymous: currentUser?.isAnonymous,
+        userExists: !!user,
+        resolvedUserId,
+        fallbackSignInError: anonymousSignInError ? anonymousSignInError.message : null,
+        collectionName
+      });
 
-const total = isBreakfast
-  ? calculateTotalBreakfastPrice(orders.map(item => ({
-      ...item,
-      orderType: isTableOrder ? 'table' : 'takeaway'
-    })), breakfastTypes)
-  : calculateTotal(orders);
+      const total = isBreakfast
+        ? calculateTotalBreakfastPrice(
+            orders.map(item => ({
+              ...item,
+              orderType: isTableOrder ? 'table' : 'takeaway'
+            })),
+            breakfastTypes
+          )
+        : calculateTotal(orders);
 
-// 👉 calcular paymentSummary correctamente para DESAYUNO
-let orderPayments;
-if (isBreakfast) {
-  const acc = { Efectivo: 0, Daviplata: 0, Nequi: 0 };
-  orders.forEach((item) => {
-    const method = (item?.payment?.name || 'Efectivo').trim().toLowerCase();
-    // Crear una copia del item con orderType correcto para el cálculo
-    const itemWithOrderType = {
-      ...item,
-      orderType: isTableOrder ? 'table' : 'takeaway'
-    };
-    // precio por desayuno usando la misma lógica pero por ítem
-    const price = calculateTotalBreakfastPrice([itemWithOrderType], breakfastTypes) || 0;
-    if (method === 'daviplata') acc.Daviplata += price;
-    else if (method === 'nequi') acc.Nequi += price;
-    else acc.Efectivo += price;
-  });
-  orderPayments = acc;
-} else {
-  orderPayments = paymentSummaryByMode(orders, isTableOrder);
-}
+      console.log('🔍 [registerClientAndSaveOrder] Total calculado:', total);
 
-// Validación robusta: cualquier método de pago con monto > 0
-const _sumPayments = Object.values(orderPayments).reduce((a, b) => a + (b || 0), 0);
-if (!isTableOrder && _sumPayments <= 0) {
-  throw new Error('No se especificó un método de pago válido.');
-}
+      let orderPayments;
+      if (isBreakfast) {
+        const acc = { Efectivo: 0, Daviplata: 0, Nequi: 0 };
+        orders.forEach((item) => {
+          const method = (item?.payment?.name || 'Efectivo').trim().toLowerCase();
+          const itemWithOrderType = {
+            ...item,
+            orderType: isTableOrder ? 'table' : 'takeaway'
+          };
+          const price = calculateTotalBreakfastPrice([itemWithOrderType], breakfastTypes) || 0;
+          if (method === 'daviplata') acc.Daviplata += price;
+          else if (method === 'nequi') acc.Nequi += price;
+          else acc.Efectivo += price;
+        });
+        orderPayments = acc;
+      } else {
+        orderPayments = paymentSummaryByMode(orders, isTableOrder);
+      }
 
-const order = {
-  userId: currentUser.uid,
-  userEmail: clientData.email,
-  [isBreakfast ? 'breakfasts' : 'meals']: orders.map(item => ({
-    ...(isBreakfast ? {
-      type: item.type || '',
-      broth: item.broth ? { name: item.broth.name } : null,
-      eggs: item.eggs ? { name: item.eggs.name } : null,
-      riceBread: item.riceBread ? { name: item.riceBread.name } : null,
-      drink: item.drink ? { name: item.drink.name } : null,
-      protein: item.protein ? { name: item.protein.name } : null,
-      additions: item.additions?.map(addition => ({
-        name: addition.name,
-        quantity: addition.quantity || 1,
-      })) || [],
-      cutlery: item.cutlery || false,
-      orderType: isTableOrder ? 'table' : 'takeaway', // Agregar orderType correcto
-      address: {
-        address: item.address?.address || '',
-        neighborhood: item.address?.neighborhood || neighborhood || '',
-        phoneNumber: item.address?.phoneNumber || '',
-        details: item.address?.details || '',
-      },
-      payment: { name: item.payment?.name || 'Efectivo' },
-      notes: item.notes || '',
-      time: item.time ? { name: item.time.name } : null,
-    } : {
-      soup: item.soup ? { name: item.soup.name } : null,
-      soupReplacement: item.soupReplacement ? { name: item.soupReplacement.name } : null,
-  // Guardar principleReplacement explícitamente para que el admin lo recupere sin depender del placeholder
-  principleReplacement: item.principleReplacement ? { name: item.principleReplacement.name } : null,
-      principle: Array.isArray(item.principle) ? item.principle.map(p => ({ name: p.name })) : [],
-      protein: item.protein ? { name: item.protein.name } : null,
-      drink: item.drink ? { name: item.drink.name } : null,
-      sides: Array.isArray(item.sides) ? item.sides.map(s => ({ name: s.name })) : [],
-      additions: item.additions?.map(addition => ({
-        name: addition.name,
-        protein: addition.protein || '',
-        replacement: addition.replacement || '',
-        quantity: addition.quantity || 1,
-      })) || [],
-      ...(isTableOrder ? { tableNumber: item.tableNumber || '' } : {
-        address: {
-          address: item.address?.address || '',
-          neighborhood: item.address?.neighborhood || neighborhood || '',
-          phoneNumber: item.address?.phoneNumber || '',
-          details: item.address?.details || '',
+      const _sumPayments = Object.values(orderPayments).reduce((a, b) => a + (b || 0), 0);
+      if (!isTableOrder && _sumPayments <= 0) {
+        throw new Error('No se especificó un método de pago válido.');
+      }
+
+      const createdAtLocal = getColombiaLocalDateString();
+
+      const order = {
+        userId: resolvedUserId,
+        userEmail: clientEmail,
+        isAnonymousOrder: !resolvedUserId,
+        clientContact,
+        meta: {
+          submittedFrom: isTableOrder ? 'table' : 'delivery',
+          category: isBreakfast ? 'breakfast' : 'lunch',
+          usedAnonymousAuth: !!resolvedUserId && (currentUser?.isAnonymous || (!user && !!resolvedUserId)),
+          savedWithoutAuth: !resolvedUserId,
         },
-        payment: { name: item.payment?.name || 'Efectivo' },
-        time: item.time?.name || '',
-        cutlery: item.cutlery || false,
-      }),
-      notes: item.notes || '',
-    }),
-  })),
-  total,
-  paymentSummary: orderPayments,
-  payment: orders[0]?.payment?.name || orders[0]?.paymentMethod?.name || 'Efectivo',
-  status: 'Pendiente',
-  createdAt: new Date(),
-  updatedAt: new Date(),
-  // 👉 clave para que en admin se filtren y sumen bien
-  type: isBreakfast ? 'breakfast' : (isTableOrder ? 'table' : 'lunch'),
-};
+        [isBreakfast ? 'breakfasts' : 'meals']: orders.map(item => ({
+          ...(isBreakfast ? {
+            type: item.type || '',
+            broth: item.broth ? { name: item.broth.name } : null,
+            eggs: item.eggs ? { name: item.eggs.name } : null,
+            riceBread: item.riceBread ? { name: item.riceBread.name } : null,
+            drink: item.drink ? { name: item.drink.name } : null,
+            protein: item.protein ? { name: item.protein.name } : null,
+            additions: item.additions?.map(addition => ({
+              name: addition.name,
+              quantity: addition.quantity || 1,
+            })) || [],
+            cutlery: item.cutlery || false,
+            orderType: isTableOrder ? 'table' : 'takeaway',
+            address: {
+              address: item.address?.address || '',
+              neighborhood: item.address?.neighborhood || neighborhood || '',
+              phoneNumber: item.address?.phoneNumber || '',
+              details: item.address?.details || '',
+            },
+            payment: { name: item.payment?.name || 'Efectivo' },
+            notes: item.notes || '',
+            time: item.time ? { name: item.time.name || item.time } : null,
+          } : {
+            soup: item.soup ? { name: item.soup.name } : null,
+            soupReplacement: item.soupReplacement ? { name: item.soupReplacement.name } : null,
+            // Guardar principleReplacement explícitamente para que el admin lo recupere sin depender del placeholder
+            principleReplacement: item.principleReplacement ? { name: item.principleReplacement.name } : null,
+            principle: Array.isArray(item.principle) ? item.principle.map(p => ({ name: p.name })) : [],
+            protein: item.protein ? { name: item.protein.name } : null,
+            drink: item.drink ? { name: item.drink.name } : null,
+            sides: Array.isArray(item.sides) ? item.sides.map(s => ({ name: s.name })) : [],
+            additions: item.additions?.map(addition => ({
+              name: addition.name,
+              protein: addition.protein || '',
+              replacement: addition.replacement || '',
+              quantity: addition.quantity || 1,
+            })) || [],
+            ...(isTableOrder ? { tableNumber: item.tableNumber || '' } : {
+              address: {
+                address: item.address?.address || '',
+                neighborhood: item.address?.neighborhood || neighborhood || '',
+                phoneNumber: item.address?.phoneNumber || '',
+                details: item.address?.details || '',
+              },
+              payment: { name: item.payment?.name || 'Efectivo' },
+              time: item.time ? { name: item.time.name || item.time } : null,
+              cutlery: item.cutlery || false,
+            }),
+            notes: item.notes || '',
+          }),
+        })),
+        total,
+        paymentSummary: orderPayments,
+        payment: orders[0]?.payment?.name || orders[0]?.paymentMethod?.name || 'Efectivo',
+        status: 'Pendiente',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        createdAtLocal,
+        source: 'client-app',
+        type: isBreakfast ? 'breakfast' : (isTableOrder ? 'table' : 'lunch'),
+      };
 
-
-      await addDoc(collection(db, collectionName), order);
-      if (process.env.NODE_ENV === 'development') console.log('Pedido guardado exitosamente en:', collectionName);
+      console.log('🔍 [registerClientAndSaveOrder] Guardando pedido:', { collectionName, order });
+      const docRef = await addDoc(collection(db, collectionName), order);
+      console.log('✅ [registerClientAndSaveOrder] Pedido guardado exitosamente:', { collectionName, docId: docRef.id });
     } catch (error) {
       if (process.env.NODE_ENV === 'development') console.error('Error al registrar cliente o guardar pedido:', error);
       setErrorMessage('Error al procesar el pedido. Intenta de nuevo.');

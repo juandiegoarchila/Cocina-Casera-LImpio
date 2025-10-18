@@ -7,6 +7,7 @@ import {
   updateDoc,
   doc,
   deleteDoc,
+  getDoc,
   getDocs,
   query,
   where,
@@ -188,7 +189,7 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
             status: data.status || 'Pendiente'
           };
         });
-        recompute();
+        recomputeWithClient();
       },
       (error) => {
         setError(`Error al cargar almuerzos: ${error.message}`);
@@ -220,43 +221,140 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
       }
     );
 
+    // Variables para almacenar pedidos de clientOrders separadamente
+    let latestClientOrders = [];
+
     // Listener para pedidos de clientes no autenticados (clientOrders)  
     const unsubClient = onSnapshot(
       collection(db, 'clientOrders'),
       (snapshot) => {
-        const clientOrders = snapshot.docs.map((doc) => {
+        latestClientOrders = snapshot.docs.map((doc) => {
           const data = doc.data();
-          // Determinar si es desayuno o almuerzo
-          const isBreakfast = data.breakfasts && data.breakfasts.length > 0;
-          
+          const isBreakfast = Array.isArray(data.breakfasts) && data.breakfasts.length > 0;
+
+          const normalizedMeals = Array.isArray(data.meals)
+            ? data.meals.map((meal) => ({
+                ...meal,
+                address: meal?.address || {},
+                payment:
+                  meal?.payment && typeof meal.payment === 'object' && meal.payment.name
+                    ? meal.payment
+                    : { name: typeof meal?.payment === 'string' ? meal.payment : (meal?.payment?.name || 'Efectivo') },
+                time:
+                  meal?.time && typeof meal.time === 'object' && meal.time !== null
+                    ? (meal.time.name ? meal.time : { name: meal.time.name })
+                    : meal?.time
+                    ? { name: meal.time }
+                    : {},
+                sides: Array.isArray(meal?.sides) ? meal.sides : [],
+                additions: Array.isArray(meal?.additions) ? meal.additions : [],
+              }))
+            : [];
+
+          const normalizedBreakfasts = Array.isArray(data.breakfasts)
+            ? data.breakfasts.map((breakfast) => ({
+                ...breakfast,
+                address: breakfast?.address || {},
+                payment:
+                  breakfast?.payment && typeof breakfast.payment === 'object' && breakfast.payment.name
+                    ? breakfast.payment
+                    : { name: typeof breakfast?.payment === 'string' ? breakfast.payment : (breakfast?.payment?.name || 'Efectivo') },
+                time:
+                  breakfast?.time && typeof breakfast.time === 'object' && breakfast.time !== null
+                    ? (breakfast.time.name ? breakfast.time : { name: breakfast.time.name })
+                    : breakfast?.time
+                    ? { name: breakfast.time }
+                    : {},
+              }))
+            : [];
+
           return {
             id: doc.id,
-            type: isBreakfast ? 'breakfast' : 'meal',
-            source: 'client', // Marcar como pedido de cliente
+            type: isBreakfast ? 'breakfast' : 'lunch',
             ...data,
-            payment: data.payment || (data.breakfasts?.[0]?.payment?.name || data.meals?.[0]?.payment?.name || 'Efectivo'),
+            source: 'client',
+            originCollection: 'clientOrders',
+            meals: normalizedMeals,
+            breakfasts: normalizedBreakfasts,
+            payment:
+              data.payment ||
+              normalizedBreakfasts?.[0]?.payment?.name ||
+              normalizedMeals?.[0]?.payment?.name ||
+              'Efectivo',
             paymentSummary: data.paymentSummary || { Efectivo: 0, Daviplata: 0, Nequi: 0 },
             total: data.total || 0,
             deliveryPerson: data.deliveryPerson || 'Sin asignar',
             status: data.status || 'Pendiente'
           };
         });
-        
-        // Separar y agregar a las listas correspondientes
-        const clientBreakfasts = clientOrders.filter(order => order.type === 'breakfast');
-        const clientMeals = clientOrders.filter(order => order.type === 'meal');
-        
-        // Agregar a las listas globales
-        latestBreakfast = [...latestBreakfast, ...clientBreakfasts];
-        latestLunch = [...latestLunch, ...clientMeals];
-        
-        recompute();
+
+        console.log('📊 [OrderManagement] ClientOrders procesados:', latestClientOrders.length);
+        recomputeWithClient();
       },
       (error) => {
         setError(`Error al cargar pedidos de clientes: ${error.message}`);
         setIsLoading(false);
       }
     );
+
+    // Función recompute que incluye clientOrders
+    const recomputeWithClient = () => {
+  const clientBreakfasts = latestClientOrders.filter(order => order.type === 'breakfast');
+  const clientMeals = latestClientOrders.filter(order => order.type === 'lunch');
+      
+      const merged = [
+        ...latestLunch, 
+        ...latestBreakfast, 
+        ...clientMeals,
+        ...clientBreakfasts
+      ];
+
+      console.log('🔍 [OrderManagement] Merge final:', { 
+        lunchCount: latestLunch.length,
+        breakfastCount: latestBreakfast.length, 
+        clientMealsCount: clientMeals.length,
+        clientBreakfastsCount: clientBreakfasts.length,
+        totalCount: merged.length 
+      });
+
+      setOrders(merged);
+
+      const newTotals = { cash: 0, daviplata: 0, nequi: 0, general: 0 };
+      const newDeliveryPersons = {};
+
+      merged.forEach((order) => {
+        if (order.status !== 'Cancelado') {
+          const paymentSummary = order.paymentSummary || { Efectivo: 0, Daviplata: 0, Nequi: 0 };
+          newTotals.cash += paymentSummary['Efectivo'] || 0;
+          newTotals.daviplata += paymentSummary['Daviplata'] || 0;
+          newTotals.nequi += paymentSummary['Nequi'] || 0;
+          newTotals.general += order.total || 0;
+
+          const deliveryPerson = order.deliveryPerson || 'Sin asignar';
+          if (deliveryPerson !== 'Sin asignar') {
+            if (!newDeliveryPersons[deliveryPerson]) {
+              newDeliveryPersons[deliveryPerson] = {
+                almuerzo: { efectivo: 0, daviplata: 0, nequi: 0, total: 0 },
+                desayuno: { efectivo: 0, daviplata: 0, nequi: 0, total: 0 }
+              };
+            }
+            const bucket = order.type === 'breakfast' ? 'desayuno' : 'almuerzo';
+            const paymentType = cleanText(order.payment || 'Efectivo').toLowerCase();
+            const amount = order.total || 0;
+
+            if (paymentType === 'efectivo') newDeliveryPersons[deliveryPerson][bucket].efectivo += amount;
+            else if (paymentType === 'daviplata') newDeliveryPersons[deliveryPerson][bucket].daviplata += amount;
+            else if (paymentType === 'nequi') newDeliveryPersons[deliveryPerson][bucket].nequi += amount;
+
+            newDeliveryPersons[deliveryPerson][bucket].total += amount;
+          }
+        }
+      });
+
+      setTotals(newTotals);
+      setDeliveryPersons(newDeliveryPersons);
+      setIsLoading(false);
+    };
 
     return () => {
       unsubLunch();
@@ -926,31 +1024,63 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
     setIsLoading(true);
     try {
       const orderToDelete = orders.find((o) => o.id === orderId);
-      
-      // Determinar la colección correcta
-      let collectionName;
-      if (orderToDelete.source === 'client') {
-        collectionName = 'clientOrders';
-      } else {
-        collectionName = orderToDelete.type === 'breakfast' ? 'deliveryBreakfastOrders' : 'orders';
+
+      if (!orderToDelete) {
+        setError('No se encontró el pedido a eliminar.');
+        setIsLoading(false);
+        return;
       }
-      
-      await deleteDoc(doc(db, collectionName, orderId));
-      setSuccess('Pedido eliminado correctamente.');
-      if (orderToDelete) {
+
+      const candidateCollections = new Set();
+
+      const sourceTag = orderToDelete.source || orderToDelete.originCollection;
+      if (sourceTag === 'client' || sourceTag === 'client-app' || sourceTag === 'clientOrders' || orderToDelete.originCollection === 'clientOrders') {
+        candidateCollections.add('clientOrders');
+      }
+
+      if (orderToDelete.type === 'breakfast') {
+        candidateCollections.add('deliveryBreakfastOrders');
+      } else {
+        candidateCollections.add('orders');
+      }
+
+      // Fallbacks por si el pedido quedó duplicado en otra colección
+      candidateCollections.add('clientOrders');
+      candidateCollections.add('deliveryBreakfastOrders');
+      candidateCollections.add('orders');
+
+      const deletedFrom = [];
+
+      for (const collectionName of candidateCollections) {
+        try {
+          const docRef = doc(db, collectionName, orderId);
+          const snap = await getDoc(docRef);
+          if (snap.exists()) {
+            await deleteDoc(docRef);
+            deletedFrom.push(collectionName);
+          }
+        } catch (innerError) {
+          console.warn(`No se pudo eliminar ${orderId} de ${collectionName}:`, innerError);
+        }
+      }
+
+      if (deletedFrom.length === 0) {
+        setError('No se encontró el pedido en las colecciones conocidas. Verifica manualmente en Firestore.');
+      } else {
+        setSuccess(`Pedido eliminado correctamente (${deletedFrom.join(', ')}).`);
         logActivity(`Eliminó el pedido con ID: ${orderId}`, {
           orderId,
+          deletedFrom,
           deletedOrderDetails: {
             meals: orderToDelete.meals,
             total: orderToDelete.total,
             status: orderToDelete.status,
             payment: orderToDelete.payment,
             deliveryPerson: orderToDelete.deliveryPerson,
-            type: orderToDelete.type
+            type: orderToDelete.type,
+            source: sourceTag || 'N/A'
           }
         });
-      } else {
-        logActivity(`Eliminó el pedido con ID: ${orderId} (detalles no disponibles)`);
       }
     } catch (error) {
       setError(`Error al eliminar: ${error.message}`);
