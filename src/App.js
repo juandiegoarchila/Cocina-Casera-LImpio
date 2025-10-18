@@ -584,12 +584,28 @@ const order = {
       setAddress(address.address);
       setPhoneNumber(address.phoneNumber);
 
-  const phone = '573016476916';
-      const encodedMessage = encodeURIComponent(message);
-      window.open(`https://wa.me/${phone}?text=${encodedMessage}`, '_blank');
-      await registerClientAndSaveOrder(breakfasts, false, true);
-      setSuccessMessage('¡Pedido de desayuno enviado con éxito!');
-      setBreakfasts([]);
+      try {
+        // Primero guardar en base de datos
+        await registerClientAndSaveOrder(breakfasts, false, true);
+        
+        // Solo si se guarda correctamente, enviar a WhatsApp
+        const phone = '573016476916';
+        const encodedMessage = encodeURIComponent(message);
+        window.open(`https://wa.me/${phone}?text=${encodedMessage}`, '_blank');
+        
+        // Mostrar éxito y resetear
+        setSuccessMessage('¡Pedido de desayuno enviado con éxito!');
+        setBreakfasts([]);
+      } catch (saveError) {
+        console.error('Error al guardar pedido:', saveError);
+        // Si falla guardar, aún así enviar a WhatsApp pero mostrar advertencia
+        const phone = '573016476916';
+        const encodedMessage = encodeURIComponent(message);
+        window.open(`https://wa.me/${phone}?text=${encodedMessage}`, '_blank');
+        
+        setSuccessMessage('¡Pedido enviado a WhatsApp! (Nota: hubo un problema al guardar en el sistema)');
+        setBreakfasts([]);
+      }
     } catch (error) {
       if (process.env.NODE_ENV === 'development') console.error('Error al enviar pedido de desayuno:', error);
       setErrorMessage('Error al enviar el pedido. Intenta de nuevo.');
@@ -676,26 +692,53 @@ const onSendOrder = async (isTableOrder = false) => {
     setIsLoading(true);
 
 try {
-  if (!isTableOrder) {
-const total = Array.isArray(meals) ? calculateTotal(meals) : 0;
-await sendToWhatsApp(
-  setIsLoading,
-  setErrorMessage,
-  () => {},                 // suprime el éxito interno, evitamos doble mensaje
-  meals,
-  incompleteMealIndex,
-  setIncompleteMealIndex,
-  incompleteSlideIndex,
-  setIncompleteSlideIndex,
-  calculateMealPrice,       // función por ítem
-  total
-);
-
-
-  }
-      await registerClientAndSaveOrder(meals, isTableOrder, false);
-      setSuccessMessage(isTableOrder ? '¡Orden de mesa guardada con éxito!' : '¡Pedido enviado y cliente registrado con éxito!');
-      setMeals([]);
+      try {
+        // Primero guardar en base de datos
+        await registerClientAndSaveOrder(meals, isTableOrder, false);
+        
+        // Solo si se guarda correctamente, enviar a WhatsApp (si no es mesa)
+        if (!isTableOrder) {
+          const total = Array.isArray(meals) ? calculateTotal(meals) : 0;
+          await sendToWhatsApp(
+            setIsLoading,
+            setErrorMessage,
+            () => {},                 // suprime el éxito interno
+            meals,
+            incompleteMealIndex,
+            setIncompleteMealIndex,
+            incompleteSlideIndex,
+            setIncompleteSlideIndex,
+            calculateMealPrice,
+            total
+          );
+        }
+        
+        setSuccessMessage(isTableOrder ? '¡Orden de mesa guardada con éxito!' : '¡Pedido enviado y cliente registrado con éxito!');
+        setMeals([]);
+      } catch (saveError) {
+        console.error('Error al guardar pedido:', saveError);
+        
+        // Si falla guardar pero no es mesa, aún así enviar a WhatsApp
+        if (!isTableOrder) {
+          const total = Array.isArray(meals) ? calculateTotal(meals) : 0;
+          await sendToWhatsApp(
+            setIsLoading,
+            setErrorMessage,
+            () => {},
+            meals,
+            incompleteMealIndex,
+            setIncompleteMealIndex,
+            incompleteSlideIndex,
+            setIncompleteSlideIndex,
+            calculateMealPrice,
+            total
+          );
+          setSuccessMessage('¡Pedido enviado a WhatsApp! (Nota: hubo un problema al guardar en el sistema)');
+        } else {
+          setErrorMessage('Error al guardar orden de mesa. Intenta de nuevo.');
+        }
+        setMeals([]);
+      }
     } catch (error) {
       if (process.env.NODE_ENV === 'development') console.error('Error al procesar el pedido:', error);
       setErrorMessage('Error al procesar el pedido. Intenta de nuevo.');
