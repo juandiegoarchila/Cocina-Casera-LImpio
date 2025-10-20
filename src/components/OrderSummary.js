@@ -208,7 +208,7 @@ const AddressSummary = ({ commonAddressFields = {}, mealAddress, isCommon = fals
     if (field === 'address' && value) {
       return <p key={field} className="text-xs sm:text-sm text-gray-600">📍 Dirección: {value}</p>;
     } else if (field === 'neighborhood' && value) {
-      return <p key={field} className="text-xs sm:text-sm text-gray-600">�️ Barrio: {value}</p>;
+      return <p key={field} className="text-xs sm:text-sm text-gray-600">🏘️ Barrio: {value}</p>;
     } else if (field === 'phoneNumber' && value) {
       return <p key={field} className="text-xs sm:text-sm text-gray-600 font-medium">📞 Teléfono: {value}</p>;
     } else if (field === 'details' && value) {

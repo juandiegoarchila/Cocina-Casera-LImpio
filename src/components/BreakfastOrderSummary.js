@@ -263,7 +263,7 @@ const AddressSummary = ({ commonAddressFields = {}, breakfastAddress, isCommon =
     } else if (field === 'localName' && addrType === 'shop' && value) {
       return <p key={field} className="text-xs sm:text-sm text-gray-600">🏬 Nombre del local: {value}</p>;
     } else if (field === 'neighborhood' && value) {
-      return <p key={field} className="text-xs sm:text-sm text-gray-600">🏙️ Barrio: {value}</p>;
+      return <p key={field} className="text-xs sm:text-sm text-gray-600">�️ Barrio: {value}</p>;
     } else if (field === 'details' && value) {
       return <p key={field} className="text-xs sm:text-sm text-gray-600">📝 Instrucciones: {value}</p>;
     }
@@ -561,7 +561,7 @@ const BreakfastGroup = ({
                         } else if (addrField === 'phoneNumber' && value) {
                           return <p key={addrIdx}>📞 Teléfono: {value}</p>;
                         } else if (addrField === 'neighborhood' && value) {
-                          return <p key={addrIdx}>🏙️ Barrio: {value}</p>;
+                          return <p key={addrIdx}>�️ Barrio: {value}</p>;
                         } else if (addrField === 'details' && value) {
                           return <p key={addrIdx}>📝 Instrucciones: {value}</p>;
                         } else if (addrField === 'unitDetails' && addrType === 'complex' && value) {

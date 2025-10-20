@@ -909,14 +909,16 @@ try {
                         onBreakfastChange={handleBreakfastChange}
                         onRemoveBreakfast={(id) => setBreakfasts(breakfasts.filter(b => b.id !== id))}
                         onAddBreakfast={() => {
-                          if (!isAddressComplete()) {
+                          // Solo validar dirección si ya hay desayunos (segundo en adelante)
+                          if (breakfasts.length > 0 && !isAddressComplete()) {
                             setErrorMessage('Por favor, completa tu dirección y teléfono antes de añadir más desayunos.');
                             return;
                           }
                           setBreakfasts([...breakfasts, { ...initialBreakfast, id: Date.now() }]);
                         }}
                         onDuplicateBreakfast={(breakfast) => {
-                          if (!isAddressComplete()) {
+                          // Solo validar dirección si ya hay desayunos (segundo en adelante)
+                          if (breakfasts.length > 0 && !isAddressComplete()) {
                             setErrorMessage('Por favor, completa tu dirección y teléfono antes de duplicar desayunos.');
                             return;
                           }
@@ -961,7 +963,8 @@ try {
                           }
                         }}
                         onAddMeal={() => {
-                          if (!isAddressComplete()) {
+                          // Solo validar dirección si ya hay almuerzos (segundo en adelante)
+                          if (meals.length > 0 && !isAddressComplete()) {
                             setErrorMessage('Por favor, completa tu dirección y teléfono antes de añadir más almuerzos.');
                             return;
                           }
@@ -973,7 +976,8 @@ try {
                           addMeal(setMeals, setSuccessMessage, meals, initialMeal);
                         }}
                         onDuplicateMeal={(meal) => {
-                          if (!isAddressComplete()) {
+                          // Solo validar dirección si ya hay almuerzos (segundo en adelante)
+                          if (meals.length > 0 && !isAddressComplete()) {
                             setErrorMessage('Por favor, completa tu dirección y teléfono antes de duplicar almuerzos.');
                             return;
                           }
