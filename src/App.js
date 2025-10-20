@@ -936,7 +936,7 @@ try {
                         savedAddress={savedAddress}
                         isAddressComplete={isAddressComplete()}
                       />
-                      <BreakfastOrderSummary items={breakfasts} onSendOrder={sendBreakfastToWhatsApp} user={user} />
+                      <BreakfastOrderSummary items={breakfasts} onSendOrder={sendBreakfastToWhatsApp} user={user} isLoading={isLoading} />
                     </>
                   ) : (
                     <>
@@ -999,6 +999,7 @@ try {
                             preCalculatedTotal={totalCalculated}
                             isTableOrder={false} 
                             allSides={sides}
+                            isLoading={isLoading}
                           />
                         );
                       })()}
