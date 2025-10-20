@@ -23,6 +23,7 @@ const MealList = ({
   incompleteMealIndex,
   incompleteSlideIndex,
   isOrderingDisabled,
+  isAddressComplete, // Nuevo prop para validar dirección
 }) => {
   const [showTutorial, setShowTutorial] = useState(meals.length === 0);
   const maxMeals = 15;
@@ -117,6 +118,7 @@ const MealList = ({
     isOrderingDisabled={isOrderingDisabled}
     maxMeals={maxMeals}
     totalMeals={meals.length}
+    isAddressComplete={isAddressComplete}
   />
           ))
         )}

@@ -114,6 +114,35 @@ const App = () => {
 
   const savedAddress = { address, neighborhood, phoneNumber, details };
 
+  // Función para validar si la dirección está completa
+  const isAddressComplete = () => {
+    // Primero, verificar si hay dirección en localStorage del AddressInput
+    const addressForm = JSON.parse(localStorage.getItem('addressForm') || '{}');
+    const hasAddressForm = addressForm.streetType && addressForm.streetNumber && 
+                          addressForm.houseNumber && addressForm.phoneNumber;
+    
+    // Segundo, verificar si algún breakfast tiene dirección
+    const hasBreakfastAddress = breakfasts.some(b => 
+      b.address && b.address.address && b.address.phoneNumber);
+    
+    // Tercero, verificar si algún meal tiene dirección
+    const hasMealAddress = meals.some(m => 
+      m.address && m.address.address && m.address.phoneNumber);
+    
+    // Si hay dirección guardada o en algún item, permitir duplicar/añadir
+    const result = hasAddressForm || hasBreakfastAddress || hasMealAddress;
+    
+    console.log('🔍 Validando dirección:', {
+      addressForm,
+      hasAddressForm,
+      hasBreakfastAddress,
+      hasMealAddress,
+      result
+    });
+    
+    return result;
+  };
+
   const formatTime = (minutes) => {
     const hours = Math.floor(minutes / 60);
     const mins = minutes % 60;
@@ -879,8 +908,18 @@ try {
                         paymentMethods={paymentMethods}
                         onBreakfastChange={handleBreakfastChange}
                         onRemoveBreakfast={(id) => setBreakfasts(breakfasts.filter(b => b.id !== id))}
-                        onAddBreakfast={() => setBreakfasts([...breakfasts, { ...initialBreakfast, id: Date.now() }])}
+                        onAddBreakfast={() => {
+                          if (!isAddressComplete()) {
+                            setErrorMessage('Por favor, completa tu dirección y teléfono antes de añadir más desayunos.');
+                            return;
+                          }
+                          setBreakfasts([...breakfasts, { ...initialBreakfast, id: Date.now() }]);
+                        }}
                         onDuplicateBreakfast={(breakfast) => {
+                          if (!isAddressComplete()) {
+                            setErrorMessage('Por favor, completa tu dirección y teléfono antes de duplicar desayunos.');
+                            return;
+                          }
                           if (breakfasts.length < 15) {
                             setBreakfasts([...breakfasts, { ...breakfast, id: Date.now() }]);
                             setSuccessMessage('Desayuno duplicado con éxito.');
@@ -893,6 +932,7 @@ try {
                         isOrderingDisabled={isOrderingDisabled}
                         userRole={user?.role || 1}
                         savedAddress={savedAddress}
+                        isAddressComplete={isAddressComplete()}
                       />
                       <BreakfastOrderSummary items={breakfasts} onSendOrder={sendBreakfastToWhatsApp} user={user} />
                     </>
@@ -921,6 +961,10 @@ try {
                           }
                         }}
                         onAddMeal={() => {
+                          if (!isAddressComplete()) {
+                            setErrorMessage('Por favor, completa tu dirección y teléfono antes de añadir más almuerzos.');
+                            return;
+                          }
                           // Si no hay almuerzos (caso "eliminé todos"), limpiar índices para iniciar en Sopa
                           if (meals.length === 0) {
                             setIncompleteMealIndex(null);
@@ -928,10 +972,17 @@ try {
                           }
                           addMeal(setMeals, setSuccessMessage, meals, initialMeal);
                         }}
-                        onDuplicateMeal={(meal) => duplicateMeal(setMeals, setSuccessMessage, meal, meals)}
+                        onDuplicateMeal={(meal) => {
+                          if (!isAddressComplete()) {
+                            setErrorMessage('Por favor, completa tu dirección y teléfono antes de duplicar almuerzos.');
+                            return;
+                          }
+                          duplicateMeal(setMeals, setSuccessMessage, meal, meals);
+                        }}
                         incompleteMealIndex={incompleteMealIndex}
                         incompleteSlideIndex={incompleteSlideIndex}
                         isOrderingDisabled={isOrderingDisabled}
+                        isAddressComplete={isAddressComplete()}
                       />
                       {(() => {
                         const totalCalculated = calculateTotal(meals);
