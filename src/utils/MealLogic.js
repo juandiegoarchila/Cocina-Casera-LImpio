@@ -425,21 +425,22 @@ message += `───────────────\n`;
         message += `Cubiertos: ${baseMeal.cutlery ? 'Sí' : 'No'}\n`;
       }
 
-      message += `Acompañamientos: ${hasSpecialRice ? 'Ya incluidos' : baseMeal.sides?.length > 0 ? baseMeal.sides.map(s => cleanText(s.name)).join(', ') : 'Sin acompañamientos'}\n`;
-      // Mostrar acompañamientos NO seleccionados
-      const posiblesAcompanamientos = ['Patacon', 'Ensalada', 'Arepuelas', 'Arroz'];
-      if (!hasSpecialRice) {
-        const normalize = (n) => (n || '')
-          .normalize('NFD')
-          .replace(/\p{Diacritic}/gu, '')
-          .trim();
-        const seleccionados = (baseMeal.sides?.map(s => cleanText(s.name)) || []).map(normalize);
-        const noIncluidos = posiblesAcompanamientos
-          .map(normalize)
-          .filter(a => a !== 'todo incluido' && !seleccionados.includes(a));
-        if (noIncluidos.length > 0) {
-          message += `No Incluir: ${noIncluidos.join(', ')}\n`;
-        }
+      // Verificar si seleccionó "Ninguno" en acompañamientos
+      const selectedSides = baseMeal.sides?.map(s => cleanText(s.name)) || [];
+      const hasNoneSelected = selectedSides.includes('Ninguno');
+      
+      if (hasSpecialRice) {
+        message += `Acompañamientos: Ya incluidos\n`;
+      } else if (hasNoneSelected) {
+        message += `Acompañamientos: Ninguno\n`;
+        // No mostrar "No Incluir" cuando explícitamente seleccionó "Ninguno"
+      } else if (selectedSides.length > 0) {
+        message += `Acompañamientos: ${selectedSides.join(', ')}\n`;
+        // Solo mostrar "No Incluir" si hay acompañamientos seleccionados (no "Ninguno")
+        // Y usar los acompañamientos actuales del sistema, no una lista hardcodeada
+        // Esta lógica puede agregarse si es necesario mostrar los no incluidos
+      } else {
+        message += `Acompañamientos: Sin acompañamientos\n`;
       }
 
       if (baseMeal.additions?.length > 0) {

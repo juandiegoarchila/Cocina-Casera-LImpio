@@ -59,35 +59,70 @@ const DeliveryOrdersPage = () => {
     }
   };
 
-  // Cargar pedidos: almuerzo (orders) y desayuno (deliveryBreakfastOrders)
+  // Cargar pedidos: almuerzo (orders), desayuno (deliveryBreakfastOrders) y clientes (clientOrders)
   useEffect(() => {
     setIsLoading(true);
     let unsubLunch = () => {};
     let unsubBreakfast = () => {};
+    let unsubClient = () => {};
 
     try {
       unsubLunch = onSnapshot(collection(db, 'orders'), (snapshot) => {
         const list = snapshot.docs.map((d) => ({ id: d.id, type: 'lunch', ...d.data() }));
         setOrders((prev) => {
-          const others = prev.filter((o) => o.type === 'breakfast');
+          const others = prev.filter((o) => o.type !== 'lunch');
           return [...list, ...others];
         });
         setIsLoading(false);
       });
+      
       unsubBreakfast = onSnapshot(collection(db, 'deliveryBreakfastOrders'), (snapshot) => {
         const list = snapshot.docs.map((d) => ({ id: d.id, type: 'breakfast', ...d.data() }));
         setOrders((prev) => {
-          const others = prev.filter((o) => o.type === 'lunch');
+          const others = prev.filter((o) => o.type !== 'breakfast');
           return [...others, ...list];
         });
         setIsLoading(false);
       });
+
+      // AÑADIR: Listener para pedidos de clientes no autenticados
+      unsubClient = onSnapshot(collection(db, 'clientOrders'), (snapshot) => {
+        const list = snapshot.docs.map((doc) => {
+          const data = doc.data();
+          const isBreakfast = Array.isArray(data.breakfasts) && data.breakfasts.length > 0;
+          
+          return {
+            id: doc.id,
+            type: isBreakfast ? 'breakfast' : 'lunch',
+            ...data,
+            // Normalizar la estructura para compatibilidad
+            meals: data.meals || [],
+            breakfasts: data.breakfasts || [],
+            payment: data.payment || (data.meals?.[0]?.payment?.name || data.breakfasts?.[0]?.payment?.name || 'Efectivo'),
+            paymentSummary: data.paymentSummary || { Efectivo: 0, Daviplata: 0, Nequi: 0 },
+            total: data.total || 0,
+            deliveryPerson: data.deliveryPerson || 'Sin asignar',
+            status: data.status || 'Pendiente'
+          };
+        });
+        
+        setOrders((prev) => {
+          const others = prev.filter((o) => o.id !== doc.id); // Evitar duplicados
+          return [...others, ...list];
+        });
+        setIsLoading(false);
+      });
+      
     } catch (e) {
       setError(`Error al cargar pedidos: ${e.message}`);
       setIsLoading(false);
     }
 
-    return () => { unsubLunch(); unsubBreakfast(); };
+    return () => { 
+      unsubLunch(); 
+      unsubBreakfast(); 
+      unsubClient(); 
+    };
   }, []);
 
   const filteredOrders = useMemo(() => {
