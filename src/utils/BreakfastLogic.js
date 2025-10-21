@@ -61,17 +61,7 @@ export const removeBreakfast = (setBreakfasts, setSuccessMessage, id, breakfasts
 };
 
 export const calculateBreakfastPrice = (breakfast, userRole, breakfastTypes = []) => {
-  console.log('🔍 [BreakfastLogic] calculateBreakfastPrice llamado con:', { 
-    breakfast: {
-      type: breakfast?.type?.name,
-      broth: breakfast?.broth?.name,
-      orderType: breakfast?.orderType,
-      additions: breakfast?.additions
-    }, 
-    userRole, 
-    breakfastTypesLength: breakfastTypes?.length || 0,
-    source: 'BreakfastLogic.js'
-  });
+
 
   if (!breakfast || !breakfast.type || !breakfast.type.name) {
     console.log('[BreakfastLogic] ❌ No breakfast or type defined:', breakfast);
@@ -493,21 +483,44 @@ export const generateMessageFromBreakfasts = (breakfasts, calculateBreakfastPric
     message += `🍽 ${count === 1 ? '1 Desayuno' : `${count} Desayunos iguales`} – $${totalPrice.toLocaleString('es-CO')} ${paymentText}\n`;
 
     if (count === 1) {
-      message += `Tipo: ${cleanText(baseBreakfast.type?.name) || 'Sin tipo'}\n`;
-      message += `Huevos: ${cleanText(baseBreakfast.eggs?.name) || 'Sin huevos'}\n`;
-      message += `Caldo: ${cleanText(baseBreakfast.broth?.name) || 'Sin caldo'}\n`;
-      message += `Arroz/Pan: ${cleanText(baseBreakfast.riceBread?.name) || 'Sin arroz/pan'}\n`;
-      message += `Bebida: ${cleanText(baseBreakfast.drink?.name) || 'Sin bebida'}\n`;
+      // Formato limpio sin prefijos, igual que almuerzos
+      const typeValue = cleanText(baseBreakfast.type?.name) || 'Sin tipo';
+      message += `${typeValue}\n`;
+      
+      if (baseBreakfast.eggs?.name) {
+        const eggsValue = cleanText(baseBreakfast.eggs.name);
+        message += `${eggsValue}\n`;
+      }
+      
+      if (baseBreakfast.broth?.name) {
+        const brothValue = cleanText(baseBreakfast.broth.name);
+        message += `${brothValue}\n`;
+      }
+      
+      if (baseBreakfast.riceBread?.name) {
+        const riceBreadValue = cleanText(baseBreakfast.riceBread.name);
+        message += `${riceBreadValue}\n`;
+      }
+      
+      if (baseBreakfast.drink?.name) {
+        const drinkValue = cleanText(baseBreakfast.drink.name);
+        message += `${drinkValue}\n`;
+      }
+      
+      if (baseBreakfast.protein?.name) {
+        const proteinValue = cleanText(baseBreakfast.protein.name);
+        message += `${proteinValue}\n`;
+      }
+      
       if (!isWaitress) {
         message += `Cubiertos: ${baseBreakfast.cutlery ? 'Sí' : 'No'}\n`;
       }
+      
       if (baseBreakfast.additions?.length > 0) {
         baseBreakfast.additions.forEach((addition) => {
           message += `- ${cleanText(addition.name)} (${addition.quantity || 1})\n`;
         });
       }
-      const notesValue = formatNotes(baseBreakfast.notes) || 'Ninguna';
-      message += `Notas: ${notesValue}\n`;
       if (isWaitress) {
         message += `📍 Mesa: ${baseBreakfast.tableNumber || 'No especificada'}\n`;
       }
@@ -542,42 +555,53 @@ export const generateMessageFromBreakfasts = (breakfasts, calculateBreakfastPric
           message += `${addressLines.join('\n')}\n`;
         }
       }
-      message += `💳 Pago: ${isWaitress ? (baseBreakfast.paymentMethod?.name || 'No especificado') : (baseBreakfast.payment?.name || 'No especificado')}\n`;
     } else {
-      if (group.commonFieldsInGroup.has('type')) {
-        message += `Tipo: ${cleanText(baseBreakfast.type?.name) || 'Sin tipo'}\n`;
+      // Para múltiples desayunos, formato limpio sin prefijos
+      const typeValue = cleanText(baseBreakfast.type?.name) || 'Sin tipo';
+      message += `${typeValue}\n`;
+      
+      if (baseBreakfast.eggs?.name) {
+        const eggsValue = cleanText(baseBreakfast.eggs.name);
+        message += `${eggsValue}\n`;
       }
-      if (group.commonFieldsInGroup.has('eggs')) {
-        message += `Huevos: ${cleanText(baseBreakfast.eggs?.name) || 'Sin huevos'}\n`;
+      
+      if (baseBreakfast.broth?.name) {
+        const brothValue = cleanText(baseBreakfast.broth.name);
+        message += `${brothValue}\n`;
       }
-      if (group.commonFieldsInGroup.has('broth')) {
-        message += `Caldo: ${cleanText(baseBreakfast.broth?.name) || 'Sin caldo'}\n`;
+      
+      if (baseBreakfast.riceBread?.name) {
+        const riceBreadValue = cleanText(baseBreakfast.riceBread.name);
+        message += `${riceBreadValue}\n`;
       }
-      if (group.commonFieldsInGroup.has('riceBread')) {
-        message += `Arroz/Pan: ${cleanText(baseBreakfast.riceBread?.name) || 'Sin arroz/pan'}\n`;
+      
+      if (baseBreakfast.drink?.name) {
+        const drinkValue = cleanText(baseBreakfast.drink.name);
+        message += `${drinkValue}\n`;
       }
-      if (group.commonFieldsInGroup.has('drink')) {
-        message += `Bebida: ${cleanText(baseBreakfast.drink?.name) || 'Sin bebida'}\n`;
+      
+      if (baseBreakfast.protein?.name) {
+        const proteinValue = cleanText(baseBreakfast.protein.name);
+        message += `${proteinValue}\n`;
       }
-      if (group.commonFieldsInGroup.has('Cubiertos') && !isWaitress) {
+      
+      if (!isWaitress) {
         message += `Cubiertos: ${baseBreakfast.cutlery ? 'Sí' : 'No'}\n`;
       }
-      if (group.commonFieldsInGroup.has('Adiciones') && baseBreakfast.additions?.length > 0) {
+      
+      if (baseBreakfast.additions?.length > 0) {
         baseBreakfast.additions.forEach((addition) => {
           message += `- ${cleanText(addition.name)} (${addition.quantity || 1})\n`;
         });
       }
-      if (group.commonFieldsInGroup.has('Notas')) {
-        const notesValue = formatNotes(baseBreakfast.notes) || 'Ninguna';
-        message += `Notas: ${notesValue}\n`;
-      }
-      if (isWaitress && group.commonFieldsInGroup.has('Número de mesa')) {
+      
+      if (isWaitress) {
         message += `📍 Mesa: ${baseBreakfast.tableNumber || 'No especificada'}\n`;
       }
-      if (group.commonFieldsInGroup.has('Pago')) {
-        message += `💳 Pago: ${isWaitress ? (baseBreakfast.paymentMethod?.name || 'No especificado') : (baseBreakfast.payment?.name || 'No especificado')}\n`;
-      }
     }
+    
+    // Agregar separador después de cada grupo de desayunos
+    message += `───────────────\n`;
 
     const hasDifferences = count > 1 && (group.identicalGroups.length > 1 || group.identicalGroups.some(ig => ig.breakfasts.length < group.breakfasts.length));
     if (hasDifferences) {

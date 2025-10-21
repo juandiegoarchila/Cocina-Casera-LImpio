@@ -181,7 +181,7 @@ const BreakfastTimeSelector = ({ times, selectedTime, setSelectedTime, onConfirm
       <button
         onClick={handleConfirm}
         disabled={!selectedTime || !selectedTime.name}
-        className={`mt-2 bg-green-500 hover:bg-green-600 text-white px-2 xs:px-3 py-0.5 xs:py-1 rounded-lg text-[10px] xs:text-xs sm:text-sm transition-colors ${
+        className={`mt-2 bg-green-500 hover:bg-green-600 text-white px-5 py-2 rounded-lg text-sm transition-colors ${
           !selectedTime || !selectedTime.name ? 'opacity-50 cursor-not-allowed' : ''
         }`}
         aria-label="Confirmar hora"

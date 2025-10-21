@@ -22,7 +22,8 @@ import Modal from './components/Modal';
 import PrivacyPolicy from './components/PrivacyPolicy';
 import ProtectedRoute from './components/Auth/ProtectedRoute';
 import './styles/animations.css';
-import { calculateTotalBreakfastPrice } from './utils/BreakfastLogic';
+import { calculateTotalBreakfastPrice, generateMessageFromBreakfasts, calculateBreakfastPrice } from './utils/BreakfastLogic';
+import { encodeMessage } from './utils/Helpers';
 import CajaPOS from './components/Waiter/CajaPOS';
 import { getColombiaLocalDateString } from './utils/bogotaDate';
 
@@ -643,49 +644,36 @@ const App = () => {
     setIsLoading(true);
 
     try {
-      let message = '¡Hola! Quiero ordenar desayuno:\n\n';
-
-      breakfasts.forEach((b, index) => {
-        message += `*DESAYUNO ${index + 1}*\n`;
-        if (b.type) message += `- Tipo: ${b.type.name}\n`;
-        if (b.broth) message += `- Caldo: ${b.broth.name}\n`;
-        if (b.eggs) message += `- Huevos: ${b.eggs.name}\n`;
-        if (b.riceBread) message += `- Arroz/Pan: ${b.riceBread.name}\n`;
-        if (b.drink) message += `- Bebida: ${b.drink.name}\n`;
-        if (b.protein) message += `- Proteína: ${b.protein.name}\n`;
-        message += `- Cubiertos: ${b.cutlery ? 'Sí' : 'No'}\n`;
-        message += `- Hora: ${b.time?.name || 'No especificada'}\n`;
-
-        if (b.additions && b.additions.length > 0) {
-          message += `- Adiciones:\n`;
-          b.additions.forEach((add) => {
-            message += `  • ${add.name} (${add.quantity || 1})\n`;
-          });
-        }
-
-        message += `\n`;
-      });
-
-      const address = breakfasts[0]?.address || savedAddress;
-      message += `*Dirección de entrega:*\n`;
-      message += `📍 ${address.address}\n`;
-      message += `📞 ${address.phoneNumber}\n`;
-
-  // Campos eliminados (addressType, recipientName, unitDetails, localName) ya no se muestran
-
-      message += `\n*Total: $${calculateTotalBreakfastPrice(breakfasts, breakfastTypes).toLocaleString('es-CO')}*`;
-
-      setAddress(address.address);
-      setPhoneNumber(address.phoneNumber);
+      // Usar la función mejorada igual que almuerzos
+      const message = generateMessageFromBreakfasts(
+        breakfasts, 
+        calculateBreakfastPrice, 
+        calculateTotalBreakfastPrice(breakfasts, breakfastTypes), 
+        breakfastTypes, 
+        false
+      );
 
       try {
         // Primero guardar en base de datos
         await registerClientAndSaveOrder(breakfasts, false, true);
         
-        // Solo si se guarda correctamente, enviar a WhatsApp
-        const phone = '573016476916';
-        const encodedMessage = encodeURIComponent(message);
-        window.open(`https://wa.me/${phone}?text=${encodedMessage}`, '_blank');
+        // Solo si se guarda correctamente, enviar a WhatsApp usando la misma lógica que almuerzos
+        const encodedMessage = encodeMessage(message);
+        
+        // Detectar si es móvil y usar la misma lógica que MealLogic
+        const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        
+        if (isMobileDevice) {
+          const whatsappUrl = `whatsapp://send?phone=573016476916&text=${encodedMessage}`;
+          const fallbackUrl = `https://wa.me/573016476916?text=${encodedMessage}`;
+          const startTime = Date.now();
+          window.location = whatsappUrl;
+          setTimeout(() => {
+            if (Date.now() - startTime < 2000) window.open(fallbackUrl, '_blank');
+          }, 2000);
+        } else {
+          window.open(`https://web.whatsapp.com/send?phone=573016476916&text=${encodedMessage}`, '_blank');
+        }
         
         // Mostrar éxito y resetear
         setSuccessMessage('¡Pedido de desayuno enviado con éxito!');
@@ -693,9 +681,22 @@ const App = () => {
       } catch (saveError) {
         console.error('Error al guardar pedido:', saveError);
         // Si falla guardar, aún así enviar a WhatsApp pero mostrar advertencia
-        const phone = '573016476916';
-        const encodedMessage = encodeURIComponent(message);
-        window.open(`https://wa.me/${phone}?text=${encodedMessage}`, '_blank');
+        const encodedMessage = encodeMessage(message);
+        
+        // Detectar si es móvil y usar la misma lógica que MealLogic
+        const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        
+        if (isMobileDevice) {
+          const whatsappUrl = `whatsapp://send?phone=573016476916&text=${encodedMessage}`;
+          const fallbackUrl = `https://wa.me/573016476916?text=${encodedMessage}`;
+          const startTime = Date.now();
+          window.location = whatsappUrl;
+          setTimeout(() => {
+            if (Date.now() - startTime < 2000) window.open(fallbackUrl, '_blank');
+          }, 2000);
+        } else {
+          window.open(`https://web.whatsapp.com/send?phone=573016476916&text=${encodedMessage}`, '_blank');
+        }
         
         setSuccessMessage('¡Pedido enviado a WhatsApp! (Nota: hubo un problema al guardar en el sistema)');
         setBreakfasts([]);
