@@ -116,9 +116,27 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
 
     let latestLunch = [];
     let latestBreakfast = [];
+    let latestClientOrders = [];
 
-    const recompute = () => {
-      const merged = [...latestLunch, ...latestBreakfast];
+    // Función recompute que incluye clientOrders - DEBE estar definida ANTES de su uso
+    const recomputeWithClient = () => {
+      const clientBreakfasts = latestClientOrders.filter(order => order.type === 'breakfast');
+      const clientMeals = latestClientOrders.filter(order => order.type === 'lunch');
+      
+      const merged = [
+        ...latestLunch, 
+        ...latestBreakfast, 
+        ...clientMeals,
+        ...clientBreakfasts
+      ];
+
+      console.log('🔍 [OrderManagement] Merge final:', { 
+        lunchCount: latestLunch.length,
+        breakfastCount: latestBreakfast.length, 
+        clientMealsCount: clientMeals.length,
+        clientBreakfastsCount: clientBreakfasts.length,
+        totalCount: merged.length 
+      });
 
       setOrders(merged);
 
@@ -157,6 +175,12 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
       setTotals(newTotals);
       setDeliveryPersons(newDeliveryPersons);
       setIsLoading(false);
+    };
+
+    // Función recompute original (solo para mantener compatibilidad con listener de desayunos)
+    const recompute = () => {
+      // Usar recomputeWithClient para consistencia
+      recomputeWithClient();
     };
 
     const unsubLunch = onSnapshot(
@@ -220,9 +244,6 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
         setIsLoading(false);
       }
     );
-
-    // Variables para almacenar pedidos de clientOrders separadamente
-    let latestClientOrders = [];
 
     // Listener para pedidos de clientes no autenticados (clientOrders)  
     const unsubClient = onSnapshot(
@@ -296,65 +317,6 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
         setIsLoading(false);
       }
     );
-
-    // Función recompute que incluye clientOrders
-    const recomputeWithClient = () => {
-  const clientBreakfasts = latestClientOrders.filter(order => order.type === 'breakfast');
-  const clientMeals = latestClientOrders.filter(order => order.type === 'lunch');
-      
-      const merged = [
-        ...latestLunch, 
-        ...latestBreakfast, 
-        ...clientMeals,
-        ...clientBreakfasts
-      ];
-
-      console.log('🔍 [OrderManagement] Merge final:', { 
-        lunchCount: latestLunch.length,
-        breakfastCount: latestBreakfast.length, 
-        clientMealsCount: clientMeals.length,
-        clientBreakfastsCount: clientBreakfasts.length,
-        totalCount: merged.length 
-      });
-
-      setOrders(merged);
-
-      const newTotals = { cash: 0, daviplata: 0, nequi: 0, general: 0 };
-      const newDeliveryPersons = {};
-
-      merged.forEach((order) => {
-        if (order.status !== 'Cancelado') {
-          const paymentSummary = order.paymentSummary || { Efectivo: 0, Daviplata: 0, Nequi: 0 };
-          newTotals.cash += paymentSummary['Efectivo'] || 0;
-          newTotals.daviplata += paymentSummary['Daviplata'] || 0;
-          newTotals.nequi += paymentSummary['Nequi'] || 0;
-          newTotals.general += order.total || 0;
-
-          const deliveryPerson = order.deliveryPerson || 'Sin asignar';
-          if (deliveryPerson !== 'Sin asignar') {
-            if (!newDeliveryPersons[deliveryPerson]) {
-              newDeliveryPersons[deliveryPerson] = {
-                almuerzo: { efectivo: 0, daviplata: 0, nequi: 0, total: 0 },
-                desayuno: { efectivo: 0, daviplata: 0, nequi: 0, total: 0 }
-              };
-            }
-            const bucket = order.type === 'breakfast' ? 'desayuno' : 'almuerzo';
-            const paymentType = cleanText(order.payment || 'Efectivo').toLowerCase();
-            const amount = order.total || 0;
-
-            if (paymentType === 'efectivo') newDeliveryPersons[deliveryPerson][bucket].efectivo += amount;
-            else if (paymentType === 'daviplata') newDeliveryPersons[deliveryPerson][bucket].daviplata += amount;
-            else if (paymentType === 'nequi') newDeliveryPersons[deliveryPerson][bucket].nequi += amount;
-
-            newDeliveryPersons[deliveryPerson][bucket].total += amount;
-          }
-        }
-      });
-
-      setTotals(newTotals);
-      setDeliveryPersons(newDeliveryPersons);
-      setIsLoading(false);
-    };
 
     return () => {
       unsubLunch();

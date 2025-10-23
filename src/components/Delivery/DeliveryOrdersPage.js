@@ -62,32 +62,62 @@ const DeliveryOrdersPage = () => {
   // Cargar pedidos: almuerzo (orders), desayuno (deliveryBreakfastOrders) y clientes (clientOrders)
   useEffect(() => {
     setIsLoading(true);
+    
+    // Variables locales para acumular datos de cada colección
+    let latestLunch = [];
+    let latestBreakfast = [];
+    let latestClientOrders = [];
+
+    // Función centralizada para recomputar y actualizar el estado
+    const recomputeAllOrders = () => {
+      const clientBreakfasts = latestClientOrders.filter(order => order.type === 'breakfast');
+      const clientMeals = latestClientOrders.filter(order => order.type === 'lunch');
+      
+      const merged = [
+        ...latestLunch,
+        ...latestBreakfast,
+        ...clientMeals,
+        ...clientBreakfasts
+      ];
+
+      console.log('🔍 [DeliveryOrdersPage] Merge final:', {
+        lunchCount: latestLunch.length,
+        breakfastCount: latestBreakfast.length,
+        clientMealsCount: clientMeals.length,
+        clientBreakfastsCount: clientBreakfasts.length,
+        totalCount: merged.length
+      });
+
+      setOrders(merged);
+      setIsLoading(false);
+    };
+
     let unsubLunch = () => {};
     let unsubBreakfast = () => {};
     let unsubClient = () => {};
 
     try {
       unsubLunch = onSnapshot(collection(db, 'orders'), (snapshot) => {
-        const list = snapshot.docs.map((d) => ({ id: d.id, type: 'lunch', ...d.data() }));
-        setOrders((prev) => {
-          const others = prev.filter((o) => o.type !== 'lunch');
-          return [...list, ...others];
-        });
-        setIsLoading(false);
+        latestLunch = snapshot.docs.map((d) => ({ 
+          id: d.id, 
+          type: 'lunch', 
+          ...d.data() 
+        }));
+        recomputeAllOrders();
       });
       
       unsubBreakfast = onSnapshot(collection(db, 'deliveryBreakfastOrders'), (snapshot) => {
-        const list = snapshot.docs.map((d) => ({ id: d.id, type: 'breakfast', ...d.data() }));
-        setOrders((prev) => {
-          const others = prev.filter((o) => o.type !== 'breakfast');
-          return [...others, ...list];
-        });
-        setIsLoading(false);
+        latestBreakfast = snapshot.docs.map((d) => ({ 
+          id: d.id, 
+          type: 'breakfast', 
+          ...d.data() 
+        }));
+        recomputeAllOrders();
       });
 
-      // AÑADIR: Listener para pedidos de clientes no autenticados
+      // Listener para pedidos de clientes no autenticados
       unsubClient = onSnapshot(collection(db, 'clientOrders'), (snapshot) => {
-        const list = snapshot.docs.map((doc) => {
+        latestClientOrders = snapshot.docs.map((doc) => {
           const data = doc.data();
           const isBreakfast = Array.isArray(data.breakfasts) && data.breakfasts.length > 0;
           
@@ -106,11 +136,7 @@ const DeliveryOrdersPage = () => {
           };
         });
         
-        setOrders((prev) => {
-          const others = prev.filter((o) => o.id !== doc.id); // Evitar duplicados
-          return [...others, ...list];
-        });
-        setIsLoading(false);
+        recomputeAllOrders();
       });
       
     } catch (e) {
