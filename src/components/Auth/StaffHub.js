@@ -3,7 +3,8 @@ import { useState, useEffect } from 'react';
 import { useAuth } from './AuthProvider';
 import { useNavigate, Link } from 'react-router-dom';
 import { query, collection, where, getDocs } from 'firebase/firestore';
-import { db } from '../../config/firebase';
+import { sendPasswordResetEmail } from 'firebase/auth';
+import { db, auth } from '../../config/firebase';
 
 const StaffHub = () => {
   const [email, setEmail] = useState('');
@@ -11,8 +12,23 @@ const StaffHub = () => {
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+  const [showPasswordReset, setShowPasswordReset] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetMessage, setResetMessage] = useState('');
   const { login, user, loading, role } = useAuth();
   const navigate = useNavigate();
+
+  // Cargar datos guardados al iniciar
+  useEffect(() => {
+    const savedEmail = localStorage.getItem('staffHub_email');
+    const savedRememberMe = localStorage.getItem('staffHub_rememberMe') === 'true';
+    if (savedEmail && savedRememberMe) {
+      setEmail(savedEmail);
+      setRememberMe(true);
+    }
+  }, []);
 
   useEffect(() => {
     if (!loading && user && role) {
@@ -40,10 +56,56 @@ const StaffHub = () => {
     setError('');
     try {
       await login(email, password);
+      
+      // Guardar o limpiar datos según "Recordarme"
+      if (rememberMe) {
+        localStorage.setItem('staffHub_email', email);
+        localStorage.setItem('staffHub_rememberMe', 'true');
+      } else {
+        localStorage.removeItem('staffHub_email');
+        localStorage.removeItem('staffHub_rememberMe');
+      }
     } catch (err) {
       setError('Correo o contraseña incorrectos');
       setIsLoading(false);
     }
+  };
+
+  const handleForgotPassword = () => {
+    setError('');
+    setShowPasswordReset(true);
+    setResetEmail(email); // Pre-llenar con el email actual si existe
+  };
+
+  const handlePasswordReset = async (e) => {
+    e.preventDefault();
+    setResetLoading(true);
+    setResetMessage('');
+    setError('');
+
+    try {
+      await sendPasswordResetEmail(auth, resetEmail);
+      setResetMessage('Se ha enviado un enlace de restablecimiento a tu correo electrónico.');
+    } catch (error) {
+      let errorMessage = 'Error al enviar el enlace de restablecimiento.';
+      
+      if (error.code === 'auth/user-not-found') {
+        errorMessage = 'No se encontró una cuenta con este correo electrónico.';
+      } else if (error.code === 'auth/invalid-email') {
+        errorMessage = 'El correo electrónico no es válido.';
+      }
+      
+      setError(errorMessage);
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
+  const handleBackToLogin = () => {
+    setShowPasswordReset(false);
+    setResetEmail('');
+    setResetMessage('');
+    setError('');
   };
 
   if (loading) {
@@ -53,8 +115,48 @@ const StaffHub = () => {
   return (
     <div className="p-4 bg-gray-900 text-white min-h-screen flex items-center justify-center">
       <div className="w-full max-w-md">
-        <h1 className="text-2xl font-bold mb-6 text-center">StaffHub - Acceso Personal</h1>
+        <h1 className="text-2xl font-bold mb-6 text-center">
+          {showPasswordReset ? 'Recuperar Contraseña' : 'StaffHub - Acceso Personal'}
+        </h1>
         {error && <div className="mb-4 p-2 bg-red-700 text-white rounded">{error}</div>}
+        {resetMessage && <div className="mb-4 p-2 bg-green-700 text-white rounded">{resetMessage}</div>}
+
+        {showPasswordReset ? (
+          // Formulario de recuperación de contraseña
+          <form onSubmit={handlePasswordReset} className="space-y-4">
+            <div>
+              <label htmlFor="reset-email" className="block mb-2">Correo Electrónico:</label>
+              <input
+                id="reset-email"
+                type="email"
+                value={resetEmail}
+                onChange={(e) => setResetEmail(e.target.value)}
+                required
+                className="w-full p-2 mb-4 bg-gray-800 border border-gray-700 rounded text-white"
+                placeholder="Ingresa tu correo electrónico"
+              />
+            </div>
+            
+            <button
+              type="submit"
+              disabled={resetLoading}
+              className={`w-full bg-blue-600 hover:bg-blue-700 p-2 rounded text-white font-semibold transition duration-200 ${
+                resetLoading ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+            >
+              {resetLoading ? 'Enviando...' : 'Enviar enlace de restablecimiento'}
+            </button>
+            
+            <button
+              type="button"
+              onClick={handleBackToLogin}
+              className="w-full bg-gray-600 hover:bg-gray-700 p-2 rounded text-white font-semibold transition duration-200"
+            >
+              Volver al inicio de sesión
+            </button>
+          </form>
+        ) : (
+          // Formulario de login normal
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label htmlFor="staff-email" className="block mb-2">Correo Electrónico:</label>
@@ -95,6 +197,29 @@ const StaffHub = () => {
               )}
             </button>
           </div>
+          
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <input
+                id="remember-me"
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="mr-2 w-4 h-4 text-green-600 bg-gray-800 border-gray-700 rounded focus:ring-green-500"
+              />
+              <label htmlFor="remember-me" className="text-sm text-gray-300">
+                Recordarme
+              </label>
+            </div>
+            
+            <button 
+              onClick={handleForgotPassword}
+              className="text-blue-400 hover:underline text-sm"
+            >
+              ¿Olvidaste tu contraseña?
+            </button>
+          </div>
+          
           <button
             type="submit"
             disabled={isLoading}
@@ -105,9 +230,7 @@ const StaffHub = () => {
             {isLoading ? 'Ingresando...' : 'Ingresar'}
           </button>
         </form>
-        <Link to="/login" className="mt-4 text-blue-400 hover:underline block text-center">
-          ¿Eres administrador? Inicia sesión aquí
-        </Link>
+        )}
       </div>
     </div>
   );

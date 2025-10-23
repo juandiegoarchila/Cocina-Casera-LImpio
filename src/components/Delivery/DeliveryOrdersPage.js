@@ -669,7 +669,7 @@ const DeliveryOrdersPage = () => {
                   items={showMealDetails.breakfasts}
                   user={{ role: 4 }}
                   breakfastTypes={[]}
-                  isWaiterView={true}
+                  isWaiterView={false}
                   statusClass={''}
                   showSaveButton={false}
                 />

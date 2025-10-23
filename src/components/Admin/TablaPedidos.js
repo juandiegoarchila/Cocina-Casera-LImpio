@@ -8,22 +8,41 @@ function DireccionConCronometro({ order }) {
   const getMinutesElapsed = () => {
     if (!order.createdAt) return 0;
     const created = typeof order.createdAt.toDate === 'function' ? order.createdAt.toDate() : (order.createdAt instanceof Date ? order.createdAt : new Date(order.createdAt));
-    const now = new Date();
-    return Math.floor((now - created) / 60000);
+    
+    // Si el pedido está finalizado, usar updatedAt (momento de finalización) en lugar de la fecha actual
+    const isFinal = ["Entregado", "Cancelado"].includes(order.status);
+    let endTime;
+    
+    if (isFinal && order.updatedAt) {
+      // Usar el momento en que se marcó como entregado/cancelado
+      endTime = typeof order.updatedAt.toDate === 'function' ? order.updatedAt.toDate() : (order.updatedAt instanceof Date ? order.updatedAt : new Date(order.updatedAt));
+    } else {
+      // Para pedidos en progreso, usar la fecha actual
+      endTime = new Date();
+    }
+    
+    return Math.floor((endTime - created) / 60000);
   };
+  
   const isFinal = ["Entregado", "Cancelado"].includes(order.status);
   const [minutesElapsed, setMinutesElapsed] = React.useState(getMinutesElapsed());
+  
   React.useEffect(() => {
     if (!order.createdAt) return;
+    
+    // Si está finalizado, calcular una vez usando updatedAt y no actualizar más
     if (isFinal) {
       setMinutesElapsed(getMinutesElapsed());
       return;
     }
+    
+    // Si no está finalizado, actualizar cada minuto usando la fecha actual
     const interval = setInterval(() => {
       setMinutesElapsed(getMinutesElapsed());
     }, 60000);
+    
     return () => clearInterval(interval);
-  }, [order.createdAt, order.status]);
+  }, [order.createdAt, order.status, order.updatedAt]);
   return (
     <div>
       <div className="whitespace-nowrap overflow-hidden text-ellipsis flex items-center gap-2">
@@ -1128,6 +1147,13 @@ const TablaPedidos = ({
   };
 
   const savePaymentsForOrder = async (order, payments) => {
+    console.log('🔍 [DEBUG] savePaymentsForOrder llamado con:', {
+      orderId: order?.id,
+      currentStatus: order?.status,
+      isAdmin: window.location.pathname.includes('admin'),
+      isDomiciliario: window.location.pathname.includes('domiciliario')
+    });
+    
     const sum = (payments || []).reduce(
       (a, b) => a + (Math.floor(Number(b.amount || 0)) || 0),
       0
@@ -1159,19 +1185,20 @@ const TablaPedidos = ({
 
     const totalAmount = lines.reduce((s, l) => s + (Number(l.amount) || 0), 0);
 
-    // Construir payload que refleje un pago completo
+    // Construir payload que refleje un pago completo (sin cambiar el estado)
     const payload = {
       payments: lines,
       paymentLines: lines,
       paymentAmount: totalAmount,
       isPaid: true,
-      status: 'Completada',
       paymentDate: serverTimestamp ? serverTimestamp() : new Date(),
       updatedAt: new Date(),
     };
 
     // Si solo hay una línea y su método existe, setear paymentMethod
     if (lines.length === 1) payload.paymentMethod = lines[0].method;
+
+    console.log('🔍 [DEBUG] Payload a enviar:', payload);
 
     try {
       await updateDoc(ref, payload);
