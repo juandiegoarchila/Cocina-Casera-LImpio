@@ -16,12 +16,13 @@ export const initializeBreakfastData = ({ address, phoneNumber, details, isWaitr
   orderType: isWaitress ? null : 'takeaway',
   ...(isWaitress ? {} : {
     time: null,
-    address: {
+    address: address || phoneNumber || details ? {
       address: address || '',
       phoneNumber: phoneNumber || '',
       details: details || '',
-    },
+    } : null,
     cutlery: null,
+    orderType: address || phoneNumber || details ? 'takeaway' : 'table'
   })
 });
 
@@ -70,7 +71,10 @@ export const calculateBreakfastPrice = (breakfast, userRole, breakfastTypes = []
 
   const typeName = breakfast.type.name.toLowerCase().trim();
   const brothName = (breakfast.broth?.name || '').toLowerCase().trim();
-  const orderType = breakfast.orderType || 'takeaway'; // Default to takeaway if not specified
+  // Determinar si es pedido a domicilio verificando si tiene dirección
+  const hasAddress = breakfast.address?.address || 
+                    (breakfast.address && Object.keys(breakfast.address).length > 0);
+  const orderType = hasAddress ? 'takeaway' : 'table';
 
   // Define prices for "Para Mesa" and "Para Llevar" as per the provided table
   const priceMap = {

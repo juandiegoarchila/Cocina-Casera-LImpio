@@ -30,19 +30,31 @@ function DireccionConCronometro({ order }) {
   React.useEffect(() => {
     if (!order.createdAt) return;
     
-    // Si está finalizado, calcular una vez usando updatedAt y no actualizar más
+    // Limpiar cualquier intervalo anterior
+    let interval = null;
+    
+    // Si está finalizado, calcular una vez y no crear intervalo
     if (isFinal) {
-      setMinutesElapsed(getMinutesElapsed());
+      const finalMinutes = getMinutesElapsed();
+      setMinutesElapsed(finalMinutes);
+      console.log(`🕒 [Cronómetro] Pedido ${order.id} finalizado (${order.status}): ${finalMinutes}min`);
       return;
     }
     
-    // Si no está finalizado, actualizar cada minuto usando la fecha actual
-    const interval = setInterval(() => {
-      setMinutesElapsed(getMinutesElapsed());
+    // Para pedidos en progreso, calcular inmediatamente y luego actualizar cada minuto
+    setMinutesElapsed(getMinutesElapsed());
+    interval = setInterval(() => {
+      const currentMinutes = getMinutesElapsed();
+      setMinutesElapsed(currentMinutes);
+      console.log(`🕒 [Cronómetro] Pedido ${order.id} en progreso: ${currentMinutes}min`);
     }, 60000);
     
-    return () => clearInterval(interval);
-  }, [order.createdAt, order.status, order.updatedAt]);
+    return () => {
+      if (interval) {
+        clearInterval(interval);
+      }
+    };
+  }, [order.createdAt, order.status, order.updatedAt, isFinal]);
   return (
     <div>
       <div className="whitespace-nowrap overflow-hidden text-ellipsis flex items-center gap-2">
@@ -153,20 +165,23 @@ const areMealsIdentical = (meal1, meal2) => {
 
 // Función para recalcular el total correcto para desayunos
 const calculateCorrectBreakfastTotal = (order) => {
-  if (order.type !== 'breakfast' || !Array.isArray(order.breakfasts) || order.breakfasts.length === 0) {
+  const isBreakfast = order.type === 'breakfast' || (Array.isArray(order.breakfasts) && order.breakfasts.length > 0);
+  if (!isBreakfast) {
     return order.total || 0;
   }
   
-  // Determinar el orderType correcto basándose en el contexto del pedido
-  // Si tiene address (dirección) es domicilio, entonces orderType='takeaway'
-  // Si no tiene address o es para mesa, entonces orderType='table'
-  const isDeliveryOrder = order.breakfasts.some(b => b.address && (b.address.address || b.address.phoneNumber));
-  const correctOrderType = isDeliveryOrder ? 'takeaway' : 'table';
+  // Determinar si es domicilio verificando la dirección
+  const hasAddress = order.breakfasts?.some(b => b.address && (b.address.address || b.address.phoneNumber)) || 
+                    (order.address && (order.address.address || order.address.phoneNumber));
+  
+  // Si es domicilio, usar 'takeaway', si no, usar 'table'
+  const correctOrderType = hasAddress ? 'takeaway' : 'table';
   
   // Crear copias de los desayunos con el orderType correcto
-  const breakfastsWithCorrectType = order.breakfasts.map(b => ({
+  const breakfastsToProcess = Array.isArray(order.breakfasts) ? order.breakfasts : [];
+  const breakfastsWithCorrectType = breakfastsToProcess.map(b => ({
     ...b,
-    orderType: b.orderType || correctOrderType
+    orderType: correctOrderType
   }));
   
   // Calcular el total usando la función correcta
@@ -826,7 +841,9 @@ const sumPaymentsByDeliveryAndType = (orders, { fallbackBuilder, filter } = {}) 
     return acc[person][bucket];
   };
   const bump = (obj, methodKey, amount) => {
-    if (!amount) return;
+    if (!amount || isNaN(amount)) return;
+    amount = Math.floor(amount);
+    if (amount <= 0) return;
     obj[methodKey] = (obj[methodKey] || 0) + amount;
     obj.total += amount;
   };
@@ -834,15 +851,34 @@ const sumPaymentsByDeliveryAndType = (orders, { fallbackBuilder, filter } = {}) 
   (orders || [])
     .filter(order => !filter || filter(order))
     .forEach((order) => {
-    const person = String(order?.deliveryPerson || 'JUAN').trim(); // default "JUAN" si no hay asignado
-    const isBreakfast = Array.isArray(order?.breakfasts) || order?.type === 'breakfast';
-    const bucket = isBreakfast ? 'breakfast' : 'lunch';
+    const person = String(order?.deliveryPerson || 'Sin asignar').trim();
+    const isBreakfast = (Array.isArray(order?.breakfasts) && order.breakfasts.length > 0) || order?.type === 'breakfast';
+    
+    // Determinar si es domicilio
+    const hasAddr = !!(
+      order.address?.address || 
+      order.breakfasts?.[0]?.address?.address ||
+      order.meals?.[0]?.address?.address
+    );
+    
+    // Calcular el total correcto
+    const total = isBreakfast ? calculateCorrectBreakfastTotal(order) : (order.total || 0);
+    
+    // Solo es desayuno si es desayuno Y tiene dirección de domicilio
+    const bucket = isBreakfast && hasAddr ? 'breakfast' : 'lunch';
+    
+    // Si el total es 0 o el pedido está cancelado, no lo contamos
+    if (total <= 0 || order.status === 'Cancelado') return;
+    
     const rows = paymentsRowsFromOrder(order, fallbackBuilder);
     const byType = ensureBucket(person, bucket);
     const byTotal = ensureBucket(person, 'total');
+    
     rows.forEach(({ methodKey, amount }) => {
-      bump(byType, methodKey, amount);
-      bump(byTotal, methodKey, amount);
+      if (amount > 0) {  // Solo procesar montos positivos
+        bump(byType, methodKey, amount);
+        bump(byTotal, methodKey, amount);
+      }
     });
   });
 
@@ -1223,7 +1259,7 @@ const TablaPedidos = ({
 
     (orders || []).filter(isActive).forEach((order) => {
       // Detectar si es un pedido de desayuno
-      const isBreakfast = order.type === 'breakfast' || Array.isArray(order?.breakfasts);
+  const isBreakfast = order.type === 'breakfast' || (Array.isArray(order?.breakfasts) && order.breakfasts.length > 0);
       
       // Para los métodos específicos
       if (order.payments && Array.isArray(order.payments)) {
@@ -1287,8 +1323,8 @@ const TablaPedidos = ({
   const resumen = useMemo(
     () => sumPaymentsByDeliveryAndType(orders || [], { 
       fallbackBuilder: defaultPaymentsForOrder,
-      // Solo incluir pedidos no liquidados y no cancelados en el resumen
-      filter: order => !order.settled && order.status !== 'Cancelado'
+      // Incluir todos los pedidos excepto los cancelados
+      filter: order => order.status !== 'Cancelado'
     }),
     [orders]
   );
@@ -1368,7 +1404,7 @@ const TablaPedidos = ({
               const iso = getOrderISO(o) || new Date().toISOString().split('T')[0];
               const amount = Math.floor(Number(o.total || 0)) || 0;
               if (!amount) return;
-              const isBreakfast = (o?.type === 'breakfast') || Array.isArray(o?.breakfasts);
+              const isBreakfast = (o?.type === 'breakfast') || (Array.isArray(o?.breakfasts) && o.breakfasts.length > 0);
               const categoryKey = isBreakfast ? 'domiciliosDesayuno' : 'domiciliosAlmuerzo';
 
               const colRef = collection(db, INGRESOS_COLLECTION);
