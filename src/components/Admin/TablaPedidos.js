@@ -1607,8 +1607,8 @@ const TablaPedidos = ({
             </div>
           ) : (
             <>
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-left border-collapse text-sm">
+              <div className="overflow-x-auto select-text">
+                <table className="min-w-full text-left border-collapse text-sm select-text">
                   <thead>
                     <tr className={classNames('font-semibold sticky top-0 z-10 shadow-sm', theme === 'dark' ? 'bg-gray-700 text-gray-200' : 'bg-gray-100 text-gray-700')}>
                       <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('orderNumber')}>Nº {getSortIcon('orderNumber')}</th>
@@ -1648,6 +1648,8 @@ const TablaPedidos = ({
 
                         const statusClass =
                           order.status === 'Pendiente' ? 'bg-yellow-500 text-black'
+                            : order.status === 'En Preparación' ? 'bg-purple-500 text-white'
+                            : order.status === 'En Camino' ? 'bg-blue-500 text-white'
                             : order.status === 'Entregado' ? 'bg-green-500 text-white'
                             : order.status === 'Cancelado' ? 'bg-red-500 text-white'
                             : '';
