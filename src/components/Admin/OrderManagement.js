@@ -1180,14 +1180,15 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
         }
       }
 
-      setSuccess('Estado actualizado correctamente.');
+      // Evitar banner grande: TablaPedidos muestra su propio toast de éxito
       logActivity(`Actualizó el estado del pedido ${orderId} a: ${newStatus}`, {
         orderId,
         previousStatus,
         newStatus
       });
     } catch (error) {
-      setError(`Error al actualizar estado: ${error.message}`);
+      // Propagar para que la vista hija (TablaPedidos) muestre su toast de error
+      throw error;
     }
   };
 
@@ -1209,14 +1210,15 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
         updatedAt: new Date()
       });
       setEditingDeliveryId(null);
-      setSuccess('Domiciliario actualizado correctamente.');
+      // Evitar banner grande: TablaPedidos muestra su propio toast de éxito
       logActivity(`Asignó/Actualizó domiciliario para el pedido ${orderId} a: ${deliveryPerson || 'Sin asignar'}`, {
         orderId,
         previousDeliveryPerson,
         newDeliveryPerson: deliveryPerson || 'Sin asignar'
       });
     } catch (error) {
-      setError(`Error al actualizar domiciliario: ${error.message}`);
+      // Propagar para que la vista hija (TablaPedidos) muestre su toast de error
+      throw error;
     }
   };
 

@@ -350,9 +350,7 @@ const DeliveryOrdersPage = () => {
         
         // Abrimos WhatsApp en nueva pestaña; si falla, mostramos alerta pero continuamos
         const opened = openWhatsApp(phone, msg);
-        if (!opened) {
-          setError('No se pudo abrir WhatsApp: teléfono inválido o ausente.');
-        }
+        // Si no abrió WhatsApp, no interrumpimos el flujo ni mostramos banner aquí
       }
       
       // Helper para actualizar en la colección correcta con fallback
@@ -394,18 +392,11 @@ const DeliveryOrdersPage = () => {
           : o
       )));
       
-      // Mensaje de éxito personalizado
-      const successMsg = updateData.deliveryPerson 
-        ? `Estado actualizado y asignado a ${updateData.deliveryPerson} correctamente.`
-        : 'Estado actualizado correctamente.';
-      setSuccess(successMsg);
+      // No setear banner local aquí para evitar duplicados; TablaPedidos muestra su propio toast
     } catch (e) {
       console.error('[Estado] actualización fallida', e);
-      if (e && /Missing or insufficient permissions/i.test(String(e.message || e))) {
-        setError('Error al actualizar estado: permisos insuficientes. Verifica que tu usuario tenga rol 4 en la colección "users" del proyecto prubeas-b510c y que las reglas estén desplegadas.');
-      } else {
-        setError(`Error al actualizar estado: ${e.message}`);
-      }
+      // Propagar el error para que el componente hijo (TablaPedidos) maneje el toast
+      throw e;
     }
   };
 
@@ -437,9 +428,10 @@ const DeliveryOrdersPage = () => {
       setOrders((prev) => prev.map((o) => (
         o.id === orderId ? { ...o, ...payload } : o
       )));
-      setSuccess('Domiciliario asignado.');
+      // Evitar banner local; TablaPedidos mostrará su toast
     } catch (e) {
-      setError(`Error al asignar domiciliario: ${e.message}`);
+      // Propagar para que TablaPedidos lo muestre como toast de error
+      throw e;
     }
   };
 
@@ -676,8 +668,8 @@ const DeliveryOrdersPage = () => {
 
       {/* Contenido principal */}
       <div className={`flex-1 p-4 pt-20 sm:pt-20 ${isSidebarOpen ? 'sm:ml-64' : 'sm:ml-16'} transition-all duration-300 min-h-screen`}>
-        {error && <div className="mb-3 p-2 bg-red-600 text-white rounded">{error}</div>}
-        {success && <div className="mb-3 p-2 bg-green-600 text-white rounded">{success}</div>}
+  {/* Ocultar banners en la vista principal de pedidos para no duplicar el toast de TablaPedidos */}
+  {/* Se pueden mostrar en otras rutas si se requiere */}
 
         <Routes>
           <Route path="/" element={

@@ -1729,7 +1729,11 @@ const TablaPedidos = ({
                                     onKeyDown={(e) => {
                                       if (e.key === 'Enter') {
                                         const valueToSave = (deliveryDraft || '').trim() || 'Sin asignar';
-                                        handleDeliveryChange(order.id, valueToSave);
+                                        handleDeliveryChange(order.id, valueToSave)
+                                          .then(() => {
+                                            showToast('success', valueToSave === 'Sin asignar' ? 'Domiciliario desasignado.' : 'Domiciliario asignado.');
+                                          })
+                                          .catch(() => showToast('error', 'No se pudo asignar domiciliario.'));
                                         if (valueToSave !== 'Sin asignar') lastAssignedRef.current = valueToSave;
                                         setEditingDeliveryId(null);
                                       } else if (e.key === 'Escape') {
@@ -1738,7 +1742,11 @@ const TablaPedidos = ({
                                     }}
                                     onBlur={() => {
                                       const valueToSave = (deliveryDraft || '').trim() || 'Sin asignar';
-                                      handleDeliveryChange(order.id, valueToSave);
+                                      handleDeliveryChange(order.id, valueToSave)
+                                        .then(() => {
+                                          showToast('success', valueToSave === 'Sin asignar' ? 'Domiciliario desasignado.' : 'Domiciliario asignado.');
+                                        })
+                                        .catch(() => showToast('error', 'No se pudo asignar domiciliario.'));
                                       if (valueToSave !== 'Sin asignar') lastAssignedRef.current = valueToSave;
                                       setEditingDeliveryId(null);
                                     }}
@@ -1772,7 +1780,9 @@ const TablaPedidos = ({
                                       // Guardar automáticamente con el último domiciliario
                                       setTimeout(() => {
                                         const valueToSave = lastAssignedRef.current.trim();
-                                        handleDeliveryChange(order.id, valueToSave);
+                                        handleDeliveryChange(order.id, valueToSave)
+                                          .then(() => showToast('success', 'Domiciliario asignado.'))
+                                          .catch(() => showToast('error', 'No se pudo asignar domiciliario.'));
                                         setEditingDeliveryId(null);
                                         setDeliveryDraft('');
                                       }, 100);
