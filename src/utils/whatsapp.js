@@ -1,5 +1,6 @@
 // src/utils/whatsapp.js
 // Utilidades para construir enlaces de WhatsApp y normalizar teléfonos (Colombia)
+import { isMobile } from './Helpers';
 
 // Normaliza un número colombiano:
 // - Elimina caracteres no numéricos
@@ -40,16 +41,45 @@ export const buildWhatsAppUrl = (phone, message) => {
   const normalized = normalizeColombiaPhone(phone);
   if (!normalized) return null;
   const text = encodeURIComponent(message || '');
-  // Usamos wa.me para compatibilidad en móvil y escritorio
+
+  // Prioridad por plataforma:
+  // - Móvil: esquema nativo whatsapp:// (con fallback a wa.me)
+  // - Escritorio: web.whatsapp.com (con fallback a wa.me)
+  if (typeof window !== 'undefined') {
+    if (isMobile && isMobile()) {
+      return `whatsapp://send?phone=${normalized}${text ? `&text=${text}` : ''}`;
+    }
+    return `https://web.whatsapp.com/send?phone=${normalized}${text ? `&text=${text}` : ''}`;
+  }
+  // Fallback genérico
   return `https://wa.me/${normalized}${text ? `?text=${text}` : ''}`;
 };
 
 export const openWhatsApp = (phone, message) => {
-  const url = buildWhatsAppUrl(phone, message);
-  if (!url) return false;
+  const normalized = normalizeColombiaPhone(phone);
+  if (!normalized) return false;
+  const text = encodeURIComponent(message || '');
+
+  const urls = [];
   if (typeof window !== 'undefined') {
-    window.open(url, '_blank', 'noopener,noreferrer');
-    return true;
+    if (isMobile && isMobile()) {
+      urls.push(`whatsapp://send?phone=${normalized}${text ? `&text=${text}` : ''}`);
+      urls.push(`https://wa.me/${normalized}${text ? `?text=${text}` : ''}`);
+    } else {
+      urls.push(`https://web.whatsapp.com/send?phone=${normalized}${text ? `&text=${text}` : ''}`);
+      urls.push(`https://wa.me/${normalized}${text ? `?text=${text}` : ''}`);
+    }
+  } else {
+    urls.push(`https://wa.me/${normalized}${text ? `?text=${text}` : ''}`);
+  }
+
+  for (const url of urls) {
+    try {
+      const w = window.open(url, '_blank', 'noopener,noreferrer');
+      if (w) return true;
+    } catch (_) {
+      // intentar siguiente
+    }
   }
   return false;
 };

@@ -4,8 +4,7 @@
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
-    "deploy": "npm run build && firebase deploy --only hosting",
-    "lint": "eslint src --ext .js,.jsx"
+    "deploy": "npm run build && firebase deploy --only hosting"
   },
   "dependencies": {
     "@babel/plugin-transform-class-properties": "^7.27.1",

@@ -12,7 +12,7 @@ import { auth } from '../../config/firebase';
 import { useNavigate, Routes, Route, Navigate } from 'react-router-dom';
 import { openWhatsApp } from '../../utils/whatsapp';
 import PaymentSplitEditor from '../common/PaymentSplitEditor';
-import { defaultPaymentsForOrder } from '../../utils/payments';
+import { defaultPaymentsForOrder, extractOrderPayments } from '../../utils/payments';
 import OrderSummary from '../OrderSummary';
 import BreakfastOrderSummary from '../BreakfastOrderSummary';
 import DeliveryPayments from './DeliveryPayments';
@@ -307,31 +307,46 @@ const DeliveryOrdersPage = () => {
         const addr = order?.meals?.[0]?.address || order?.breakfasts?.[0]?.address || order?.address || {};
         const phone = addr?.phoneNumber || addr?.phone || '';
         
-        // Obtener la dirección completa con detalles entre paréntesis si existen
-        let fullAddress = addr?.address || '';
-        if (addr?.details && addr.details.trim()) {
-          fullAddress += ` (${addr.details.trim()})`;
-        }
+        // Separar dirección y detalles (mostrar detalles en línea aparte entre paréntesis)
+        const addressBase = addr?.address || '';
+        const addressDetailsStr = (addr?.details && addr.details.trim()) ? `(${addr.details.trim()})` : '';
         
-        // Obtener método de pago y total
-        const paymentMethod = order?.meals?.[0]?.paymentMethod?.name || 
-                             order?.breakfasts?.[0]?.paymentMethod?.name || 
-                             order?.paymentMethod?.name || 
-                             order?.paymentMethod || 
-                             'Efectivo';
-        
-        const total = order?.total || 0;
+        // Obtener método(s) de pago y total de forma robusta (soporta split y estructuras legadas)
+        const paymentRows = extractOrderPayments(order);
+        // Mostrar solo el/los nombres de método(s) sin valores para evitar duplicar el Total
+        const paymentMethod = (Array.isArray(paymentRows) && paymentRows.length)
+          ? Array.from(new Set(paymentRows.map(r => (r.rawLabel || r.methodKey))))
+              .map((label) => {
+                const t = String(label || '').toLowerCase();
+                if (t.includes('efect') || t === 'cash') return 'Efectivo';
+                if (t.includes('nequi')) return 'Nequi';
+                if (t.includes('davi')) return 'Daviplata';
+                if (t === 'other' || t === 'otro') return 'Otro';
+                return label;
+              })
+              .join(' + ')
+          : 'Sin pago';
+        // Total preferido: suma de líneas de pago; fallback al total de la orden
+        const total = (Array.isArray(paymentRows) && paymentRows.length
+          ? paymentRows.reduce((s, r) => s + (Number(r.amount) || 0), 0)
+          : (order?.total || 0));
         const formattedTotal = new Intl.NumberFormat('es-CO', {
           style: 'currency',
           currency: 'COP',
           minimumFractionDigits: 0,
         }).format(total);
         
-        // Construir el mensaje completo
-        let msg = 'Tu pedido de Cocina Casera ya está en camino.\nLlega en 10-15 min. ¡Gracias por tu espera!';
-        msg += '\n\nDirección: ' + fullAddress;
-        msg += '\nMétodo de pago: ' + paymentMethod;
-        msg += '\nTotal: ' + formattedTotal;
+  // Construir el mensaje completo con versión mejorada para WhatsApp
+  let msg = 'Tu pedido de *Cocina Casera* ya está en camino. 🚲';
+  msg += '\n\nLlega en 10–15 minutos ⏱️';
+  msg += '\n¡Gracias por tu paciencia y preferencia! 💛';
+        msg += '\n\nDirección:';
+        msg += '\n*' + addressBase + '*';
+        if (addressDetailsStr) {
+          msg += '\n*' + addressDetailsStr + '*';
+        }
+  msg += '\n\nMétodo de pago: ' + paymentMethod;
+  msg += '\nTotal: *' + formattedTotal + '*';
         
         // Abrimos WhatsApp en nueva pestaña; si falla, mostramos alerta pero continuamos
         const opened = openWhatsApp(phone, msg);
