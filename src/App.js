@@ -80,6 +80,11 @@ const App = () => {
   });
   // NUEVO: mensaje informativo global (por ejemplo opciones agotadas en tiempo real)
   const [infoMessage, setInfoMessage] = useState(null);
+  // NUEVO: Aviso global configurable desde Admin (simple: título y mensaje)
+  const [globalNotice, setGlobalNotice] = useState({
+    title: '🚫 Restaurante cerrado',
+    message: 'Los pedidos estarán disponibles nuevamente mañana.'
+  });
   // Referencias para deduplicar y detectar nuevas opciones agotadas
   const lastInfoEventRef = useRef({ key: '', ts: 0 });
   const prevDataRef = useRef({}); // { collectionName: [{id, isFinished, name}, ...] }
@@ -325,7 +330,12 @@ const App = () => {
     );
 
     const settingsUnsubscribe = onSnapshot(doc(db, 'settings', 'global'), (docSnapshot) => {
-      setIsOrderingDisabled(docSnapshot.exists() ? docSnapshot.data().isOrderingDisabled || false : false);
+      const data = docSnapshot.exists() ? docSnapshot.data() : {};
+      setIsOrderingDisabled(data.isOrderingDisabled || false);
+      setGlobalNotice({
+        title: data.globalNoticeTitle || '🚫 Restaurante cerrado',
+        message: data.globalNoticeMessage || 'Los pedidos estarán disponibles nuevamente mañana.'
+      });
     }, (error) => {
       if (process.env.NODE_ENV === 'development') console.error('Error al escuchar settings/global:', error);
       setErrorMessage('Error al cargar configuración. Intenta de nuevo más tarde.');
@@ -865,6 +875,7 @@ try {
         <Route path="/" element={
           <div className="min-h-screen bg-gray-200 flex flex-col relative">
             <Header />
+            {/* Aviso global como banner cuando está abierto: desactivado por solicitud */}
             {showCookieBanner && (
               <div className="fixed bottom-0 left-0 right-0 bg-blue-100 text-gray-800 p-4 z-[10001] rounded-t-lg shadow-lg">
                 <p className="text-sm font-medium">🍪 Usamos cookies para guardar tus preferencias y hacer tu experiencia más fácil. ¡Todo seguro!</p>
@@ -879,13 +890,21 @@ try {
             </Modal>
             <main role="main" className="p-2 sm:p-4 flex-grow w-full max-w-4xl mx-auto">
               {isOrderingDisabled || currentMenuType === 'closed' ? (
-                <div className="flex flex-col items-center justify-center text-center bg-red-50 text-red-700 p-4 sm:p-6 rounded-xl shadow-md space-y-2 mt-8 sm:mt-10">
-                  <h2 className="text-xl sm:text-2xl font-bold">🚫 Restaurante cerrado</h2>
-                  <p className="text-sm sm:text-base font-medium">{isOrderingDisabled ? 'Los pedidos estarán disponibles nuevamente mañana.' : 'No hay pedidos disponibles en este horario.'}</p>
-                  <p className="text-sm sm:text-base text-gray-700">⏰ Horarios de atención:</p>
-                  <p className="text-sm sm:text-base text-gray-700"><strong>Desayuno: {formatTime(schedules.breakfastStart)} - {formatTime(schedules.breakfastEnd)}</strong></p>
-                  <p className="text-sm sm:text-base text-gray-700"><strong>Almuerzo: {formatTime(schedules.lunchStart)} - {formatTime(schedules.lunchEnd)}</strong></p>
-                  <p className="text-xs sm:text-sm text-gray-500 italic">Gracias por tu comprensión y preferencia.</p>
+                <div className="flex items-center justify-center min-h-[65vh] mt-4">
+                  <div className="w-full max-w-3xl text-center bg-red-50 text-red-700 p-4 sm:p-6 rounded-2xl shadow-md space-y-3">
+                    <h2 className="text-xl sm:text-2xl font-bold">{globalNotice.title || '🚫 Restaurante cerrado'}</h2>
+                    <p className="text-sm sm:text-base font-medium whitespace-pre-wrap break-words">
+                      {globalNotice.message && globalNotice.message.trim().length > 0
+                        ? globalNotice.message
+                        : (isOrderingDisabled ? 'Los pedidos estarán disponibles nuevamente mañana.' : 'No hay pedidos disponibles en este horario.')}
+                    </p>
+                    <div className="pt-2">
+                      <p className="text-sm sm:text-base text-gray-700">⏰ Horarios de atención:</p>
+                      <p className="text-sm sm:text-base text-gray-700"><strong>Desayuno: {formatTime(schedules.breakfastStart)} - {formatTime(schedules.breakfastEnd)}</strong></p>
+                      <p className="text-sm sm:text-base text-gray-700"><strong>Almuerzo: {formatTime(schedules.lunchStart)} - {formatTime(schedules.lunchEnd)}</strong></p>
+                      <p className="text-xs sm:text-sm text-gray-500 italic mt-1">Gracias por tu comprensión y preferencia.</p>
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <div className="fade-in">

@@ -1,5 +1,5 @@
 //src/components/OptionSelector.js
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Modal from './Modal';
 
 export const isMobile = () => window.innerWidth < 768;
@@ -23,7 +23,12 @@ const OptionSelector = ({
   onRemove = () => {},
   onIncrease = () => {},
 }) => {
+  // Evitar doble disparo (touch + click) en iOS/Android
+  const lastTouchTimeRef = useRef(0);
+
   const [showReplacement, setShowReplacement] = useState(propShowReplacements);
+  // Control de tap con umbral para evitar toques fantasma durante scroll vertical
+  const touchInfoRef = useRef({ x: 0, y: 0, moved: false, time: 0 });
   const [pendingSelection, setPendingSelection] = useState(
     multiple ? (Array.isArray(selected) ? selected : []) : selected
   );
@@ -632,11 +637,26 @@ const OptionSelector = ({
     return baseName;
   };
 
+  const handleEyeTap = (e, url) => {
+    if (e?.type === 'touchend') {
+      e.preventDefault();
+      e.stopPropagation();
+      lastTouchTimeRef.current = Date.now();
+      setPreviewImage(url);
+      return;
+    }
+    if (Date.now() - lastTouchTimeRef.current < 350) return;
+    e.stopPropagation();
+    setPreviewImage(url);
+  };
+
   const EyeButton = ({ url, small = false, className = '' }) => (
     <span
       role="button"
       tabIndex={0}
-      onClick={(e) => { e.stopPropagation(); setPreviewImage(url); }}
+      onClick={(e) => handleEyeTap(e, url)}
+      onTouchStart={(e) => { e.stopPropagation(); }}
+      onTouchEnd={(e) => handleEyeTap(e, url)}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); setPreviewImage(url); } }}
       className={`absolute top-1/2 -translate-y-1/2 right-3 sm:right-4 ${small ? 'p-1' : 'p-1.5'} rounded-full bg-white/90 text-gray-700 hover:bg-white shadow cursor-pointer ${className}`}
       aria-label="Ver imagen"
@@ -649,10 +669,53 @@ const OptionSelector = ({
     </span>
   );
 
+  const handleTap = (e, option) => {
+    if (e?.type === 'touchend') {
+      // Solo consideramos tap si no hubo desplazamiento significativo
+      if (touchInfoRef.current.moved) return;
+      e.preventDefault();
+      e.stopPropagation();
+      lastTouchTimeRef.current = Date.now();
+      handleOptionClick(option);
+      return;
+    }
+    // Si acaba de ocurrir un touchend, ignorar el click fantasma
+    if (Date.now() - lastTouchTimeRef.current < 250) return;
+    handleOptionClick(option);
+  };
+
+  const handleReplacementTap = (e, replacement) => {
+    if (e?.type === 'touchend') {
+      if (touchInfoRef.current.moved) return;
+      e.preventDefault();
+      e.stopPropagation();
+      lastTouchTimeRef.current = Date.now();
+      handleReplacementClick(replacement);
+      return;
+    }
+    if (Date.now() - lastTouchTimeRef.current < 250) return;
+    handleReplacementClick(replacement);
+  };
+
+  const handleTouchStart = (e) => {
+    const t = e.touches[0];
+    touchInfoRef.current = { x: t.clientX, y: t.clientY, moved: false, time: Date.now() };
+  };
+  const handleTouchMove = (e) => {
+    const t = e.touches[0];
+    const dx = Math.abs(t.clientX - touchInfoRef.current.x);
+    const dy = Math.abs(t.clientY - touchInfoRef.current.y);
+    // Umbral pequeño, si se desplaza más de 10px lo consideramos scroll y no tap
+    if (dx > 10 || dy > 10) touchInfoRef.current.moved = true;
+  };
+
   const mobileLayout = (option, index, isSelected, quantity) => (
     <div key={option.id || index} className="relative">
       <button
-        onClick={() => handleOptionClick(option)}
+        onClick={(e) => handleTap(e, option)}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={(e) => handleTap(e, option)}
         disabled={disabled || option.isFinished}
         className={`relative w-full p-2 ${option.imageUrl ? 'pr-12' : ''} rounded-t-lg text-sm font-medium transition-all duration-200 flex items-center justify-between text-left min-h-[60px] shadow-sm ${
           disabled || option.isFinished
@@ -695,6 +758,11 @@ const OptionSelector = ({
                 e.stopPropagation();
                 onRemove(option.id);
               }}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onRemove(option.id);
+              }}
               className="text-red-500 hover:text-red-700 cursor-pointer"
               aria-label={`Disminuir cantidad de ${option.name}`}
             >
@@ -703,6 +771,11 @@ const OptionSelector = ({
             <span className="text-sm">{quantity}</span>
             <div
               onClick={(e) => {
+                e.stopPropagation();
+                onIncrease(option.id);
+              }}
+              onTouchEnd={(e) => {
+                e.preventDefault();
                 e.stopPropagation();
                 onIncrease(option.id);
               }}
@@ -757,7 +830,10 @@ const OptionSelector = ({
                 return (
                   <div key={replacement.id || idx} className="relative">
                   <button
-                    onClick={() => handleReplacementClick(replacement)}
+                    onClick={(e) => handleReplacementTap(e, replacement)}
+                    onTouchStart={handleTouchStart}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={(e) => handleReplacementTap(e, replacement)}
                     disabled={disabled || replacement.isFinished}
                     className={`relative w-full p-2 rounded-lg text-sm font-medium transition-all duration-200 flex flex-col items-start text-left min-h-[60px] shadow-sm ${
                       disabled || replacement.isFinished
@@ -828,7 +904,10 @@ const OptionSelector = ({
   const pcLayout = (option, index, isSelected, quantity) => (
     <div key={option.id || index} className="relative">
       <button
-        onClick={() => handleOptionClick(option)}
+        onClick={(e) => handleTap(e, option)}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={(e) => handleTap(e, option)}
         disabled={disabled || option.isFinished}
         className={`relative w-full p-2 ${option.imageUrl ? 'pr-12' : ''} rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-between text-left min-h-[60px] shadow-sm ${
           disabled || option.isFinished
@@ -856,6 +935,11 @@ const OptionSelector = ({
                 e.stopPropagation();
                 onRemove(option.id);
               }}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onRemove(option.id);
+              }}
               className="text-red-500 hover:text-red-700 cursor-pointer"
               aria-label={`Disminuir cantidad de ${option.name}`}
             >
@@ -864,6 +948,11 @@ const OptionSelector = ({
             <span className="text-sm">{quantity}</span>
             <div
               onClick={(e) => {
+                e.stopPropagation();
+                onIncrease(option.id);
+              }}
+              onTouchEnd={(e) => {
+                e.preventDefault();
                 e.stopPropagation();
                 onIncrease(option.id);
               }}
@@ -947,7 +1036,10 @@ const OptionSelector = ({
             {replacements.map((replacement, index) => (
               <div key={replacement.id || index} className="relative">
                 <button
-                  onClick={() => handleReplacementClick(replacement)}
+                  onClick={(e) => handleReplacementTap(e, replacement)}
+                  onTouchStart={handleTouchStart}
+                  onTouchMove={handleTouchMove}
+                  onTouchEnd={(e) => handleReplacementTap(e, replacement)}
                   disabled={disabled || replacement.isFinished}
                   className={`relative w-full p-2 rounded-lg text-sm font-medium transition-all duration-200 flex flex-col items-start text-left min-h-[60px] shadow-sm ${
                     disabled || replacement.isFinished

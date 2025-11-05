@@ -24,6 +24,7 @@ const Modal = ({ isOpen, onClose, children }) => {
       // z-index muy alto para dominar cualquier contexto de apilamiento accidental
       className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999] p-4"
       onClick={onClose}
+      onTouchEnd={(e) => { e.stopPropagation(); onClose(); }}
       role="dialog"
       aria-modal="true"
     >

@@ -36,7 +36,7 @@ const pickMethodLabel = (methodLike) => {
  */
 export const extractOrderPayments = (order) => {
   // Para pedidos de desayuno, calculamos correctamente el total
-  const isBreakfast = order.type === 'breakfast' || Array.isArray(order?.breakfasts);
+  const isBreakfast = order.type === 'breakfast' || (Array.isArray(order?.breakfasts) && order.breakfasts.length > 0);
   const total = isBreakfast && typeof window !== 'undefined' && window.calculateCorrectBreakfastTotal
     ? Math.floor(window.calculateCorrectBreakfastTotal(order)) || 0
     : Math.floor(Number(order?.total || 0)) || 0;
@@ -140,7 +140,7 @@ export const sumPaymentsByMethod = (orders = []) => {
 
 /** Helpers de clasificación por tipo/ubicación */
 export const isBreakfastOrder = (order) =>
-  order?.type === 'breakfast' || Array.isArray(order?.breakfasts);
+  order?.type === 'breakfast' || (Array.isArray(order?.breakfasts) && order.breakfasts.length > 0);
 
 export const isDeliveryOrder = (order) => {
   const tag =
@@ -171,7 +171,7 @@ export const isSalonOrder = (order) => {
 
   // Para desayunos creados como mesa o para llevar por mesero, también cuenta como salón
   const t = norm(order?.orderType || order?.breakfasts?.[0]?.orderType || '');
-  if (Array.isArray(order?.breakfasts) && (t.includes('table') || t.includes('takeaway') || t.includes('para llevar') || t.includes('llevar'))) {
+  if (Array.isArray(order?.breakfasts) && order.breakfasts.length > 0 && (t.includes('table') || t.includes('takeaway') || t.includes('para llevar') || t.includes('llevar'))) {
     return true;
   }
 

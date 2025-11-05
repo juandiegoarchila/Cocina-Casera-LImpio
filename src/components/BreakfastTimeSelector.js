@@ -1,9 +1,10 @@
 //src/components/BreakfastTimeSelector.js
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 
 const BreakfastTimeSelector = ({ times, selectedTime, setSelectedTime, onConfirm }) => {
   const [error, setError] = useState('');
+  const lastTouchTimeRef = useRef(0);
 
   const timeToMinutes = (timeStr) => {
     if (!timeStr) return 0;
@@ -132,6 +133,32 @@ const BreakfastTimeSelector = ({ times, selectedTime, setSelectedTime, onConfirm
     onConfirm();
   };
 
+  const handleTimeTap = (e, time) => {
+    if (e?.type === 'touchend') {
+      e.preventDefault();
+      e.stopPropagation();
+      lastTouchTimeRef.current = Date.now();
+      setSelectedTime(time);
+      setError('');
+      return;
+    }
+    if (Date.now() - lastTouchTimeRef.current < 350) return;
+    setSelectedTime(time);
+    setError('');
+  };
+
+  const handleConfirmTap = (e) => {
+    if (e?.type === 'touchend') {
+      e.preventDefault();
+      e.stopPropagation();
+      lastTouchTimeRef.current = Date.now();
+      handleConfirm();
+      return;
+    }
+    if (Date.now() - lastTouchTimeRef.current < 350) return;
+    handleConfirm();
+  };
+
   return (
     <div className="bg-gradient-to-r from-green-50 to-green-100 p-1 xs:p-2 sm:p-3 rounded-lg shadow-sm">
       <h2 className="text-[10px] xs:text-xs sm:text-sm font-semibold mb-1 xs:mb-2 flex items-center text-green-700">
@@ -144,13 +171,8 @@ const BreakfastTimeSelector = ({ times, selectedTime, setSelectedTime, onConfirm
           {times.map((time) => (
             <button
               key={time.id}
-              onClick={() => {
-                setSelectedTime(time);
-                setError('');
-                if (process.env.NODE_ENV === 'development') {
-                  console.log(`Hora seleccionada: ${time.name}, id: ${time.id}`);
-                }
-              }}
+              onClick={(e) => handleTimeTap(e, time)}
+              onTouchEnd={(e) => handleTimeTap(e, time)}
               disabled={isTimeDisabled(time)}
               className={`relative p-1 xs:p-2 rounded-lg text-[10px] xs:text-xs sm:text-sm font-medium transition-all duration-200 flex items-center justify-center text-center min-h-[30px] xs:min-h-[40px] shadow-sm ${
                 selectedTime?.id === time.id
@@ -179,7 +201,8 @@ const BreakfastTimeSelector = ({ times, selectedTime, setSelectedTime, onConfirm
         <p className="text-[10px] xs:text-xs text-red-600 mt-1">{error}</p>
       )}
       <button
-        onClick={handleConfirm}
+        onClick={handleConfirmTap}
+        onTouchEnd={handleConfirmTap}
         disabled={!selectedTime || !selectedTime.name}
         className={`mt-2 bg-green-500 hover:bg-green-600 text-white px-5 py-2 rounded-lg text-sm transition-colors ${
           !selectedTime || !selectedTime.name ? 'opacity-50 cursor-not-allowed' : ''

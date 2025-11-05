@@ -1,6 +1,19 @@
 //src/components/BreakfastTimeSelector.js
 import { isMobile, encodeMessage } from '../utils/Helpers';
 
+// Precios fijos de las adiciones (alineado con BreakfastCalculations.js)
+const ADDITIONS_PRICES = {
+  'chocolate': 3000,
+  'pan': 500,
+  'porción de arroz': 3000,
+  'coca cola 1.5lt pet': 8000,
+  'cafe con leche': 3000,
+  'coca-cola 350ml vir': 3000,
+  'bebida adicional': 1000,
+  'agua brisa pet 600ml': 2000,
+  'proteína adicional': 5000
+};
+
 export const initializeBreakfastData = ({ address, phoneNumber, details, isWaitress = false }) => ({
   id: 0,
   type: null,
@@ -122,17 +135,35 @@ export const calculateBreakfastPrice = (breakfast, userRole, breakfastTypes = []
     source: 'BreakfastLogic.js'
   });
 
-  const additionsPrice = breakfast.additions?.reduce((sum, item) => {
-    const itemPrice = (item.price || 0) * (item.quantity || 1);
-    console.log('🔍 [BreakfastLogic] Adición individual:', { 
-      name: item.name, 
-      price: item.price, 
-      quantity: item.quantity, 
-      itemPrice,
-      source: 'BreakfastLogic.js'
-    });
-    return sum + itemPrice;
-  }, 0) || 0;
+  // Calcular precio de adiciones con mapeo fijo y normalización
+  let additionsPrice = 0;
+  if (breakfast.additions && Array.isArray(breakfast.additions) && breakfast.additions.length > 0) {
+    additionsPrice = breakfast.additions.reduce((total, addition) => {
+      if (!addition) return total;
+
+      const rawName = typeof addition === 'string' ? addition : addition.name;
+      if (!rawName) return total;
+
+      const normalizedName = String(rawName).toLowerCase().trim();
+      const mappedPrice = Object.prototype.hasOwnProperty.call(ADDITIONS_PRICES, normalizedName)
+        ? ADDITIONS_PRICES[normalizedName]
+        : (typeof addition.price === 'number' ? addition.price : 0);
+
+      const quantity = (typeof addition.quantity === 'number' && addition.quantity > 0) ? addition.quantity : 1;
+      const itemTotal = (mappedPrice || 0) * quantity;
+
+      console.log('🔍 [BreakfastLogic] Adición individual (con mapeo):', {
+        name: rawName,
+        normalizedName,
+        mappedPrice,
+        quantity,
+        itemTotal,
+        source: 'BreakfastLogic.js'
+      });
+
+      return total + itemTotal;
+    }, 0);
+  }
 
   console.log('🔍 [BreakfastLogic] Precio total adiciones:', additionsPrice);
 

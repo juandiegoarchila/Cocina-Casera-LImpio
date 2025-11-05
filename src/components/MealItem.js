@@ -1,5 +1,5 @@
 //src/components/MealItem.js
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import OptionSelector from './OptionSelector';
 import TimeSelector from './TimeSelector';
 import AddressInput from './AddressInput';
@@ -42,14 +42,40 @@ const MealItem = ({
   const [isExpanded, setIsExpanded] = useState(meal?.__startCollapsed ? false : true);
   const [isAdditionsExpanded, setIsAdditionsExpanded] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
-  const [collapseTimeout, setCollapseTimeout] = useState(null);
+  // Auto-cierre de sección de Adiciones: usar ref para evitar cierres indeseados
+  const additionsCloseRef = useRef(null);
   const [touchStartX, setTouchStartX] = useState(0);
-  const [isSwiping, setIsSwiping] = useState(false);
+  const [touchStartY, setTouchStartY] = useState(0);
+  const [isSwiping, setIsSwiping] = useState(false); // usado como bandera de arrastre
+  const [dragDx, setDragDx] = useState(0); // desplazamiento actual en px
+  const dragStartTimeRef = useRef(0);
+  const dragJustHappenedRef = useRef(false); // para bloquear clicks fantasma tras un arrastre
   const [showMaxMealsError, setShowMaxMealsError] = useState(false);
   const slideRef = useRef(null);
   const containerRef = useRef(null);
   const [tables, setTables] = useState([]);
   const [isAddressValid, setIsAddressValid] = useState(false);
+  // Control de auto-avance para evitar "rebote" cuando el usuario navega manualmente
+  const advanceTimeoutRef = useRef(null);
+
+  const clearAdvanceTimeout = () => {
+    if (advanceTimeoutRef.current) {
+      clearTimeout(advanceTimeoutRef.current);
+      advanceTimeoutRef.current = null;
+    }
+  };
+
+  const scheduleAdvance = () => {
+    clearAdvanceTimeout();
+    advanceTimeoutRef.current = setTimeout(() => {
+      // Asegurar que haya transición al avanzar automáticamente
+      if (slideRef.current) {
+        slideRef.current.style.transition = 'transform 300ms ease-in-out';
+      }
+      setCurrentSlide((prev) => prev + 1);
+      advanceTimeoutRef.current = null;
+    }, 300);
+  };
   useEffect(() => {
     if (!isTableOrder) return;
     const q = query(collection(db, 'tables'), orderBy('name', 'asc'));
@@ -135,7 +161,7 @@ const MealItem = ({
         (Array.isArray(updatedMeal.principle) && updatedMeal.principle.length >= 1 && updatedMeal.principle.length <= 2 && !updatedMeal.principle.some(opt => opt.name === 'Remplazo por Principio'))
       );
       if (isNewSelectionCompleteRice && currentSlide < slides.length - 1) {
-        setTimeout(() => setCurrentSlide(currentSlide + 1), 300);
+        scheduleAdvance();
       }
     } else {
       onMealChange(id, field, value);
@@ -159,20 +185,20 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
       case 'cutlery':
         currentSlideIsComplete = updatedMeal?.cutlery !== null;
         if (currentSlideIsComplete && currentSlide < slides.length - 1) {
-          setTimeout(() => setCurrentSlide(currentSlide + 1), 300);
+          scheduleAdvance();
         }
         break;
       case 'time':
         currentSlideIsComplete = !!updatedMeal?.time;
         if (currentSlideIsComplete && currentSlide < slides.length - 1) {
-          setTimeout(() => setCurrentSlide(currentSlide + 1), 300);
+          scheduleAdvance();
         }
         break;
       case 'payment':
       case 'paymentMethod':
         currentSlideIsComplete = !!updatedMeal?.[field];
         if (currentSlideIsComplete && currentSlide < slides.length - 1) {
-          setTimeout(() => setCurrentSlide(currentSlide + 1), 300);
+          scheduleAdvance();
         }
         break;
       case 'sides':
@@ -182,21 +208,23 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
       case 'additions':
         currentSlideIsComplete = true;
         if (field === 'additions' && isAdditionsExpanded) {
-          if (collapseTimeout) clearTimeout(collapseTimeout);
-          const timeout = setTimeout(() => setIsAdditionsExpanded(false), 10000);
-          setCollapseTimeout(timeout);
+          if (additionsCloseRef.current) clearTimeout(additionsCloseRef.current);
+          additionsCloseRef.current = setTimeout(() => {
+            setIsAdditionsExpanded(false);
+            additionsCloseRef.current = null;
+          }, 10000);
         }
         break;
       case 'tableNumber':
         currentSlideIsComplete = !!updatedMeal?.tableNumber;
         if (currentSlideIsComplete && currentSlide < slides.length - 1) {
-          setTimeout(() => setCurrentSlide(currentSlide + 1), 300);
+          scheduleAdvance();
         }
         break;
       case 'orderType':
         currentSlideIsComplete = !!updatedMeal?.orderType;
         if (currentSlideIsComplete && currentSlide < slides.length - 1) {
-          setTimeout(() => setCurrentSlide(currentSlide + 1), 300);
+          scheduleAdvance();
         }
         break;
       default:
@@ -204,7 +232,7 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
     }
 
     if (currentSlideIsComplete && field !== 'additions' && field !== 'principle' && currentSlide < slides.length - 1) {
-      setTimeout(() => setCurrentSlide(currentSlide + 1), 300);
+      scheduleAdvance();
     }
   };
 
@@ -230,13 +258,13 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
       );
 
       if (checkPrincipleComplete && currentSlide < slides.length - 1) {
-        setTimeout(() => setCurrentSlide(currentSlide + 1), 300);
+        scheduleAdvance();
       }
     } else {
       onMealChange(id, field, selection);
       if (replacement) onMealChange(id, `${field}Replacement`, replacement);
       if (currentSlide < slides.length - 1) {
-        setTimeout(() => setCurrentSlide(currentSlide + 1), 300);
+        scheduleAdvance();
       }
     }
   };
@@ -249,7 +277,7 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
 
   const handleAddressConfirm = (confirmedDetails) => {
     onMealChange(id, 'address', confirmedDetails);
-    if (currentSlide < slides.length - 1) setTimeout(() => setCurrentSlide(currentSlide + 1), 300);
+    if (currentSlide < slides.length - 1) scheduleAdvance();
   };
 
   const filteredSoups = soups.filter(soup => soup.name !== 'Solo bandeja' && soup.name !== 'Remplazo por Sopa');
@@ -640,9 +668,10 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
 
     return () => {
       if (mealItem) mealItem.removeEventListener('updateSlide', handleUpdateSlide);
-      if (collapseTimeout) clearTimeout(collapseTimeout);
+      if (additionsCloseRef.current) clearTimeout(additionsCloseRef.current);
     };
-  }, [id, collapseTimeout]);
+  }, [id]);
+  
 
   useEffect(() => {
     if (!containerRef.current || !slideRef.current || !isExpanded) {
@@ -688,6 +717,7 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
   }, [currentSlide, isExpanded, soups, soupReplacements, principles, proteins, drinks, sides, times, paymentMethods, additions]);
 
   const handleNext = () => {
+    clearAdvanceTimeout();
     if (currentSlide < slides.length - 1) {
       setCurrentSlide(currentSlide + 1);
       slideRef.current.style.transform = `translateX(-${(currentSlide + 1) * 100}%)`;
@@ -695,6 +725,7 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
   };
 
   const handlePrev = () => {
+    clearAdvanceTimeout();
     if (currentSlide > 0 && currentSlide < slides.length) {
       setCurrentSlide(currentSlide - 1);
       slideRef.current.style.transform = `translateX(-${(currentSlide - 1) * 100}%)`;
@@ -702,33 +733,114 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
   };
 
   const handleTouchStart = (e) => {
-    setTouchStartX(e.touches[0].clientX);
+    const touch = e.touches[0];
+    setTouchStartX(touch.clientX);
+    setTouchStartY(touch.clientY);
     setIsSwiping(false);
-  };
-
-  const handleTouchMove = (e) => {
-    if (isSwiping || !slideRef.current) return;
-    const touchX = e.touches[0].clientX;
-    const diff = touchStartX - touchX;
-
-    if (Math.abs(diff) > 100) {
-      setIsSwiping(true);
-      if (diff > 0 && currentSlide < slides.length - 1) {
-        setCurrentSlide(currentSlide + 1);
-        slideRef.current.style.transform = `translateX(-${(currentSlide + 1) * 100}%)`;
-      } else if (diff < 0 && currentSlide > 0) {
-        setCurrentSlide(currentSlide - 1);
-        slideRef.current.style.transform = `translateX(-${(currentSlide - 1) * 100}%)`;
-      }
+    setDragDx(0);
+    dragStartTimeRef.current = Date.now();
+  // no marcamos arrastre todavía; solo cuando detectemos predominancia horizontal en touchMove
+    dragJustHappenedRef.current = false;
+    clearAdvanceTimeout(); // si había un auto-avance programado, cancelarlo al comenzar un arrastre
+    // Desactivar transición para seguir el dedo (solo si vamos a arrastrar)
+    if (slideRef.current) {
+      slideRef.current.style.transition = 'none';
+    }
+    if (containerRef.current) {
+      containerRef.current.classList.add('dragging');
     }
   };
 
-  const handleTouchEnd = () => {
-    setTouchStartX(0);
-    setIsSwiping(false);
+  const handleTouchMove = (e) => {
+    if (!slideRef.current || !containerRef.current) return;
+    const touchX = e.touches[0].clientX;
+    const touchY = e.touches[0].clientY;
+    const dx = touchX - touchStartX; // >0 derecha, <0 izquierda
+    const dy = touchY - touchStartY;
+
+    // Solo arrastrar si hay predominancia horizontal
+    if (Math.abs(dx) > Math.abs(dy) + 10) {
+      e.preventDefault(); // evitar scroll vertical mientras arrastramos horizontalmente
+      setIsSwiping(true);
+      dragJustHappenedRef.current = true;
+      try { window.__isMealDragging = true; } catch {}
+      setDragDx(dx);
+      const width = containerRef.current.offsetWidth || 1;
+      const basePercent = -(currentSlide * 100);
+      const dragPercent = (dx / width) * 100;
+      const minPercent = -((slides.length - 1) * 100);
+      const maxPercent = 0;
+      const nextPercent = basePercent + dragPercent;
+      const clamped = Math.max(minPercent, Math.min(maxPercent, nextPercent));
+      slideRef.current.style.transform = `translateX(${clamped}%)`;
+    }
   };
 
+  const finishDrag = useCallback(() => {
+    // Solo actuar si hubo arrastre
+    if (!isSwiping && Math.abs(dragDx) < 2) return;
+    const width = containerRef.current ? containerRef.current.offsetWidth : 1;
+    const dx = dragDx;
+    const dt = Date.now() - dragStartTimeRef.current;
+    const velocity = Math.abs(dx) / Math.max(dt, 1); // px/ms
+
+    // Restaurar transición para el snap
+    if (slideRef.current) {
+      slideRef.current.style.transition = 'transform 250ms ease-out';
+    }
+
+    // Criterios para cambiar de slide: desplazamiento suficiente o gesto rápido
+    const distanceThreshold = width * 0.22; // 22% del ancho
+    const velocityThreshold = 0.6; // px/ms (~600px en 1s)
+
+    let targetIndex = currentSlide;
+    if ((dx < -distanceThreshold || (dx < -30 && velocity > velocityThreshold)) && currentSlide < slides.length - 1) {
+      targetIndex = currentSlide + 1;
+    } else if ((dx > distanceThreshold || (dx > 30 && velocity > velocityThreshold)) && currentSlide > 0) {
+      targetIndex = currentSlide - 1;
+    }
+
+    setCurrentSlide(targetIndex);
+    if (slideRef.current) {
+      slideRef.current.style.transform = `translateX(-${targetIndex * 100}%)`;
+      // limpiar transición después del snap para no interferir con futuros arrastres
+      setTimeout(() => {
+        if (slideRef.current) slideRef.current.style.transition = '';
+      }, 260);
+    }
+
+    // Limpiar estado de arrastre
+    setTouchStartX(0);
+    setTouchStartY(0);
+    setDragDx(0);
+    setIsSwiping(false);
+    if (containerRef.current) {
+      containerRef.current.classList.remove('dragging');
+    }
+    // marca global de arrastre reciente para que hijos ignoren touchend inmediato
+    try { window.__lastMealDragTime = Date.now(); window.__isMealDragging = false; } catch {}
+    // Evitar clicks fantasma inmediatamente después del arrastre
+    setTimeout(() => { dragJustHappenedRef.current = false; }, 300);
+  }, [isSwiping, dragDx, currentSlide, slides.length]);
+
+  const handleTouchEnd = () => {
+    finishDrag();
+  };
+
+  useEffect(() => {
+    // Fallback global: si el touch termina fuera del contenedor o el navegador emite touchcancel
+    const onGlobalTouchEnd = () => finishDrag();
+    const onGlobalTouchCancel = () => finishDrag();
+    window.addEventListener('touchend', onGlobalTouchEnd, { passive: true, capture: true });
+    window.addEventListener('touchcancel', onGlobalTouchCancel, { passive: true, capture: true });
+    return () => {
+      window.removeEventListener('touchend', onGlobalTouchEnd, { capture: true });
+      window.removeEventListener('touchcancel', onGlobalTouchCancel, { capture: true });
+    };
+  }, [finishDrag]);
+
   const handleSlideChange = (index) => {
+    clearAdvanceTimeout();
     if (slideRef.current) {
       setCurrentSlide(index);
       slideRef.current.style.transform = `translateX(-${index * 100}%)`;
@@ -860,6 +972,13 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
               onTouchStart={handleTouchStart}
               onTouchMove={handleTouchMove}
               onTouchEnd={handleTouchEnd}
+              onClickCapture={(e) => {
+                // Si hubo arrastre reciente, bloquear click para evitar selecciones accidentales
+                if (dragJustHappenedRef.current) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }
+              }}
               style={{ transition: 'height 0.3s ease-in-out' }}
             >
               <div
@@ -916,7 +1035,10 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
           className="flex items-center cursor-pointer justify-between p-2 hover:bg-gray-50"
           onClick={() => {
             setIsAdditionsExpanded(!isAdditionsExpanded);
-            if (collapseTimeout) clearTimeout(collapseTimeout);
+            if (additionsCloseRef.current) {
+              clearTimeout(additionsCloseRef.current);
+              additionsCloseRef.current = null;
+            }
           }}
         >
           <h3 className="text-sm font-medium text-gray-700 flex flex-wrap items-center gap-x-1">
@@ -929,7 +1051,7 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
           </span>
         </div>
         {isAdditionsExpanded && (
-          <div className="mt-2">
+          <div className="mt-2" onMouseEnter={() => { if (additionsCloseRef.current) { clearTimeout(additionsCloseRef.current); additionsCloseRef.current = null; } }} onTouchStart={() => { if (additionsCloseRef.current) { clearTimeout(additionsCloseRef.current); additionsCloseRef.current = null; } }}>
             <OptionSelector
               title="Adiciones (por almuerzo)"
               emoji="➕"

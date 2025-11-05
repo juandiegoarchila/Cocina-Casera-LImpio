@@ -1,5 +1,5 @@
 //src/components/PaymentSelector.js
-import React from 'react';
+import React, { useRef } from 'react';
 import { ReactComponent as NequiLogo } from '../assets/nequi-logo.svg';
 import { ReactComponent as DaviplataLogo } from '../assets/daviplata-logo.svg';
 import EfectivoPNG from '../assets/efectivo.png';
@@ -11,6 +11,45 @@ import EfectivoPNG from '../assets/efectivo.png';
  * (mantengo soporte a setSelectedPayment por compatibilidad)
  */
 const PaymentSelector = ({ paymentMethods, selectedPayment, onChange, setSelectedPayment }) => {
+  const lastTouchTimeRef = useRef(0);
+  const touchInfoRef = useRef({ x: 0, y: 0, moved: false });
+
+  const onTouchStartGeneric = (e) => {
+    const t = e.touches && e.touches[0];
+    if (!t) return;
+    touchInfoRef.current = { x: t.clientX, y: t.clientY, moved: false };
+  };
+
+  const onTouchMoveGeneric = (e) => {
+    const t = e.touches && e.touches[0];
+    if (!t) return;
+    const dx = t.clientX - touchInfoRef.current.x;
+    const dy = t.clientY - touchInfoRef.current.y;
+    if (Math.abs(dx) > 8 || Math.abs(dy) > 8) touchInfoRef.current.moved = true;
+  };
+
+  const shouldIgnoreTap = () => {
+    const draggedRecently = (typeof window !== 'undefined' && window.__lastMealDragTime)
+      ? (Date.now() - window.__lastMealDragTime) < 300
+      : false;
+    const draggingNow = (typeof window !== 'undefined' && window.__isMealDragging) ? true : false;
+    return draggingNow || draggedRecently || touchInfoRef.current.moved;
+  };
+
+  const handleTap = (e, method) => {
+    if (shouldIgnoreTap()) return;
+    if (e?.type === 'touchend') {
+      e.preventDefault();
+      e.stopPropagation();
+      lastTouchTimeRef.current = Date.now();
+      if (typeof onChange === 'function') onChange(method);
+      if (typeof setSelectedPayment === 'function') setSelectedPayment(method);
+      return;
+    }
+    if (Date.now() - lastTouchTimeRef.current < 350) return;
+    if (typeof onChange === 'function') onChange(method);
+    if (typeof setSelectedPayment === 'function') setSelectedPayment(method);
+  };
   const getColorClass = (methodName) => {
     switch (methodName) {
       case 'Efectivo':
@@ -41,7 +80,10 @@ const PaymentSelector = ({ paymentMethods, selectedPayment, onChange, setSelecte
             <button
               key={method.id}
               type="button"
-              onClick={() => handleSelect(method)}
+              onClick={(e) => handleTap(e, method)}
+              onTouchStart={onTouchStartGeneric}
+              onTouchMove={onTouchMoveGeneric}
+              onTouchEnd={(e) => handleTap(e, method)}
               className={`payment-btn p-1 sm:p-2 rounded text-xs sm:text-sm font-medium transition-all duration-200
                           flex flex-col items-center justify-center text-center min-h-[30px] sm:min-h-[40px]
                           shadow-sm gap-y-1 ${isActive ? getColorClass(method.name) : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'}`}

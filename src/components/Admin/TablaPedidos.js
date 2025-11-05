@@ -85,7 +85,6 @@ import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { classNames } from '../../utils/classNames.js';
 import { cleanText, getAddressDisplay } from './utils.js';
 import { calculateMealPrice } from '../../utils/MealCalculations';
-import { calculateBreakfastPrice } from '../../utils/BreakfastLogic';
 import PaymentSplitEditor from '../common/PaymentSplitEditor';
 import { summarizePayments, sumPaymentsByMethod, defaultPaymentsForOrder } from '../../utils/payments';
 import QRCode from 'qrcode';
@@ -163,31 +162,27 @@ const areMealsIdentical = (meal1, meal2) => {
   return true;
 };
 
-// Función para recalcular el total correcto para desayunos
+import { calculateBreakfastPrice } from '../../utils/BreakfastCalculations';
+
+// Función para calcular el total correcto para desayunos
 const calculateCorrectBreakfastTotal = (order) => {
+  // Verificar si es un pedido de desayuno
   const isBreakfast = order.type === 'breakfast' || (Array.isArray(order.breakfasts) && order.breakfasts.length > 0);
-  if (!isBreakfast) {
+  if (!isBreakfast || !Array.isArray(order.breakfasts)) {
     return order.total || 0;
   }
-  
-  // Determinar si es domicilio verificando la dirección
-  const hasAddress = order.breakfasts?.some(b => b.address && (b.address.address || b.address.phoneNumber)) || 
-                    (order.address && (order.address.address || order.address.phoneNumber));
-  
-  // Si es domicilio, usar 'takeaway', si no, usar 'table'
-  const correctOrderType = hasAddress ? 'takeaway' : 'table';
-  
-  // Crear copias de los desayunos con el orderType correcto
-  const breakfastsToProcess = Array.isArray(order.breakfasts) ? order.breakfasts : [];
-  const breakfastsWithCorrectType = breakfastsToProcess.map(b => ({
-    ...b,
-    orderType: correctOrderType
-  }));
-  
-  // Calcular el total usando la función correcta
-  return breakfastsWithCorrectType.reduce((sum, breakfast) => {
-    return sum + calculateBreakfastPrice(breakfast, 3);
+
+  // Inferir el tipo de orden por cada desayuno (domicilio vs mesa)
+  const total = order.breakfasts.reduce((sum, breakfast, idx) => {
+    const hasAddress = !!(breakfast?.address?.address || breakfast?.address?.phoneNumber);
+    const breakfastWithType = { ...breakfast, orderType: hasAddress ? 'takeaway' : (breakfast.orderType || 'table') };
+    const itemTotal = calculateBreakfastPrice(breakfastWithType);
+    console.log('🔍 [TablaPedidos] Desayuno calculado:', { idx: idx + 1, orderType: breakfastWithType.orderType, additions: breakfastWithType.additions, itemTotal });
+    return sum + itemTotal;
   }, 0);
+
+  console.log('🔍 [TablaPedidos] Total desayunos recalculado:', total);
+  return total;
 };
 
 // Exportar la función al objeto window para poder usarla desde otros archivos
@@ -656,11 +651,12 @@ const handlePrintDeliveryReceipt = (order, allSides = []) => {
       const b = group.breakfast;
       const countText = group.count > 1 ? `${group.count} Desayunos iguales` : '1 Desayuno';
       
-      // Forzar orderType='table' para calcular el precio correcto
-      const breakfastForPricing = { ...b, orderType: 'table' };
-      
-      // Calcular precio usando la función correcta
-      const unitPrice = calculateBreakfastPrice(breakfastForPricing, 3);
+  // Inferir orderType según si tiene dirección (domicilio => 'takeaway')
+  const hasAddress = !!(b?.address?.address || b?.address?.phoneNumber);
+  const breakfastForPricing = { ...b, orderType: hasAddress ? 'takeaway' : (b.orderType || 'table') };
+
+  // Calcular precio usando la función centralizada
+  const unitPrice = calculateBreakfastPrice(breakfastForPricing);
       const groupTotal = (unitPrice * group.count).toLocaleString('es-CO');
       
       resumen += `<div style='margin-top:10px;'><b>🍽 ${countText} – $${groupTotal} (${pago})</b></div>`;

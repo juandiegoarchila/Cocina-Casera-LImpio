@@ -1,22 +1,36 @@
 // src/utils/BreakfastCalculations.js
 
-export const calculateBreakfastPrice = (breakfast, userRole, breakfastTypes = []) => {
-  console.log('🔍 [BreakfastCalculations] calculateBreakfastPrice llamado con:', { 
-    breakfast: {
-      type: breakfast?.type?.name,
-      broth: breakfast?.broth?.name,
-      orderType: breakfast?.orderType,
-      additions: breakfast?.additions
-    }, 
-    userRole, 
-    breakfastTypesLength: breakfastTypes?.length || 0,
-    source: 'BreakfastCalculations.js'
-  });
+// Precios fijos de las adiciones
+const ADDITIONS_PRICES = {
+  'chocolate': 3000,
+  'pan': 500,
+  'porción de arroz': 3000,
+  'coca cola 1.5lt pet': 8000,
+  'cafe con leche': 3000,
+  'coca-cola 350ml vir': 3000,
+  'bebida adicional': 1000,
+  'agua brisa pet 600ml': 2000,
+  'proteína adicional': 5000
+};
 
+// Constantes para tipos de orden
+const ORDER_TYPE = {
+  TABLE: 'table',
+  TAKEAWAY: 'takeaway'
+};
+
+export const calculateBreakfastPrice = (breakfast, userRole, breakfastTypes = []) => {
+  // Validación inicial
   if (!breakfast || !breakfast.type || !breakfast.type.name) {
-    console.log('[BreakfastCalculations] ❌ No breakfast or type defined:', breakfast);
+    console.log('[BreakfastCalculations] ❌ No hay desayuno o tipo definido');
     return 0;
   }
+
+  // Logging inicial
+  console.log('🔍 [BreakfastCalculations] Iniciando cálculo:', {
+    desayuno: breakfast?.type?.name,
+    adicionales: breakfast?.additions
+  });
 
   const typeName = breakfast.type.name.toLowerCase().trim();
   const brothName = (breakfast.broth?.name || '').toLowerCase().trim();
@@ -63,17 +77,46 @@ export const calculateBreakfastPrice = (breakfast, userRole, breakfastTypes = []
     source: 'BreakfastCalculations.js'
   });
 
-  const additionsPrice = breakfast.additions?.reduce((sum, item) => {
-    const itemPrice = (item.price || 0) * (item.quantity || 1);
-    console.log('🔍 [BreakfastCalculations] Adición individual:', { 
-      name: item.name, 
-      price: item.price, 
-      quantity: item.quantity, 
-      itemPrice,
-      source: 'BreakfastCalculations.js'
-    });
-    return sum + itemPrice;
-  }, 0) || 0;
+  // Calcular precio de adiciones
+  let additionsPrice = 0;
+
+  if (breakfast.additions && Array.isArray(breakfast.additions) && breakfast.additions.length > 0) {
+    console.log('🔍 [BreakfastCalculations] Procesando adiciones:', breakfast.additions);
+    
+    additionsPrice = breakfast.additions.reduce((total, addition) => {
+      if (!addition) return total;
+
+      // Permitir adiciones en forma de string o de objeto { name, quantity }
+      const rawName = typeof addition === 'string' ? addition : addition.name;
+      if (!rawName) return total;
+
+      const normalizedName = String(rawName).toLowerCase().trim();
+      const mappedPrice = ADDITIONS_PRICES.hasOwnProperty(normalizedName)
+        ? ADDITIONS_PRICES[normalizedName]
+        : (typeof addition.price === 'number' ? addition.price : 0);
+
+      if (!mappedPrice) {
+        console.log('⚠️ [BreakfastCalculations] Precio no encontrado para adición, usando 0:', normalizedName);
+      }
+
+      const quantity = (typeof addition.quantity === 'number' && addition.quantity > 0) ? addition.quantity : 1;
+      const itemTotal = mappedPrice * quantity;
+
+      console.log('🔍 [BreakfastCalculations] Adición calculada:', {
+        nombre: rawName,
+        nombreNormalizado: normalizedName,
+        precioUsado: mappedPrice,
+        cantidad: quantity,
+        subtotal: itemTotal
+      });
+
+      return total + itemTotal;
+    }, 0);
+
+    console.log('🔍 [BreakfastCalculations] Total adiciones:', additionsPrice);
+  } else {
+    console.log('🔍 [BreakfastCalculations] No hay adiciones para calcular');
+  }
 
   console.log('🔍 [BreakfastCalculations] Precio total adiciones:', additionsPrice);
 

@@ -101,6 +101,7 @@ const DeliveryOrdersPage = () => {
         latestLunch = snapshot.docs.map((d) => ({ 
           id: d.id, 
           type: 'lunch', 
+          source: 'orders',
           ...d.data() 
         }));
         recomputeAllOrders();
@@ -110,6 +111,7 @@ const DeliveryOrdersPage = () => {
         latestBreakfast = snapshot.docs.map((d) => ({ 
           id: d.id, 
           type: 'breakfast', 
+          source: 'deliveryBreakfastOrders',
           ...d.data() 
         }));
         recomputeAllOrders();
@@ -124,6 +126,7 @@ const DeliveryOrdersPage = () => {
           return {
             id: doc.id,
             type: isBreakfast ? 'breakfast' : 'lunch',
+            source: 'clientOrders',
             ...data,
             // Normalizar la estructura para compatibilidad
             meals: data.meals || [],
@@ -337,8 +340,44 @@ const DeliveryOrdersPage = () => {
         }
       }
       
-      const collectionName = order?.type === 'breakfast' ? 'deliveryBreakfastOrders' : 'orders';
-      await updateDoc(doc(db, collectionName, orderId), updateData);
+      // Helper para actualizar en la colección correcta con fallback
+      const tryCollections = [];
+      const preferred = (order?.source === 'clientOrders' || order?.source === 'client')
+        ? 'clientOrders'
+        : (order?.type === 'breakfast' ? 'deliveryBreakfastOrders' : 'orders');
+      const candidates = [preferred, 'clientOrders', 'deliveryBreakfastOrders', 'orders'];
+      for (const c of candidates) {
+        if (!tryCollections.includes(c)) tryCollections.push(c);
+      }
+
+      let updated = false;
+      let lastErr = null;
+      for (const coll of tryCollections) {
+        try {
+          await updateDoc(doc(db, coll, orderId), updateData);
+          updated = true;
+          break;
+        } catch (err) {
+          lastErr = err;
+          const msg = String(err?.message || err);
+          if (/No document to update/i.test(msg)) {
+            // probar siguiente colección
+            continue;
+          }
+          // otros errores: permisos, etc.
+          throw err;
+        }
+      }
+      if (!updated) {
+        throw lastErr || new Error('No se pudo actualizar el documento en ninguna colección.');
+      }
+
+      // Actualización optimista local para reflejar el cambio inmediato en la tabla
+      setOrders((prev) => prev.map((o) => (
+        o.id === orderId
+          ? { ...o, ...updateData, deliveryPerson: updateData.deliveryPerson || o.deliveryPerson }
+          : o
+      )));
       
       // Mensaje de éxito personalizado
       const successMsg = updateData.deliveryPerson 
@@ -358,8 +397,31 @@ const DeliveryOrdersPage = () => {
   const handleDeliveryChange = async (orderId, deliveryPerson) => {
     try {
       const order = orders.find((o) => o.id === orderId);
-      const collectionName = order?.type === 'breakfast' ? 'deliveryBreakfastOrders' : 'orders';
-      await updateDoc(doc(db, collectionName, orderId), { deliveryPerson: deliveryPerson || null, updatedAt: new Date() });
+      const payload = { deliveryPerson: deliveryPerson || null, updatedAt: new Date() };
+      // Fallback de colecciones como en handleStatusChange
+      const preferred = (order?.source === 'clientOrders' || order?.source === 'client')
+        ? 'clientOrders'
+        : (order?.type === 'breakfast' ? 'deliveryBreakfastOrders' : 'orders');
+      const candidates = [preferred, 'clientOrders', 'deliveryBreakfastOrders', 'orders'];
+      let updated = false;
+      let lastErr = null;
+      for (const coll of candidates) {
+        try {
+          await updateDoc(doc(db, coll, orderId), payload);
+          updated = true;
+          break;
+        } catch (err) {
+          lastErr = err;
+          if (/No document to update/i.test(String(err?.message || err))) continue;
+          throw err;
+        }
+      }
+      if (!updated) throw lastErr || new Error('No se pudo asignar domiciliario: documento inexistente.');
+
+      // Actualización optimista local
+      setOrders((prev) => prev.map((o) => (
+        o.id === orderId ? { ...o, ...payload } : o
+      )));
       setSuccess('Domiciliario asignado.');
     } catch (e) {
       setError(`Error al asignar domiciliario: ${e.message}`);

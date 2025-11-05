@@ -3,6 +3,24 @@
 @tailwind components;
 @tailwind utilities;
 
+/* iOS/Android: eliminar resaltado gris al tocar y unificar apariencia de botones */
+html, body, #root {
+  -webkit-tap-highlight-color: transparent;
+}
+button, a, .payment-btn {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+input, textarea, select, .react-select__control {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+/* Evitar que iOS imponga estilos nativos que cambian el color de fondo */
+button, .payment-btn {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
 /* WebKit (Chrome, Safari, Edge) */
 .custom-scrollbar::-webkit-scrollbar {
   width: 8px;

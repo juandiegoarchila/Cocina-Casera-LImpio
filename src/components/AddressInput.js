@@ -1,5 +1,5 @@
 // src/components/AddressInput.js
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import useLocalStorage from "../hooks/useLocalStorage";
 import Select from "react-select";
 
@@ -58,6 +58,8 @@ const customStyles = {
     "&:hover": { borderColor: "#22c55e" },
     padding: "2px",
     minHeight: "42px",
+    WebkitTapHighlightColor: 'transparent',
+    touchAction: 'manipulation',
   }),
   option: (base, state) => ({
     ...base,
@@ -89,6 +91,10 @@ const customStyles = {
     ...base,
     borderRadius: "0.5rem",
     zIndex: 50,
+  }),
+  menuPortal: (base) => ({
+    ...base,
+    zIndex: 99999,
   }),
 };
 
@@ -140,6 +146,8 @@ const AddressInput = ({ onConfirm, onValidityChange, initialAddress }) => {
     phoneNumber: "",
   });
   const [errors, setErrors] = useState({});
+  const lastTouchTimeRef = useRef(0);
+  const touchInfoRef = useRef({ x: 0, y: 0, moved: false });
   const [isConfirmed, setIsConfirmed] = useState(false);
 
   const isValidPhone = (phone) => /^3\d{9}$/.test(phone);
@@ -210,6 +218,43 @@ const AddressInput = ({ onConfirm, onValidityChange, initialAddress }) => {
     onConfirm?.(confirmedDetails);
   };
 
+  // Confirmar con un toque en iOS/Android evitando doble disparo
+  const onTouchStartGeneric = (e) => {
+    const t = e.touches && e.touches[0];
+    if (!t) return;
+    touchInfoRef.current = { x: t.clientX, y: t.clientY, moved: false };
+  };
+
+  const onTouchMoveGeneric = (e) => {
+    const t = e.touches && e.touches[0];
+    if (!t) return;
+    const dx = t.clientX - touchInfoRef.current.x;
+    const dy = t.clientY - touchInfoRef.current.y;
+    if (Math.abs(dx) > 8 || Math.abs(dy) > 8) touchInfoRef.current.moved = true;
+  };
+
+  const shouldIgnoreTap = () => {
+    const draggedRecently = (typeof window !== 'undefined' && window.__lastMealDragTime)
+      ? (Date.now() - window.__lastMealDragTime) < 300
+      : false;
+    const draggingNow = (typeof window !== 'undefined' && window.__isMealDragging) ? true : false;
+    return draggingNow || draggedRecently || touchInfoRef.current.moved;
+  };
+
+  const handleConfirmTap = (e) => {
+    if (!isFormValid) return;
+    if (shouldIgnoreTap()) return;
+    if (e?.type === 'touchend') {
+      e.preventDefault();
+      e.stopPropagation();
+      lastTouchTimeRef.current = Date.now();
+      handleConfirm();
+      return;
+    }
+    if (Date.now() - lastTouchTimeRef.current < 350) return;
+    handleConfirm();
+  };
+
   // siempre mostrar teléfono limpio
   const phoneValue = normalizePhone(formData.phoneNumber);
 
@@ -240,7 +285,8 @@ const AddressInput = ({ onConfirm, onValidityChange, initialAddress }) => {
           {formData.phoneNumber}
         </p>
         <button
-          onClick={() => setIsConfirmed(false)}
+          onClick={(e) => { e.stopPropagation(); setIsConfirmed(false); }}
+          onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setIsConfirmed(false); }}
           className="mt-3 bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-md"
         >
           Editar dirección
@@ -261,6 +307,7 @@ const AddressInput = ({ onConfirm, onValidityChange, initialAddress }) => {
           placeholder="Selecciona tipo de vía"
           styles={customStyles}
           classNamePrefix="react-select"
+          menuPortalTarget={typeof document !== 'undefined' ? document.body : undefined}
         />
       </div>
 
@@ -297,6 +344,7 @@ const AddressInput = ({ onConfirm, onValidityChange, initialAddress }) => {
           styles={customStyles}
           classNamePrefix="react-select"
           isSearchable
+          menuPortalTarget={typeof document !== 'undefined' ? document.body : undefined}
         />
         {errors.neighborhood && (
           <p className="text-red-500 text-xs mt-1">{errors.neighborhood}</p>
@@ -326,7 +374,10 @@ const AddressInput = ({ onConfirm, onValidityChange, initialAddress }) => {
       />
 
       <button
-        onClick={handleConfirm}
+        onClick={handleConfirmTap}
+        onTouchStart={onTouchStartGeneric}
+        onTouchMove={onTouchMoveGeneric}
+        onTouchEnd={handleConfirmTap}
         disabled={!isFormValid}
         className={`w-full mt-2 bg-green-500 hover:bg-green-600 text-white font-semibold px-4 py-2 rounded-md transition-colors ${
           !isFormValid ? "opacity-50 cursor-not-allowed" : ""

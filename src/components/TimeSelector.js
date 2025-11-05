@@ -1,8 +1,32 @@
 // src/components/TimeSelector.js
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 
 const TimeSelector = ({ times, selectedTime, setSelectedTime, onConfirm }) => {
   const [error, setError] = useState('');
+  const lastTouchTimeRef = useRef(0);
+  const touchInfoRef = useRef({ x: 0, y: 0, moved: false });
+
+  const onTouchStartGeneric = (e) => {
+    const t = e.touches && e.touches[0];
+    if (!t) return;
+    touchInfoRef.current = { x: t.clientX, y: t.clientY, moved: false };
+  };
+
+  const onTouchMoveGeneric = (e) => {
+    const t = e.touches && e.touches[0];
+    if (!t) return;
+    const dx = t.clientX - touchInfoRef.current.x;
+    const dy = t.clientY - touchInfoRef.current.y;
+    if (Math.abs(dx) > 8 || Math.abs(dy) > 8) touchInfoRef.current.moved = true;
+  };
+
+  const shouldIgnoreTap = () => {
+    const draggedRecently = (typeof window !== 'undefined' && window.__lastMealDragTime)
+      ? (Date.now() - window.__lastMealDragTime) < 300
+      : false;
+    const draggingNow = (typeof window !== 'undefined' && window.__isMealDragging) ? true : false;
+    return draggingNow || draggedRecently || touchInfoRef.current.moved;
+  };
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter') {
@@ -127,6 +151,34 @@ const TimeSelector = ({ times, selectedTime, setSelectedTime, onConfirm }) => {
     onConfirm();
   };
 
+  const handleTimeTap = (e, time) => {
+    if (shouldIgnoreTap()) return;
+    if (e?.type === 'touchend') {
+      e.preventDefault();
+      e.stopPropagation();
+      lastTouchTimeRef.current = Date.now();
+      setSelectedTime(time);
+      setError('');
+      return;
+    }
+    if (Date.now() - lastTouchTimeRef.current < 350) return;
+    setSelectedTime(time);
+    setError('');
+  };
+
+  const handleConfirmTap = (e) => {
+    if (shouldIgnoreTap()) return;
+    if (e?.type === 'touchend') {
+      e.preventDefault();
+      e.stopPropagation();
+      lastTouchTimeRef.current = Date.now();
+      handleConfirm();
+      return;
+    }
+    if (Date.now() - lastTouchTimeRef.current < 350) return;
+    handleConfirm();
+  };
+
   return (
     <div className="bg-gradient-to-r from-green-50 to-green-100 p-1 xs:p-2 sm:p-3 rounded-lg shadow-sm">
       <h2 className="text-[10px] xs:text-xs sm:text-sm font-semibold mb-1 xs:mb-2 flex items-center text-green-700">
@@ -136,13 +188,10 @@ const TimeSelector = ({ times, selectedTime, setSelectedTime, onConfirm }) => {
         {times.map(time => (
           <button
             key={time.id}
-            onClick={() => {
-              setSelectedTime(time);
-              setError('');
-              if (process.env.NODE_ENV === 'development') {
-                console.log(`Hora seleccionada: ${time.name}, id: ${time.id}`);
-              }
-            }}
+            onClick={(e) => handleTimeTap(e, time)}
+            onTouchStart={onTouchStartGeneric}
+            onTouchMove={onTouchMoveGeneric}
+            onTouchEnd={(e) => handleTimeTap(e, time)}
             disabled={isTimeDisabled(time)}
             className={`relative p-1 xs:p-2 rounded-lg text-[10px] xs:text-xs sm:text-sm font-medium transition-all duration-200 flex items-center justify-center text-center min-h-[30px] xs:min-h-[40px] shadow-sm ${
               selectedTime?.id === time.id
@@ -170,7 +219,10 @@ const TimeSelector = ({ times, selectedTime, setSelectedTime, onConfirm }) => {
         )}
       </div>
 <button
-  onClick={handleConfirm}
+  onClick={handleConfirmTap}
+  onTouchStart={onTouchStartGeneric}
+  onTouchMove={onTouchMoveGeneric}
+  onTouchEnd={handleConfirmTap}
   disabled={!selectedTime || !selectedTime.name}
   className={`mt-2 bg-green-500 hover:bg-green-600 text-white px-5 py-2 rounded-lg text-sm transition-colors ${
     !selectedTime || !selectedTime.name ? 'opacity-50 cursor-not-allowed' : ''
