@@ -165,3 +165,9 @@ button, .payment-btn {
     opacity: 1;
   }
 }
+
+/* Placeholder en negrita */
+.placeholder-bold::placeholder {
+  font-weight: 600;
+  color: #6b7280;
+}

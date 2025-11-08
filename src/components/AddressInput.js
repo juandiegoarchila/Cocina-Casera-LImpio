@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import useLocalStorage from "../hooks/useLocalStorage";
 import Select from "react-select";
+import CreatableSelect from "react-select/creatable";
 
 // Lista de tipos de vía
 const STREET_TYPES = ["Calle", "Carrera", "Diagonal", "Transversal"];
@@ -79,8 +80,9 @@ const customStyles = {
   }),
   placeholder: (base) => ({
     ...base,
-    color: "#9ca3af",
+    color: "#6b7280",
     fontSize: "0.875rem",
+    fontWeight: "600",
   }),
   singleValue: (base) => ({
     ...base,
@@ -116,6 +118,7 @@ const InputField = ({
   type = "text",
   error,
   autoComplete,
+  placeholderBold = false,
 }) => (
   <div className="mb-3">
     <label htmlFor={id} className="block text-sm font-medium text-gray-700 mb-1">
@@ -130,7 +133,8 @@ const InputField = ({
       autoComplete={autoComplete}
       className={`w-full p-2 border rounded-md focus:outline-none focus:ring-2 ${
         error ? "border-red-500 focus:ring-red-500" : "focus:ring-green-500"
-      }`}
+      } ${placeholderBold ? 'placeholder-bold' : ''}`}
+      style={placeholderBold ? { fontWeight: value ? 'normal' : '600' } : {}}
     />
     {error && <p className="text-red-500 text-xs mt-1">{error}</p>}
   </div>
@@ -192,8 +196,13 @@ const AddressInput = ({ onConfirm, onValidityChange, initialAddress }) => {
     setFormData((prev) => ({ ...prev, streetType: selected?.value || "" }));
   };
 
-  const handleNeighborhoodChange = (selected) => {
-    setFormData((prev) => ({ ...prev, neighborhood: selected?.value || "" }));
+  const handleNeighborhoodChange = (selected, actionMeta) => {
+    // Si es un valor creado por el usuario (escribió algo que no está en la lista)
+    if (actionMeta?.action === 'create-option') {
+      setFormData((prev) => ({ ...prev, neighborhood: selected?.value || "" }));
+    } else {
+      setFormData((prev) => ({ ...prev, neighborhood: selected?.value || "" }));
+    }
   };
 
   const isFormValid = Object.keys(errors).length === 0;
@@ -321,6 +330,7 @@ const AddressInput = ({ onConfirm, onValidityChange, initialAddress }) => {
           placeholder="Ej: 137ABis"
           error={errors.streetNumber}
           autoComplete="address-line1"
+          placeholderBold={true}
         />
         <InputField
           id="houseNumber"
@@ -330,20 +340,27 @@ const AddressInput = ({ onConfirm, onValidityChange, initialAddress }) => {
           placeholder="Ej: 128b-01"
           error={errors.houseNumber}
           autoComplete="address-line2"
+          placeholderBold={true}
         />
       </div>
 
       {/* Barrio */}
       <div>
-        <label className="block font-medium text-gray-700 mb-1">Barrio</label>
-        <Select
+        <label className="block font-medium text-gray-700 mb-1">Barrio (pon cualquiera si no sabes cuál es)</label>
+        <CreatableSelect
           options={barrioOptions}
-          value={barrioOptions.find((o) => o.value === formData.neighborhood) || null}
+          value={
+            formData.neighborhood 
+              ? barrioOptions.find((o) => o.value === formData.neighborhood) || { value: formData.neighborhood, label: formData.neighborhood }
+              : null
+          }
           onChange={handleNeighborhoodChange}
           placeholder="Escribe o selecciona un barrio"
           styles={customStyles}
           classNamePrefix="react-select"
           isSearchable
+          isClearable
+          formatCreateLabel={(inputValue) => `Usar: "${inputValue}"`}
           menuPortalTarget={typeof document !== 'undefined' ? document.body : undefined}
         />
         {errors.neighborhood && (
@@ -359,6 +376,7 @@ const AddressInput = ({ onConfirm, onValidityChange, initialAddress }) => {
         onChange={handleInputChange}
         placeholder="Ej: Nombre, Colegio, Apto 302, int 3, Cade..."
         autoComplete="address-line3"
+        placeholderBold={true}
       />
 
       {/* Teléfono */}
@@ -371,6 +389,7 @@ const AddressInput = ({ onConfirm, onValidityChange, initialAddress }) => {
         error={errors.phoneNumber}
         type="tel"
         autoComplete="tel"
+        placeholderBold={true}
       />
 
       <button
