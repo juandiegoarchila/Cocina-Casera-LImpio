@@ -593,58 +593,128 @@ const App = () => {
     let incompleteSlide = null;
     let firstMissingField = '';
 
+    // Validar cada desayuno según su tipo y pasos configurados
     breakfasts.forEach((breakfast, index) => {
-      const breakfastType = breakfastTypes.find(bt => bt.name === breakfast.type);
+      // Buscar el tipo de desayuno correcto usando el ID
+      const breakfastType = breakfastTypes.find(bt => bt.id === breakfast.type?.id);
       const steps = breakfastType ? breakfastType.steps || [] : [];
 
       const missing = [];
-      if (!breakfast.type) missing.push('type');
+      
+      // Validar tipo (siempre obligatorio)
+      if (!breakfast.type) {
+        missing.push('type');
+      }
+      
+      // Validar cada paso según la configuración del tipo de desayuno
       steps.forEach(step => {
-        if (step === 'address') {
-          if (!breakfast.address?.address) missing.push('address');
-        } else if (step === 'cutlery') {
-          if (breakfast.cutlery === null) missing.push('cutlery');
-        } else if (step === 'time') {
-          if (!breakfast.time) missing.push('time');
-        } else if (step === 'protein' && !breakfast.protein) {
-          missing.push('protein');
-        } else if (!breakfast[step]) {
-          missing.push(step);
+        if (step === 'broth') {
+          if (!breakfast.broth) missing.push('broth');
+        } else if (step === 'eggs') {
+          if (!breakfast.eggs) missing.push('eggs');
+        } else if (step === 'riceBread') {
+          if (!breakfast.riceBread) missing.push('riceBread');
+        } else if (step === 'drink') {
+          if (!breakfast.drink) missing.push('drink');
+        } else if (step === 'protein') {
+          if (!breakfast.protein) missing.push('protein');
         }
       });
-      if (!breakfast.payment) missing.push('payment');
+      
+      // Validar campos adicionales obligatorios (cubiertos, hora, dirección, pago)
+      if (breakfast.cutlery === null || breakfast.cutlery === undefined) {
+        missing.push('cutlery');
+      }
+      if (!breakfast.time) {
+        missing.push('time');
+      }
+      if (!breakfast.address?.address || !breakfast.address?.phoneNumber) {
+        missing.push('address');
+      }
+      if (!breakfast.payment) {
+        missing.push('payment');
+      }
 
       if (missing.length > 0 && incompleteIndex === null) {
         incompleteIndex = index;
         firstMissingField = missing[0];
-        const slideMap = {
-          type: 0,
-          broth: 1,
-          eggs: 2,
-          riceBread: 3,
-          drink: 4,
-          cutlery: 5,
-          time: 6,
-          address: 7,
-          payment: 8,
-          protein: 9,
-        };
-        incompleteSlide = slideMap[firstMissingField] || 0;
+        
+        // Calcular el índice del slide dinámicamente basado en los pasos configurados
+        let slideIndex = 0;
+        
+        // El primer slide siempre es el tipo (índice 0)
+        if (firstMissingField === 'type') {
+          slideIndex = 0;
+        } else {
+          // Empezamos en 1 porque el tipo es el slide 0
+          slideIndex = 1;
+          
+          // Contar los slides anteriores al campo faltante
+          const fieldOrder = ['broth', 'eggs', 'riceBread', 'drink', 'protein'];
+          
+          for (const field of fieldOrder) {
+            if (field === firstMissingField) {
+              break;
+            }
+            if (steps.includes(field)) {
+              slideIndex++;
+            }
+          }
+          
+          // Si el campo faltante no está en los pasos del tipo, es uno de los campos finales
+          if (!fieldOrder.includes(firstMissingField)) {
+            // Contar cuántos pasos del tipo hay
+            slideIndex = 1 + steps.filter(s => fieldOrder.includes(s)).length;
+            
+            // Añadir offset para cutlery, time, address, payment
+            const finalFields = ['cutlery', 'time', 'address', 'payment'];
+            const missingFieldIndex = finalFields.indexOf(firstMissingField);
+            if (missingFieldIndex !== -1) {
+              slideIndex += missingFieldIndex;
+            }
+          }
+        }
+        
+        incompleteSlide = slideIndex;
       }
     });
 
     if (incompleteIndex !== null) {
       setIncompleteBreakfastIndex(incompleteIndex);
       setIncompleteBreakfastSlideIndex(incompleteSlide);
+      
+      // Mensajes más descriptivos para cada campo
+      const fieldDescriptions = {
+        'type': 'el tipo de desayuno',
+        'broth': 'el caldo',
+        'eggs': 'los huevos',
+        'riceBread': 'arroz o pan',
+        'drink': 'la bebida',
+        'protein': 'la proteína',
+        'cutlery': 'si necesitas cubiertos',
+        'time': 'la hora de entrega',
+        'address': 'la dirección completa (dirección y teléfono)',
+        'payment': 'el método de pago'
+      };
+      
+      const fieldDescription = fieldDescriptions[firstMissingField] || firstMissingField;
+      
       setErrorMessage(
-        `Por favor, completa el campo "${firstMissingField}" para el Desayuno #${incompleteIndex + 1}.`
+        `⚠️ Por favor, completa ${fieldDescription} para el Desayuno #${incompleteIndex + 1}.`
       );
+      
+      // Scroll animado al desayuno incompleto
       setTimeout(() => {
         const element = document.getElementById(`breakfast-item-${breakfasts[incompleteIndex].id}`);
         if (element) {
           element.scrollIntoView({ behavior: 'smooth', block: 'center' });
           element.classList.add('highlight-incomplete');
           setTimeout(() => element.classList.remove('highlight-incomplete'), 3000);
+          
+          // Disparar evento para cambiar al slide correcto
+          element.dispatchEvent(new CustomEvent('updateSlide', { 
+            detail: { slideIndex: incompleteSlide } 
+          }));
         }
       }, 100);
       return;

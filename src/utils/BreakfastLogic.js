@@ -850,10 +850,14 @@ export const calculateBreakfastProgress = (breakfast, isTableOrder, isWaitress, 
 
   const completedSteps = mandatorySteps.filter(step => {
     if (step === 'address') {
-      return breakfast.address && breakfast.address.address;
+      // VALIDACIÓN ESTRICTA: dirección Y teléfono son obligatorios
+      return breakfast.address && breakfast.address.address && breakfast.address.phoneNumber;
     } else if (step === 'payment') {
       // Para pedidos de mesa usar paymentMethod, para domicilio usar payment
       return isTableOrder ? breakfast.paymentMethod : breakfast.payment;
+    } else if (step === 'cutlery') {
+      // Cubiertos puede ser true o false, pero no null/undefined
+      return breakfast.cutlery !== null && breakfast.cutlery !== undefined;
     } else {
       return breakfast[step];
     }
