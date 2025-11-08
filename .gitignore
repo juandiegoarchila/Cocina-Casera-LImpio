@@ -13,10 +13,8 @@ coverage/
 build/
 dist/
 
-# Configuración Firebase (CRÍTICO - NO SUBIR)
+# Configuración Firebase (CRÍTICO - NO SUBIR solo las credenciales)
 src/config/firebase.js
-firebase.json
-.firebaserc
 firebase-debug.log
 firebase-debug.*.log
 pglite-debug.log
