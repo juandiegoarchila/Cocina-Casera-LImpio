@@ -8,7 +8,7 @@ import { Disclosure, Transition } from '@headlessui/react';
 import {
   Bars3Icon, XMarkIcon, ChartBarIcon, UserGroupIcon,
   ClockIcon, DocumentTextIcon, CogIcon, ArrowLeftOnRectangleIcon,
-  BellIcon, SunIcon, MoonIcon, TableCellsIcon, ClipboardDocumentListIcon, CurrencyDollarIcon
+  BellIcon, SunIcon, MoonIcon, TableCellsIcon, ClipboardDocumentListIcon, CurrencyDollarIcon, ArchiveBoxIcon
 } from '@heroicons/react/24/outline';
 
 // Lazy load components
@@ -22,6 +22,7 @@ const Notifications = lazy(() => import('./Payments'));
 const WaiterCashier = lazy(() => import('../Waiter/WaiterCashier'));
 const TableOrdersAdmin = lazy(() => import('./TableOrdersAdmin'));
 const CajaPOS = lazy(() => import('../Waiter/CajaPOS'));
+const Inventory = lazy(() => import('./Inventory'));
 
 const AdminPage = () => {
   const navigate = useNavigate();
@@ -84,10 +85,11 @@ const AdminPage = () => {
     { name: 'Tareas', to: '/admin/settings', icon: ClipboardDocumentListIcon },
     { name: 'Pagos', to: '/admin/Payments.js', icon: BellIcon },
   { name: 'Caja registradora', to: '/admin/caja-pos', icon: CurrencyDollarIcon },
+  { name: 'Inventario', to: '/admin/inventory', icon: ArchiveBoxIcon },
   ];
 
   return (
-    <div className={`min-h-screen ${theme === 'dark' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-900'} flex flex-col relative`}>
+    <div className={`min-h-screen ${theme === 'dark' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-900'} flex flex-col relative select-text`}>
       {/* Header */}
       <Disclosure as="nav" className={`${theme === 'dark' ? 'bg-gray-800' : 'bg-gray-200'} shadow-lg fixed top-0 left-0 right-0 z-50`}>
         {({ open }) => (
@@ -261,7 +263,7 @@ const AdminPage = () => {
 
       {/* Content */}
       <div
-        className={`flex-1 p-4 pt-20 sm:pt-20 ${
+        className={`flex-1 p-4 pt-20 sm:pt-20 select-text ${
           isSidebarOpen ? 'sm:ml-64' : 'sm:ml-16'
         } transition-all duration-300 min-h-screen`}
       >
@@ -318,6 +320,10 @@ const AdminPage = () => {
             <Route
               path="/caja-pos"
               element={<CajaPOS setError={setError} setSuccess={setSuccess} theme={theme} />}
+            />
+            <Route
+              path="/inventory"
+              element={<Inventory setError={setError} setSuccess={setSuccess} theme={theme} />}
             />
           </Routes>
         </Suspense>

@@ -207,7 +207,56 @@ const getExcludedSides = (meal, allSides) => {
 };
 
 // Función para imprimir recibo de domicilio (idéntica a la de InteraccionesPedidos.js)
-const handlePrintDeliveryReceipt = (order, allSides = []) => {
+const handlePrintDeliveryReceipt = async (order, allSides = []) => {
+  // Antes de crear el recibo, si el pedido está Pendiente, intentar marcarlo como En Preparación
+  try {
+    // Considerar pedidos antiguos sin status o con variantes de mayúsculas/minúsculas
+    const isPending = !order?.status || /pendiente/i.test(order.status);
+    if (isPending) {
+      const id = order?.id || order?.orderId || order?._id;
+      if (id) {
+        // Heurística local para encontrar la colección del pedido (similar a findExistingOrderRef)
+        const isBreakfast = order?.type === 'breakfast' || Array.isArray(order?.breakfasts);
+        const guess = isBreakfast ? 'deliveryBreakfastOrders' : 'orders';
+        const BASE = ['orders', 'deliveryOrders', 'tableOrders', 'deliveryBreakfastOrders', 'breakfastOrders'];
+        const preferred = [];
+        if (order?.__collection) preferred.push(order.__collection);
+        if (order?.collectionName && order.collectionName !== order.__collection) preferred.push(order.collectionName);
+        const orderedBase = [guess, ...BASE.filter((c) => c !== guess)];
+        const EXTRA_COLLECTIONS = ['orders', 'deliveryOrders', 'tableOrders', 'deliveryBreakfastOrders', 'breakfastOrders', 'domicilioOrders'];
+        const candidates = [...preferred.filter(Boolean), ...orderedBase, ...EXTRA_COLLECTIONS].filter((v, i, a) => !!v && a.indexOf(v) === i);
+
+        let foundRef = null;
+        for (const col of candidates) {
+          const candidateRef = doc(db, col, id);
+          try {
+            const snap = await getDoc(candidateRef);
+            if (snap.exists()) {
+              foundRef = candidateRef;
+              break;
+            }
+          } catch (e) {
+            // ignorar y continuar
+          }
+        }
+
+        if (foundRef) {
+          try {
+            await updateDoc(foundRef, { status: 'En Preparación', updatedAt: new Date() });
+            try { showToast('success', 'Estado actualizado a "En Preparación" al imprimir.'); } catch(e) {}
+          } catch (e) {
+            console.error('[Impresión] No se pudo actualizar estado:', e);
+            try { showToast('error', 'No se pudo actualizar el estado al imprimir.'); } catch(e) {}
+          }
+        } else {
+          console.warn('[Impresión] No se encontró documento de pedido para actualizar status (id potencial):', id);
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[Impresión] Error al intentar actualizar estado antes de imprimir:', e);
+  }
+
   // SOLO imprime el recibo, NO abre la caja registradora
   const win = window.open('', 'PRINT', 'height=700,width=400');
   if (!win) return;

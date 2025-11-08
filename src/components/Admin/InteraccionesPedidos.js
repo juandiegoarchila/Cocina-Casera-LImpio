@@ -89,6 +89,39 @@ const areMealsIdentical = (meal1, meal2) => {
 
 // Función para imprimir recibo de domicilio
 const handlePrintDeliveryReceipt = async (order) => {
+  // Intentar actualizar estado a "En Preparación" si está Pendiente
+  try {
+    const isPending = !order?.status || /pendiente/i.test(order.status);
+    const id = order?.id || order?.orderId || order?._id;
+    if (isPending && id) {
+      const isBreakfast = order?.type === 'breakfast' || Array.isArray(order?.breakfasts);
+      const guess = isBreakfast ? 'deliveryBreakfastOrders' : 'orders';
+      const BASE = ['orders', 'deliveryOrders', 'tableOrders', 'deliveryBreakfastOrders', 'breakfastOrders'];
+      const preferred = [];
+      if (order?.__collection) preferred.push(order.__collection);
+      if (order?.collectionName && order.collectionName !== order.__collection) preferred.push(order.collectionName);
+      const orderedBase = [guess, ...BASE.filter((c) => c !== guess)];
+      const EXTRA_COLLECTIONS = ['orders', 'deliveryOrders', 'tableOrders', 'deliveryBreakfastOrders', 'breakfastOrders', 'domicilioOrders'];
+      const candidates = [...preferred.filter(Boolean), ...orderedBase, ...EXTRA_COLLECTIONS].filter((v, i, a) => !!v && a.indexOf(v) === i);
+
+      let updated = false;
+      for (const col of candidates) {
+        const ref = doc(db, col, id);
+        try {
+          await updateDoc(ref, { status: 'En Preparación', updatedAt: new Date() });
+          updated = true;
+          break;
+        } catch (e) {
+          // seguir intentando con otras colecciones (not-found o permisos)
+        }
+      }
+      if (!updated) {
+        console.warn('[Impresión Modal] No se pudo actualizar el estado para el pedido (id potencial):', id);
+      }
+    }
+  } catch (e) {
+    console.error('[Impresión Modal] Error al actualizar estado:', e);
+  }
   // SOLO imprime el recibo, NO abre la caja registradora
   const win = window.open('', 'PRINT', 'height=700,width=400');
   if (!win) return;

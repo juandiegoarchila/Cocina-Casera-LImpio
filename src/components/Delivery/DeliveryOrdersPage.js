@@ -347,6 +347,9 @@ const DeliveryOrdersPage = () => {
         }
   msg += '\n\nMétodo de pago: ' + paymentMethod;
   msg += '\nTotal: *' + formattedTotal + '*';
+  // Texto promocional genérico (sin emojis)
+  msg += `\n\nSi mañana deseas pedir almuerzo o desayuno, puedes hacerlo fácil desde la página:`;
+  msg += '\nhttps://cocina-casera.web.app/';
         
         // Abrimos WhatsApp en nueva pestaña; si falla, mostramos alerta pero continuamos
         const opened = openWhatsApp(phone, msg);
