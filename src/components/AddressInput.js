@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from "react";
 import useLocalStorage from "../hooks/useLocalStorage";
 import Select from "react-select";
 import CreatableSelect from "react-select/creatable";
+import { components as RSComponents } from "react-select";
 
 // Lista de tipos de vía
 const STREET_TYPES = ["Calle", "Carrera", "Diagonal", "Transversal"];
@@ -101,6 +102,37 @@ const customStyles = {
     ...base,
     zIndex: 99999,
   }),
+};
+
+// Componente de opción táctil para iOS: fuerza selección en un solo tap
+const TouchOption = (props) => {
+  const { data, selectOption } = props;
+  const nextInnerProps = {
+    ...props.innerProps,
+    onTouchStart: (e) => {
+      e.stopPropagation();
+      if (props.innerProps?.onTouchStart) props.innerProps.onTouchStart(e);
+    },
+    onTouchEnd: (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!props.isDisabled) selectOption(data);
+      if (props.innerProps?.onTouchEnd) props.innerProps.onTouchEnd(e);
+    },
+    onMouseDown: (e) => {
+      // fallback para navegadores que traduzcan touch a click
+      e.preventDefault();
+      e.stopPropagation();
+      if (!props.isDisabled) selectOption(data);
+      if (props.innerProps?.onMouseDown) props.innerProps.onMouseDown(e);
+    }
+  };
+  return (
+    <RSComponents.Option
+      {...props}
+      innerProps={nextInnerProps}
+    />
+  );
 };
 
 // 🔥 Normalizador de teléfonos
@@ -374,11 +406,13 @@ const AddressInput = ({ onConfirm, onValidityChange, initialAddress }) => {
           classNamePrefix="react-select"
           openMenuOnFocus
           isSearchable={false}
+          closeMenuOnSelect
           onTouchStart={onSelectTouchStart}
           onTouchMove={onSelectTouchMove}
           onTouchEnd={onSelectTouchEnd(streetTypeRef, setStreetMenuOpen, streetMenuOpen)}
           onMenuOpen={() => setStreetMenuOpen(true)}
           onMenuClose={() => setStreetMenuOpen(false)}
+          components={{ Option: TouchOption }}
           menuPortalTarget={typeof document !== 'undefined' ? document.body : undefined}
         />
       </div>
@@ -426,11 +460,13 @@ const AddressInput = ({ onConfirm, onValidityChange, initialAddress }) => {
           isClearable
           formatCreateLabel={(inputValue) => `Usar: "${inputValue}"`}
           openMenuOnFocus
+          closeMenuOnSelect
           onTouchStart={onSelectTouchStart}
           onTouchMove={onSelectTouchMove}
           onTouchEnd={onSelectTouchEnd(barrioRef, setBarrioMenuOpen, barrioMenuOpen)}
           onMenuOpen={() => setBarrioMenuOpen(true)}
           onMenuClose={() => setBarrioMenuOpen(false)}
+          components={{ Option: TouchOption }}
           menuPortalTarget={typeof document !== 'undefined' ? document.body : undefined}
         />
         {errors.neighborhood && (
