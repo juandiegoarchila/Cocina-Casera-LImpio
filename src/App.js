@@ -885,7 +885,8 @@ try {
             incompleteSlideIndex,
             setIncompleteSlideIndex,
             calculateMealPrice,
-            total
+            total,
+            sides
           );
         }
         
@@ -907,7 +908,8 @@ try {
             incompleteSlideIndex,
             setIncompleteSlideIndex,
             calculateMealPrice,
-            total
+            total,
+            sides
           );
           setSuccessMessage('¡Pedido enviado a WhatsApp! (Nota: hubo un problema al guardar en el sistema)');
         } else {

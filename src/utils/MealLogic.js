@@ -120,6 +120,7 @@ export const sendToWhatsApp = (
   setIncompleteSlideIndex,
   calculateMealPrice,
   total,
+  allSides = [], // nuevo: lista completa de acompañamientos disponibles
   isWaitress = false // Añadido con valor por defecto
 ) => {
   return new Promise((resolve) => {
@@ -209,7 +210,7 @@ export const sendToWhatsApp = (
       return;
     }
 
-const message = generateMessageFromMeals(meals, calculateMealPrice, total, isWaitress);
+const message = generateMessageFromMeals(meals, calculateMealPrice, total, allSides, isWaitress);
     const encodedMessage = encodeMessage(message);
 
     if (isMobile()) {
@@ -253,7 +254,7 @@ const fieldsToCheck = ['Sopa', 'Principio', 'Proteína', 'Bebida', 'Cubiertos', 
 const addressFields = ['address', 'phoneNumber', 'details'];
 const specialRiceOptions = ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'];
 
-export const generateMessageFromMeals = (meals, calculateMealPrice, total, isWaitress = false) => {
+export const generateMessageFromMeals = (meals, calculateMealPrice, total, allSides = [], isWaitress = false) => {
   let message = `👋 ¡Hola Cocina Casera! 🍴\nQuiero hacer mi pedido:\n\n`;
 
   const safeMeals = Array.isArray(meals) ? meals : [];
@@ -436,9 +437,22 @@ message += `───────────────\n`;
         // No mostrar "No Incluir" cuando explícitamente seleccionó "Ninguno"
       } else if (selectedSides.length > 0) {
         message += `Acompañamientos: ${selectedSides.join(', ')}\n`;
-        // Solo mostrar "No Incluir" si hay acompañamientos seleccionados (no "Ninguno")
-        // Y usar los acompañamientos actuales del sistema, no una lista hardcodeada
-        // Esta lógica puede agregarse si es necesario mostrar los no incluidos
+        // Calcular acompañamientos no incluidos ("No Incluir") si tiene selección válida
+        const normalize = (n) => (n || '')
+          .normalize('NFD')
+          .replace(/\p{Diacritic}/gu, '')
+          .replace(/\s*NUEVO\s*$/i, '')
+          .trim();
+        const selectedNormalized = selectedSides.map(normalize);
+        const allSideNames = (allSides || [])
+          .filter(s => !s?.isFinished)
+          .map(s => normalize(cleanText(s.name)))
+          .filter(n => n && n.toLowerCase() !== 'ninguno' && n.toLowerCase() !== 'todo incluido' && n.toLowerCase() !== 'todo incluído');
+        const uniqueAll = [...new Set(allSideNames)];
+        const missing = uniqueAll.filter(n => !selectedNormalized.includes(n));
+        if (missing.length > 0) {
+          message += `No Incluir: ${missing.join(', ')}\n`;
+        }
       } else {
         message += `Acompañamientos: Sin acompañamientos\n`;
       }
@@ -515,7 +529,26 @@ message += `───────────────\n`;
         message += `Cubiertos: ${baseMeal.cutlery ? 'Sí' : 'No'}\n`;
       }
       if (group.commonFieldsInGroup.has('Acompañamientos')) {
-        message += `Acompañamientos: ${hasSpecialRice ? 'Ya incluidos' : baseMeal.sides?.length > 0 ? baseMeal.sides.map(s => cleanText(s.name)).join(', ') : 'Sin acompañamientos'}\n`;
+        const selectedSides = baseMeal.sides?.map(s => cleanText(s.name)) || [];
+        const hasNoneSelected = selectedSides.includes('Ninguno');
+        message += `Acompañamientos: ${hasSpecialRice ? 'Ya incluidos' : selectedSides.length > 0 ? selectedSides.join(', ') : 'Sin acompañamientos'}\n`;
+        if (!hasSpecialRice && !hasNoneSelected && selectedSides.length > 0) {
+          const normalize = (n) => (n || '')
+            .normalize('NFD')
+            .replace(/\p{Diacritic}/gu, '')
+            .replace(/\s*NUEVO\s*$/i, '')
+            .trim();
+          const selectedNormalized = selectedSides.map(normalize);
+          const allSideNames = (allSides || [])
+            .filter(s => !s?.isFinished)
+            .map(s => normalize(cleanText(s.name)))
+            .filter(n => n && n.toLowerCase() !== 'ninguno' && n.toLowerCase() !== 'todo incluido' && n.toLowerCase() !== 'todo incluído');
+          const uniqueAll = [...new Set(allSideNames)];
+          const missing = uniqueAll.filter(n => !selectedNormalized.includes(n));
+          if (missing.length > 0) {
+            message += `No Incluir: ${missing.join(', ')}\n`;
+          }
+        }
       }
       if (group.commonFieldsInGroup.has('Adiciones') && baseMeal.additions?.length > 0) {
         baseMeal.additions.forEach((addition, aIdx) => {
@@ -566,7 +599,26 @@ message += `───────────────\n`;
           } else if (field === 'Cubiertos') {
             formattedValue = `Cubiertos: ${meal.cutlery ? 'Sí' : 'No'}`;
           } else if (field === 'Acompañamientos') {
-            formattedValue = mealHasSpecialRice ? 'Acompañamientos: Ya incluidos' : `Acompañamientos: ${meal.sides?.length > 0 ? meal.sides.map(s => cleanText(s.name)).join(', ') : 'Ninguno'}`;
+            const selectedSides = meal.sides?.map(s => cleanText(s.name)) || [];
+            const hasNoneSelected = selectedSides.includes('Ninguno');
+            formattedValue = mealHasSpecialRice ? 'Acompañamientos: Ya incluidos' : `Acompañamientos: ${selectedSides.length > 0 ? selectedSides.join(', ') : 'Ninguno'}`;
+            if (!mealHasSpecialRice && !hasNoneSelected && selectedSides.length > 0) {
+              const normalize = (n) => (n || '')
+                .normalize('NFD')
+                .replace(/\p{Diacritic}/gu, '')
+                .replace(/\s*NUEVO\s*$/i, '')
+                .trim();
+              const selectedNormalized = selectedSides.map(normalize);
+              const allSideNames = (allSides || [])
+                .filter(s => !s?.isFinished)
+                .map(s => normalize(cleanText(s.name)))
+                .filter(n => n && n.toLowerCase() !== 'ninguno' && n.toLowerCase() !== 'todo incluido' && n.toLowerCase() !== 'todo incluído');
+              const uniqueAll = [...new Set(allSideNames)];
+              const missing = uniqueAll.filter(n => !selectedNormalized.includes(n));
+              if (missing.length > 0) {
+                formattedValue += ` | No Incluir: ${missing.join(', ')}`;
+              }
+            }
           } else if (field === 'Hora') {
             formattedValue = isValidTime(meal.time) ? cleanText(meal.time.name) : 'Lo más rápido';
           } else if (field === 'Pago') {

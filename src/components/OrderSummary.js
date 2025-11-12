@@ -421,6 +421,7 @@ const MealFields = ({ meal, commonFields, isWaiterView, isAdminView = false, all
         .trim();
       const selectedNormalized = selectedSides.map(normalize);
       const allSideNames = (allSides || [])
+        .filter(s => !s?.isFinished)
         .map(s => normalize(cleanText(s.name)))
         .filter(n => n && n.toLowerCase() !== 'ninguno' && n.toLowerCase() !== 'todo incluido');
       // Evitar duplicados
