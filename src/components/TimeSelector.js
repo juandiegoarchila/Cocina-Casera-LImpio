@@ -211,6 +211,16 @@ const TimeSelector = ({ times, selectedTime, setSelectedTime, onConfirm }) => {
           value={selectedTime?.id === 0 ? selectedTime.name : ''}
           onChange={handleCustomTimeChange}
           onKeyDown={handleKeyDown}
+          onTouchEnd={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const el = e.currentTarget;
+            if (el && typeof el.focus === 'function') {
+              try { el.focus({ preventScroll: true }); } catch (_) { el.focus(); }
+              const len = (el.value || '').length;
+              try { el.setSelectionRange(len, len); } catch(_) {}
+            }
+          }}
           className="col-span-2 mt-2 p-1 xs:p-2 text-[10px] xs:text-xs sm:text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-400 placeholder-gray-400 w-full"
           aria-label="Ingresar una hora personalizada"
         />

@@ -78,6 +78,8 @@ const customStyles = {
     fontSize: "0.875rem",
     padding: "8px 12px",
     borderBottom: "1px solid #e5e7eb",
+    WebkitTapHighlightColor: 'transparent',
+    touchAction: 'manipulation',
   }),
   placeholder: (base) => ({
     ...base,
@@ -132,6 +134,23 @@ const InputField = ({
       onChange={onChange}
       placeholder={placeholder}
       autoComplete={autoComplete}
+      inputMode={type === 'tel' ? 'numeric' : undefined}
+      onTouchStart={(e) => {
+        // Evitar que contenedores padres consuman el toque
+        e.stopPropagation();
+      }}
+      onTouchEnd={(e) => {
+        // iOS: asegurar foco con un solo tap y evitar click fantasma
+        e.preventDefault();
+        e.stopPropagation();
+        const el = e.currentTarget;
+        // Foco sin scroll y cursor al final
+        if (el && typeof el.focus === 'function') {
+          try { el.focus({ preventScroll: true }); } catch (_) { el.focus(); }
+          const len = (el.value || '').length;
+          try { el.setSelectionRange(len, len); } catch (_) {}
+        }
+      }}
       className={`w-full p-2 border rounded-md focus:outline-none focus:ring-2 ${
         error ? "border-red-500 focus:ring-red-500" : "focus:ring-green-500"
       } ${placeholderBold ? 'placeholder-bold' : ''}`}
@@ -154,6 +173,10 @@ const AddressInput = ({ onConfirm, onValidityChange, initialAddress }) => {
   const lastTouchTimeRef = useRef(0);
   const touchInfoRef = useRef({ x: 0, y: 0, moved: false });
   const [isConfirmed, setIsConfirmed] = useState(false);
+  const streetTypeRef = useRef(null);
+  const barrioRef = useRef(null);
+  const [streetMenuOpen, setStreetMenuOpen] = useState(false);
+  const [barrioMenuOpen, setBarrioMenuOpen] = useState(false);
 
   const isValidPhone = (phone) => /^3\d{9}$/.test(phone);
 
@@ -265,6 +288,37 @@ const AddressInput = ({ onConfirm, onValidityChange, initialAddress }) => {
     handleConfirm();
   };
 
+  // iOS: abrir Select/CreatableSelect con un solo toque (sin doble tap)
+  const onSelectTouchStart = (e) => {
+    const t = e.touches && e.touches[0];
+    if (!t) return;
+    touchInfoRef.current = { x: t.clientX, y: t.clientY, moved: false };
+    e.stopPropagation();
+  };
+  const onSelectTouchMove = (e) => {
+    const t = e.touches && e.touches[0];
+    if (!t) return;
+    const dx = Math.abs(t.clientX - touchInfoRef.current.x);
+    const dy = Math.abs(t.clientY - touchInfoRef.current.y);
+    if (dx > 10 || dy > 10) touchInfoRef.current.moved = true;
+  };
+  const focusAndOpenMenu = (ref) => {
+    if (!ref?.current) return;
+    try { ref.current.focus(); } catch (_) {}
+  };
+  const onSelectTouchEnd = (ref, isOpenSetter, isOpen) => (e) => {
+    if (touchInfoRef.current.moved) return;
+    // Primer tap: abrir menú; si ya está abierto, dejar que opción reciba el evento
+    if (!isOpen) {
+      e.preventDefault();
+      e.stopPropagation();
+      lastTouchTimeRef.current = Date.now();
+      focusAndOpenMenu(ref);
+      // react-select abre menú con focus; aseguramos flag abierto
+      isOpenSetter(true);
+    }
+  };
+
   // siempre mostrar teléfono limpio
   const phoneValue = normalizePhone(formData.phoneNumber);
 
@@ -311,12 +365,20 @@ const AddressInput = ({ onConfirm, onValidityChange, initialAddress }) => {
       <div>
         <label className="block font-medium text-gray-700 mb-1">Tipo de vía</label>
         <Select
+          ref={streetTypeRef}
           options={streetTypeOptions}
           value={streetTypeOptions.find((o) => o.value === formData.streetType) || null}
           onChange={handleStreetTypeChange}
           placeholder="Selecciona tipo de vía"
           styles={customStyles}
           classNamePrefix="react-select"
+          openMenuOnFocus
+          isSearchable={false}
+          onTouchStart={onSelectTouchStart}
+          onTouchMove={onSelectTouchMove}
+          onTouchEnd={onSelectTouchEnd(streetTypeRef, setStreetMenuOpen, streetMenuOpen)}
+          onMenuOpen={() => setStreetMenuOpen(true)}
+          onMenuClose={() => setStreetMenuOpen(false)}
           menuPortalTarget={typeof document !== 'undefined' ? document.body : undefined}
         />
       </div>
@@ -349,6 +411,7 @@ const AddressInput = ({ onConfirm, onValidityChange, initialAddress }) => {
       <div>
         <label className="block font-medium text-gray-700 mb-1">Barrio (pon cualquiera si no sabes cuál es)</label>
         <CreatableSelect
+          ref={barrioRef}
           options={barrioOptions}
           value={
             formData.neighborhood 
@@ -362,6 +425,12 @@ const AddressInput = ({ onConfirm, onValidityChange, initialAddress }) => {
           isSearchable
           isClearable
           formatCreateLabel={(inputValue) => `Usar: "${inputValue}"`}
+          openMenuOnFocus
+          onTouchStart={onSelectTouchStart}
+          onTouchMove={onSelectTouchMove}
+          onTouchEnd={onSelectTouchEnd(barrioRef, setBarrioMenuOpen, barrioMenuOpen)}
+          onMenuOpen={() => setBarrioMenuOpen(true)}
+          onMenuClose={() => setBarrioMenuOpen(false)}
           menuPortalTarget={typeof document !== 'undefined' ? document.body : undefined}
         />
         {errors.neighborhood && (

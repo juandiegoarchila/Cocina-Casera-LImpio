@@ -80,6 +80,16 @@ const SidesSelector = ({ sides, selectedSides, setSelectedSides, notes, setNotes
             value={customSide}
             onChange={(e) => setCustomSide(e.target.value)}
             placeholder="Otro acompañamiento"
+            onTouchEnd={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const el = e.currentTarget;
+              if (el && typeof el.focus === 'function') {
+                try { el.focus({ preventScroll: true }); } catch (_) { el.focus(); }
+                const len = (el.value || '').length;
+                try { el.setSelectionRange(len, len); } catch(_) {}
+              }
+            }}
             className="p-1 xs:p-2 text-[10px] xs:text-xs sm:text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-400 placeholder-gray-400"
             aria-label="Ingresar un acompañamiento personalizado"
           />
@@ -97,6 +107,16 @@ const SidesSelector = ({ sides, selectedSides, setSelectedSides, notes, setNotes
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             placeholder="Ejemplo: Sin cebolla, por favor"
+            onTouchEnd={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const el = e.currentTarget;
+              if (el && typeof el.focus === 'function') {
+                try { el.focus({ preventScroll: true }); } catch (_) { el.focus(); }
+                const len = (el.value || '').length;
+                try { el.setSelectionRange(len, len); } catch(_) {}
+              }
+            }}
             className="w-full p-1 xs:p-2 text-[10px] xs:text-xs sm:text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-400 placeholder-gray-400"
             rows="2"
             aria-label="Notas adicionales para el pedido"

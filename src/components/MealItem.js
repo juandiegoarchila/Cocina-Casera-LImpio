@@ -594,6 +594,16 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
                   value={meal?.notes || ''}
                   onChange={(e) => handleImmediateChange('notes', e.target.value)}
                   placeholder="Ejemplo: Sin ensalada dulce, más papa a la francesa, etc"
+                  onTouchEnd={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const el = e.currentTarget;
+                    if (el && typeof el.focus === 'function') {
+                      try { el.focus({ preventScroll: true }); } catch (_) { el.focus(); }
+                      const len = (el.value || '').length;
+                      try { el.setSelectionRange(len, len); } catch(_) {}
+                    }
+                  }}
                   className="w-full p-2 text-sm border rounded-md"
                   rows="2"
                 />
@@ -626,6 +636,16 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
                   value={meal?.notes || ''}
                   onChange={(e) => handleImmediateChange('notes', e.target.value)}
                   placeholder="Ejemplo: Poquito arroz, más plátano en lugar de ensalada, etc"
+                  onTouchEnd={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const el = e.currentTarget;
+                    if (el && typeof el.focus === 'function') {
+                      try { el.focus({ preventScroll: true }); } catch (_) { el.focus(); }
+                      const len = (el.value || '').length;
+                      try { el.setSelectionRange(len, len); } catch(_) {}
+                    }
+                  }}
                   className="w-full p-2 text-sm border rounded-md"
                   rows="2"
                 />
