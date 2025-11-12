@@ -116,9 +116,14 @@ export const summarizePayments = (paymentsRows = []) => {
  */
 export const defaultPaymentsForOrder = (order) => {
   const rows = extractOrderPayments(order);
-  if (rows?.length) return rows.map(({ methodKey, amount }) => ({ method: methodKey, amount }));
+  if (rows?.length) {
+    return rows.map(({ rawLabel, amount }) => ({ 
+      method: rawLabel || 'Efectivo', 
+      amount 
+    }));
+  }
   const total = Math.floor(Number(order?.total || 0)) || 0;
-  return [{ method: 'cash', amount: total }];
+  return [{ method: 'Efectivo', amount: total }];
 };
 
 /**

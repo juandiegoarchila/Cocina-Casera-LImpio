@@ -36,6 +36,7 @@ import { format } from 'date-fns';
 // === NUEVO: pagos
 import PaymentSplitEditor from '../common/PaymentSplitEditor';
 import { summarizePayments, sumPaymentsByMethod, defaultPaymentsForOrder, extractOrderPayments } from '../../utils/payments';
+import { getColombiaLocalDateString } from '../../utils/bogotaDate';
 
 // ===== Helpers para buscar por nombre y asegurar estructura =====
 const normalizeName = (s) => (s || '').replace(/\s*NUEVO\s*$/i, '').trim();
@@ -145,10 +146,9 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
     }
   }, [orders]);
   const [searchTerm, setSearchTerm] = useState('');
-  // Filtro de fecha para mesas - inicializar con fecha actual
+  // Filtro de fecha para mesas - inicializar con fecha actual de Colombia (UTC-5)
   const [selectedDate, setSelectedDate] = useState(() => {
-    const today = new Date();
-    return today.toISOString().split('T')[0]; // Formato YYYY-MM-DD
+    return getColombiaLocalDateString(); // Formato YYYY-MM-DD en hora de Colombia
   });
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
@@ -1167,7 +1167,14 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
         return [
           order.id.slice(0, 8),
           order.type === 'breakfast' ? 'Desayuno' : 'Almuerzo',
-          formatValue(order.meals?.[0]?.tableNumber || order.breakfasts?.[0]?.tableNumber),
+          (() => {
+            // Para pedidos del POS (con items), verificar si es takeaway
+            if (Array.isArray(order.items) && order.takeaway) {
+              return 'llevar';
+            }
+            // Para otros pedidos, usar la lógica normal
+            return formatValue(order.meals?.[0]?.tableNumber || order.breakfasts?.[0]?.tableNumber);
+          })(),
           order.status,
           `$${order.total?.toLocaleString('es-CO') || 'N/A'}`,
           paymentText,
@@ -1200,7 +1207,14 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
         return [
           order.id.slice(0, 8),
           order.type === 'breakfast' ? 'Desayuno' : 'Almuerzo',
-          formatValue(order.meals?.[0]?.tableNumber || order.breakfasts?.[0]?.tableNumber),
+          (() => {
+            // Para pedidos del POS (con items), verificar si es takeaway
+            if (Array.isArray(order.items) && order.takeaway) {
+              return 'llevar';
+            }
+            // Para otros pedidos, usar la lógica normal
+            return formatValue(order.meals?.[0]?.tableNumber || order.breakfasts?.[0]?.tableNumber);
+          })(),
           order.status,
           `$${order.total?.toLocaleString('es-CO') || 'N/A'}`,
           paymentText,
@@ -1528,7 +1542,14 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
                             {order.type === 'breakfast' ? 'Desayuno' : 'Almuerzo'}
                           </td>
                           <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">
-                            {formatValue(order.tableNumber || order.meals?.[0]?.tableNumber || order.breakfasts?.[0]?.tableNumber)}
+                            {(() => {
+                              // Para pedidos del POS (con items), verificar si es takeaway
+                              if (Array.isArray(order.items) && order.takeaway) {
+                                return 'llevar';
+                              }
+                              // Para otros pedidos, usar la lógica normal
+                              return formatValue(order.tableNumber || order.meals?.[0]?.tableNumber || order.breakfasts?.[0]?.tableNumber);
+                            })()}
                           </td>
                           <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">{paymentDisplay}</td>
                           <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">
@@ -1930,6 +1951,36 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
                           </div>
                         ))}
                         {groupedPosItems.length===0 && <div className="text-sm opacity-60">No hay artículos</div>}
+                      </div>
+
+                      {/* Campo para editar Mesa/Llevar en pedidos POS */}
+                      <div className="mt-4 mb-4">
+                        <label className="block text-xs font-medium mb-1">
+                          Mesa o llevar <span className="text-red-400">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={editingOrder.tableNumber || (editingOrder.takeaway ? 'llevar' : '')}
+                          onChange={(e) => {
+                            const value = e.target.value.trim();
+                            const isLlevar = value.toLowerCase() === 'llevar';
+                            setEditingOrder(prev => ({
+                              ...prev,
+                              tableNumber: isLlevar ? null : value,
+                              takeaway: isLlevar,
+                              serviceType: isLlevar ? 'llevar' : 'mesa',
+                              orderTypeNormalized: `${(prev.orderTypeNormalized?.split('_')[0] || 'desayuno')}_${isLlevar ? 'llevar' : 'mesa'}`
+                            }));
+                          }}
+                          placeholder='Número de mesa o "llevar"'
+                          className={classNames(
+                            "w-full p-2 rounded-md border text-sm",
+                            theme === 'dark'
+                              ? 'border-gray-600 bg-gray-700 text-white'
+                              : 'border-gray-200 bg-white text-gray-900',
+                            "focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          )}
+                        />
                       </div>
                     </>
                   ) : Array.isArray(editingOrder.breakfasts) ? (

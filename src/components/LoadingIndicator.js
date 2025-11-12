@@ -1,9 +1,10 @@
 //src/components/LoadingIndicator.js
 import React from 'react';
+import AnimatedLoader from './AnimatedLoader';
 
-const LoadingIndicator = () => (
+const LoadingIndicator = ({ message = "Cargando...", size = "small" }) => (
   <div className="flex justify-center p-2">
-    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-500"></div>
+    <AnimatedLoader message={message} size={size} />
   </div>
 );
 

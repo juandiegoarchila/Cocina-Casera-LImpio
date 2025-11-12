@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from './AuthProvider';
 import { useNavigate, Link } from 'react-router-dom';
+import LoadingIndicator from '../LoadingIndicator';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -50,7 +51,11 @@ const Login = () => {
   };
 
   if (loading) {
-    return <div className="p-4 text-white bg-gray-900">Cargando...</div>;
+    return (
+      <div className="p-4 text-white bg-gray-900 min-h-screen flex items-center justify-center">
+        <LoadingIndicator message="Iniciando sesión..." size="medium" />
+      </div>
+    );
   }
 
   return (

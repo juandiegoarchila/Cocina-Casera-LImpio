@@ -4,6 +4,7 @@
 const ADDITIONS_PRICES = {
   'chocolate': 3000,
   'pan': 500,
+  'arepita': 1000,
   'porción de arroz': 3000,
   'coca cola 1.5lt pet': 8000,
   'cafe con leche': 3000,

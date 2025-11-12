@@ -13,6 +13,7 @@ import { useNavigate, Routes, Route, Navigate } from 'react-router-dom';
 import { openWhatsApp } from '../../utils/whatsapp';
 import PaymentSplitEditor from '../common/PaymentSplitEditor';
 import { defaultPaymentsForOrder, extractOrderPayments } from '../../utils/payments';
+import { getColombiaLocalDateString } from '../../utils/bogotaDate';
 import OrderSummary from '../OrderSummary';
 import BreakfastOrderSummary from '../BreakfastOrderSummary';
 import DeliveryPayments from './DeliveryPayments';
@@ -32,7 +33,7 @@ const DeliveryOrdersPage = () => {
   const [itemsPerPage, setItemsPerPage] = useState(20);
   const [sortBy, setSortBy] = useState('orderNumber');
   const [sortOrder, setSortOrder] = useState('desc');
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(() => getColombiaLocalDateString());
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [orderTypeFilter, setOrderTypeFilter] = useState('all');
@@ -788,33 +789,126 @@ const DeliveryOrdersPage = () => {
 
       {/* Modal para editar pagos */}
       {editingPaymentsOrder && (
-        <PaymentSplitEditor
-          isOpen={!!editingPaymentsOrder}
-          onClose={() => setEditingPaymentsOrder(null)}
-          order={editingPaymentsOrder}
-          onSave={async (payments) => {
-            try {
-              // Determinar el tipo de colección (breakfast o regular)
-              const collectionName = editingPaymentsOrder.type === 'breakfast'
-                ? 'deliveryBreakfastOrders'
-                : 'orders';
-              
-              // Actualizar solo los pagos, manteniendo el resto del documento igual
-              await updateDoc(doc(db, collectionName, editingPaymentsOrder.id), {
-                payments,
-                paymentUpdatedAt: new Date(),
-                paymentUpdatedBy: user?.email || 'domiciliario'
-              });
-              
-              setSuccess('Pagos actualizados correctamente');
-              setEditingPaymentsOrder(null);
-            } catch (err) {
-              console.error('Error al guardar pagos:', err);
-              setError(`Error al guardar pagos: ${err.message}`);
-            }
-          }}
-          defaultPayments={editingPaymentsOrder.payments || defaultPaymentsForOrder(editingPaymentsOrder)}
-        />
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10001]" onClick={(e) => {
+          if (e.target === e.currentTarget) setEditingPaymentsOrder(null);
+        }}>
+          <div className={`p-4 sm:p-6 rounded-lg max-w-xl w-full max-h-[80vh] overflow-y-auto mx-4 ${theme === 'dark' ? 'bg-gray-800 text-gray-200' : 'bg-white text-gray-900'}`}>
+            <h3 className="text-lg font-semibold mb-4">
+              Editar pagos — Orden #{editingPaymentsOrder.id?.slice(0, 10) || 'N/A'}
+            </h3>
+
+            <PaymentSplitEditor
+              theme={theme}
+              total={editingPaymentsOrder.total || 0}
+              value={
+                Array.isArray(editingPaymentsOrder.payments) && editingPaymentsOrder.payments.length
+                  ? editingPaymentsOrder.payments
+                  : defaultPaymentsForOrder(editingPaymentsOrder)
+              }
+              onChange={(rows) => {
+                setEditingPaymentsOrder((prev) => ({ ...prev, payments: rows }));
+              }}
+            />
+
+            <div className="mt-4 flex gap-2 justify-end">
+              <button 
+                onClick={() => setEditingPaymentsOrder(null)} 
+                className={`px-4 py-2 rounded hover:opacity-80 text-sm ${theme === 'dark' ? 'bg-gray-600 text-white hover:bg-gray-700' : 'bg-gray-300 text-gray-800 hover:bg-gray-400'}`}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    console.log('💰 [Pagos] ==================== INICIO ====================');
+                    console.log('💰 [Pagos] Orden completa:', JSON.stringify(editingPaymentsOrder, null, 2));
+                    console.log('💰 [Pagos] ID:', editingPaymentsOrder.id);
+                    console.log('💰 [Pagos] Source:', editingPaymentsOrder.source);
+                    console.log('💰 [Pagos] Type:', editingPaymentsOrder.type);
+                    console.log('💰 [Pagos] Pagos a guardar:', editingPaymentsOrder.payments);
+                    
+                    if (!editingPaymentsOrder.id) {
+                      throw new Error('El pedido no tiene ID válido');
+                    }
+                    
+                    // Determinar la colección preferida basándose en el source y tipo
+                    const preferred = (editingPaymentsOrder?.source === 'clientOrders' || editingPaymentsOrder?.source === 'client')
+                      ? 'clientOrders'
+                      : (editingPaymentsOrder?.type === 'breakfast' ? 'deliveryBreakfastOrders' : 'orders');
+                    
+                    console.log('💰 [Pagos] Colección preferida:', preferred);
+                    
+                    // Lista de colecciones candidatas para buscar el documento
+                    const candidates = [preferred, 'clientOrders', 'deliveryBreakfastOrders', 'orders', 'deliveryOrders'];
+                    console.log('💰 [Pagos] Candidatos:', candidates);
+                    
+                    const payload = {
+                      payments: editingPaymentsOrder.payments,
+                      paymentUpdatedAt: new Date(),
+                      paymentUpdatedBy: user?.email || 'domiciliario'
+                    };
+                    
+                    console.log('💰 [Pagos] Payload:', payload);
+                    
+                    let updated = false;
+                    let lastErr = null;
+                    let foundInCollection = null;
+                    
+                    // Intentar actualizar en cada colección candidata
+                    for (const coll of candidates) {
+                      try {
+                        console.log(`💰 [Pagos] Intentando actualizar en: ${coll}`);
+                        const docRef = doc(db, coll, editingPaymentsOrder.id);
+                        console.log(`💰 [Pagos] DocRef path: ${docRef.path}`);
+                        
+                        await updateDoc(docRef, payload);
+                        console.log(`💰 [Pagos] ✅ ÉXITO en: ${coll}`);
+                        updated = true;
+                        foundInCollection = coll;
+                        break;
+                      } catch (err) {
+                        console.log(`💰 [Pagos] ❌ Error en ${coll}:`, err.code, err.message);
+                        lastErr = err;
+                        // Si el error es "documento no existe", continuar con la siguiente colección
+                        if (err.code === 'not-found' || /not found/i.test(String(err?.message || err)) || /No document to update/i.test(String(err?.message || err))) {
+                          console.log(`💰 [Pagos] Continuando a la siguiente colección...`);
+                          continue;
+                        }
+                        // Si es otro tipo de error, lanzarlo
+                        console.log(`💰 [Pagos] Error no recuperable, lanzando...`);
+                        throw err;
+                      }
+                    }
+                    
+                    if (!updated) {
+                      console.error('💰 [Pagos] ❌ No se pudo actualizar en ninguna colección');
+                      console.error('💰 [Pagos] Último error:', lastErr);
+                      throw lastErr || new Error('No se pudo guardar los pagos: la orden no existe en ninguna colección conocida.');
+                    }
+                    
+                    console.log(`💰 [Pagos] ✅ Actualización exitosa en: ${foundInCollection}`);
+                    
+                    // Actualización optimista local
+                    setOrders((prev) => prev.map((o) => (
+                      o.id === editingPaymentsOrder.id ? { ...o, payments: editingPaymentsOrder.payments } : o
+                    )));
+                    
+                    setSuccess('Pagos actualizados correctamente');
+                    setEditingPaymentsOrder(null);
+                    console.log('💰 [Pagos] ==================== FIN ====================');
+                  } catch (err) {
+                    console.error('💰 [Pagos] ❌ ERROR FINAL:', err);
+                    console.error('💰 [Pagos] Error completo:', JSON.stringify(err, Object.getOwnPropertyNames(err), 2));
+                    setError(`No se pudo guardar los pagos: ${err.message}`);
+                  }
+                }}
+                className={`px-4 py-2 rounded hover:opacity-80 text-sm ${theme === 'dark' ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-green-500 text-white hover:bg-green-600'}`}
+              >
+                Guardar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

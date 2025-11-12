@@ -1,11 +1,11 @@
 // Devuelve la fecha local de Colombia (Bogotá) en formato YYYY-MM-DD
-export function getColombiaLocalDateString() {
-  // Obtener la hora UTC actual
-  const now = new Date();
-  // Calcular la hora local de Colombia (UTC-5)
-  const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-  const colombiaOffset = -5; // UTC-5
-  const colombiaDate = new Date(utc + 3600000 * colombiaOffset);
-  // Formato YYYY-MM-DD
-  return colombiaDate.toISOString().split('T')[0];
+export function getColombiaLocalDateString(date = new Date()) {
+  // Usar Intl.DateTimeFormat con zona horaria de Bogotá para obtener la fecha correcta
+  const fmt = new Intl.DateTimeFormat('en-CA', { 
+    timeZone: 'America/Bogota', 
+    year: 'numeric', 
+    month: '2-digit', 
+    day: '2-digit' 
+  });
+  return fmt.format(date); // Retorna 'YYYY-MM-DD' directamente
 }

@@ -5,6 +5,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { query, collection, where, getDocs } from 'firebase/firestore';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { db, auth } from '../../config/firebase';
+import LoadingIndicator from '../LoadingIndicator';
 
 const StaffHub = () => {
   const [email, setEmail] = useState('');
@@ -109,7 +110,11 @@ const StaffHub = () => {
   };
 
   if (loading) {
-    return <div className="p-4 text-white bg-gray-900">Cargando...</div>;
+    return (
+      <div className="p-4 text-white bg-gray-900 min-h-screen flex items-center justify-center">
+        <LoadingIndicator message="Cargando hub del personal..." size="medium" />
+      </div>
+    );
   }
 
   return (

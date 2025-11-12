@@ -1,0 +1,116 @@
+/* src/components/AnimatedLoader.css */
+
+/* Animación de rebote personalizada para el logo */
+@keyframes bounce-custom {
+  0%, 20%, 53%, 80%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  40%, 43% {
+    transform: translate3d(0, -20px, 0) scale(1.1);
+  }
+  70% {
+    transform: translate3d(0, -10px, 0) scale(1.05);
+  }
+  90% {
+    transform: translate3d(0, -4px, 0) scale(1.02);
+  }
+}
+
+.animate-bounce-custom {
+  animation: bounce-custom 1.5s infinite;
+}
+
+/* Animación de pulso escalonada para los puntos */
+@keyframes pulse-dot {
+  0%, 70%, 100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+  35% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+.animate-pulse-dot {
+  animation: pulse-dot 1.4s infinite ease-in-out;
+}
+
+.delay-0 {
+  animation-delay: 0ms;
+}
+
+.delay-150 {
+  animation-delay: 150ms;
+}
+
+.delay-300 {
+  animation-delay: 300ms;
+}
+
+/* Animación de barra de progreso */
+@keyframes progress-bar {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-progress-bar {
+  animation: progress-bar 2s infinite ease-in-out;
+}
+
+/* Animación de fade-in para suavizar la aparición */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fade-in 0.5s ease-out;
+}
+
+/* Efecto de resplandor sutil para el logo */
+@keyframes glow-subtle {
+  0%, 100% {
+    filter: drop-shadow(0 0 5px rgba(34, 197, 94, 0.3));
+  }
+  50% {
+    filter: drop-shadow(0 0 10px rgba(34, 197, 94, 0.5));
+  }
+}
+
+.logo-glow {
+  animation: glow-subtle 3s infinite ease-in-out;
+}
+
+/* Variante para pantalla completa */
+.fullscreen-loader {
+  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Responsive adjustments */
+@media (max-width: 640px) {
+  .animate-bounce-custom {
+    animation-duration: 1.8s;
+  }
+  
+  .animate-progress-bar {
+    animation-duration: 2.5s;
+  }
+}

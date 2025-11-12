@@ -10,6 +10,7 @@ import BreakfastList from './components/BreakfastList';
 import OrderSummary from './components/OrderSummary';
 import BreakfastOrderSummary from './components/BreakfastOrderSummary';
 import LoadingIndicator from './components/LoadingIndicator';
+import FullScreenLoader from './components/FullScreenLoader';
 import ErrorMessage from './components/ErrorMessage';
 import SuccessMessage from './components/SuccessMessage';
 import InfoMessage from './components/InfoMessage';
@@ -923,11 +924,11 @@ try {
   };
 
   if (loading) {
-    return <div className="min-h-screen bg-gray-50 flex items-center justify-center">Cargando...</div>;
+    return <FullScreenLoader message="Cargando..." />;
   }
 
   return (
-    <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center">Cargando aplicación...</div>}>
+    <Suspense fallback={<FullScreenLoader message="Cargando aplicación..." />}>
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/staffhub" element={<StaffHub />} />

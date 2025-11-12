@@ -929,7 +929,11 @@ const WaiterDashboard = () => {
   };
 
   if (loading) {
-    return <div className="min-h-screen bg-gray-50 flex items-center justify-center">Cargando...</div>;
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <LoadingIndicator message="Cargando panel del mesero..." size="medium" />
+      </div>
+    );
   }
 
   return (

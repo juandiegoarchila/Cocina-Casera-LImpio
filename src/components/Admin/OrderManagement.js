@@ -1,5 +1,6 @@
 // src/components/Admin/OrderManagement.jsx
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { calculateBreakfastPrice } from '../../utils/BreakfastCalculations';
 import { db } from '../../config/firebase.js';
 import {
   collection,
@@ -24,6 +25,7 @@ import { cleanText, getAddressDisplay } from './utils.js';
 import { getColombiaLocalDateString } from '../../utils/bogotaDate.js';
 import TablaPedidos from './TablaPedidos.js';
 import InteraccionesPedidos from './InteraccionesPedidos.js';
+import { calculateTotal } from '../../utils/MealCalculations.js';
 
 const OrderManagement = ({ setError, setSuccess, theme }) => {
   const [orders, setOrders] = useState([]);
@@ -47,10 +49,9 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showAddOrderModal, setShowAddOrderModal] = useState(false);
   const [orderTypeFilter, setOrderTypeFilter] = useState('all');
-  // Filtro de fecha para domicilios - inicializar con fecha actual
+  // Filtro de fecha para domicilios - inicializar con fecha actual de Colombia (UTC-5)
   const [selectedDate, setSelectedDate] = useState(() => {
-    const today = new Date();
-    return today.toISOString().split('T')[0]; // Formato YYYY-MM-DD
+    return getColombiaLocalDateString(); // Formato YYYY-MM-DD en hora de Colombia
   });
   const [newOrderForm, setNewOrderForm] = useState({
     meals: [
@@ -188,27 +189,65 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
       (snapshot) => {
         latestLunch = snapshot.docs.map((doc) => {
           const data = doc.data();
-          const meals =
-            Array.isArray(data.meals) && data.meals.length > 0
-              ? data.meals
-              : [{ address: {}, payment: { name: 'Efectivo' }, time: {} }];
+          const hasBreakfastArray = Array.isArray(data.breakfasts) && data.breakfasts.length > 0;
+          const isBreakfast = hasBreakfastArray;
 
-        return {
+          // Normalizar meals
+          const meals = Array.isArray(data.meals) && data.meals.length > 0
+            ? data.meals
+            : [{ address: {}, payment: { name: 'Efectivo' }, time: {} }];
+
+          // Normalizar breakfasts si existen
+            const normalizedBreakfasts = hasBreakfastArray
+              ? data.breakfasts.map((b) => {
+                  const addr = b.address || {};
+                  const inferredType = (addr.address || addr.phoneNumber || addr.neighborhood) ? 'domicilio' : (b.orderType || 'mesa');
+                  return {
+                    ...b,
+                    orderType: inferredType,
+                    address: addr,
+                    payment: b.payment && typeof b.payment === 'object' && b.payment.name
+                      ? b.payment
+                      : { name: (typeof b.payment === 'string' ? b.payment : (b.payment?.name || 'Efectivo')) },
+                  };
+                })
+              : [];
+
+          // Calcular total correcto para desayunos en esta colección si no está seteado o es 0
+          let computedBreakfastTotal = 0;
+          if (isBreakfast) {
+            normalizedBreakfasts.forEach((b) => {
+              try {
+                computedBreakfastTotal += calculateBreakfastPrice({ ...b, orderType: b.orderType });
+              } catch (e) {
+                // Silencio: fallback si falla
+              }
+            });
+          }
+          const finalTotal = isBreakfast
+            ? (data.total && data.total > 0 ? data.total : computedBreakfastTotal)
+            : (data.total || 0);
+
+          // Derivar método de pago legacy por prioridad
+          const legacyPayment = data.payment || (meals[0]?.payment?.name) || (normalizedBreakfasts[0]?.payment?.name) || 'Efectivo';
+
+          return {
             id: doc.id,
-            type: 'lunch',
+            __collection: 'orders',
+            type: isBreakfast ? 'breakfast' : 'lunch',
             ...data,
             meals: meals.map((meal) => ({
               ...meal,
               address: meal.address || {},
-              payment:
-                meal.payment && typeof meal.payment === 'object' && meal.payment.name
-                  ? meal.payment
-                  : { name: meal.payment || 'Efectivo' },
+              payment: meal.payment && typeof meal.payment === 'object' && meal.payment.name
+                ? meal.payment
+                : { name: meal.payment || 'Efectivo' },
               time: meal.time || {}
             })),
-            payment: data.payment || (meals[0]?.payment?.name || 'Efectivo'),
+            breakfasts: normalizedBreakfasts,
+            payment: legacyPayment,
             paymentSummary: data.paymentSummary || { Efectivo: 0, Daviplata: 0, Nequi: 0 },
-            total: data.total || 0,
+            total: finalTotal,
             deliveryPerson: data.deliveryPerson || 'Sin asignar',
             status: data.status || 'Pendiente'
           };
@@ -851,8 +890,26 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
           }
         : {};
 
-      // Usar el nuevo formato de payments (array) en lugar del formato legacy
-      const totalAmount = Number(editForm.total) || 0;
+      // Recalcular el total basándose en el contenido actual del formulario
+      let totalAmount = 0;
+      
+      if ((editingOrder.type || editForm.type) === 'breakfast') {
+        // Para desayunos, calcular el total de todos los desayunos
+        totalAmount = (editForm.breakfasts || []).reduce((sum, breakfast) => {
+          // Crear una copia con orderType='table' para el cálculo (precio estándar)
+          const breakfastForCalc = { ...breakfast, orderType: 'table' };
+          const breakfastPrice = calculateBreakfastPrice(breakfastForCalc, 3) || 0;
+          return sum + breakfastPrice;
+        }, 0);
+      } else {
+        // Para almuerzos, usar la función de cálculo existente
+        totalAmount = Number(calculateTotal(editForm.meals || []) || 0);
+      }
+      
+      // Fallback al total del formulario si el cálculo falla
+      if (!totalAmount || totalAmount === 0) {
+        totalAmount = Number(editForm.total) || 0;
+      }
       const payments = [{
         method: editForm.payment || 'Efectivo',
         amount: totalAmount,
@@ -972,6 +1029,42 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
           newState: { ...editForm, meals: updatedMealsForDB }
         });
       }
+
+      // Actualizar inmediatamente el estado local para reflejar los cambios
+      setOrders(prevOrders => {
+        const updatedOrders = prevOrders.map(order => 
+          order.id === editingOrder.id 
+            ? { 
+                ...order, 
+                ...updateDataBase,
+                type: (editingOrder.type || editForm.type),
+                meals: updateDataBase.meals || order.meals,
+                breakfasts: updateDataBase.breakfasts || order.breakfasts
+              }
+            : order
+        );
+        
+        // Forzar recálculo inmediato de totales con los datos actualizados
+        setTimeout(() => {
+          // Simular el recálculo con los datos actualizados
+          const newTotals = { cash: 0, daviplata: 0, nequi: 0, general: 0 };
+          const newDeliveryPersons = {};
+
+          updatedOrders.forEach((order) => {
+            if (order.status !== 'Cancelado') {
+              const paymentSummary = order.paymentSummary || { Efectivo: 0, Daviplata: 0, Nequi: 0 };
+              newTotals.cash += paymentSummary['Efectivo'] || 0;
+              newTotals.daviplata += paymentSummary['Daviplata'] || 0;
+              newTotals.nequi += paymentSummary['Nequi'] || 0;
+              newTotals.general += order.total || 0;
+            }
+          });
+
+          setTotals(newTotals);
+        }, 100);
+        
+        return updatedOrders;
+      });
 
       setEditingOrder(null);
       setSuccess('Pedido actualizado correctamente.');

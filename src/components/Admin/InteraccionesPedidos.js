@@ -620,6 +620,75 @@ const ensureAddress = (addr = {}, fallback = {}) => ({
   details: addr.details ?? fallback.details ?? '',
 });
 
+// Funciones auxiliares para manejar adiciones con cantidades en el modal de edición
+const createAdditionHandlers = (editForm, handleBreakfastImmediate, handleMealFormFieldChange, isBreakfast) => {
+  const handleAddAddition = (breakfastIdx, mealIdx, addition) => {
+    if (isBreakfast) {
+      const currentBreakfast = editForm.breakfasts[breakfastIdx];
+      const existingAddition = currentBreakfast.additions?.find((add) => add.id === addition.id);
+      const updatedAdditions = currentBreakfast.additions ? [...currentBreakfast.additions] : [];
+      
+      if (existingAddition) {
+        updatedAdditions[updatedAdditions.findIndex((a) => a.id === addition.id)] = {
+          ...existingAddition,
+          quantity: (existingAddition.quantity || 1) + 1,
+        };
+      } else {
+        updatedAdditions.push({ ...addition, quantity: 1 });
+      }
+      handleBreakfastImmediate(breakfastIdx, 'additions', updatedAdditions);
+    } else {
+      const currentMeal = editForm.meals[mealIdx];
+      const existingAddition = currentMeal.additions?.find((add) => add.id === addition.id);
+      const updatedAdditions = currentMeal.additions ? [...currentMeal.additions] : [];
+      
+      if (existingAddition) {
+        updatedAdditions[updatedAdditions.findIndex((a) => a.id === addition.id)] = {
+          ...existingAddition,
+          quantity: (existingAddition.quantity || 1) + 1,
+        };
+      } else {
+        updatedAdditions.push({ ...addition, quantity: 1 });
+      }
+      handleMealFormFieldChange(mealIdx, 'additions', updatedAdditions);
+    }
+  };
+
+  const handleRemoveAddition = (breakfastIdx, mealIdx, additionId) => {
+    if (isBreakfast) {
+      const currentBreakfast = editForm.breakfasts[breakfastIdx];
+      const updatedAdditions = (currentBreakfast.additions || [])
+        .map((add) => (add.id === additionId ? { ...add, quantity: (add.quantity || 1) - 1 } : add))
+        .filter((add) => add.quantity > 0);
+      handleBreakfastImmediate(breakfastIdx, 'additions', updatedAdditions);
+    } else {
+      const currentMeal = editForm.meals[mealIdx];
+      const updatedAdditions = (currentMeal.additions || [])
+        .map((add) => (add.id === additionId ? { ...add, quantity: (add.quantity || 1) - 1 } : add))
+        .filter((add) => add.quantity > 0);
+      handleMealFormFieldChange(mealIdx, 'additions', updatedAdditions);
+    }
+  };
+
+  const handleIncreaseAddition = (breakfastIdx, mealIdx, additionId) => {
+    if (isBreakfast) {
+      const currentBreakfast = editForm.breakfasts[breakfastIdx];
+      const updatedAdditions = (currentBreakfast.additions || []).map((add) =>
+        add.id === additionId ? { ...add, quantity: (add.quantity || 1) + 1 } : add
+      );
+      handleBreakfastImmediate(breakfastIdx, 'additions', updatedAdditions);
+    } else {
+      const currentMeal = editForm.meals[mealIdx];
+      const updatedAdditions = (currentMeal.additions || []).map((add) =>
+        add.id === additionId ? { ...add, quantity: (add.quantity || 1) + 1 } : add
+      );
+      handleMealFormFieldChange(mealIdx, 'additions', updatedAdditions);
+    }
+  };
+
+  return { handleAddAddition, handleRemoveAddition, handleIncreaseAddition };
+};
+
 const InteraccionesPedidos = ({
   theme,
   showProteinModal,
@@ -733,6 +802,10 @@ const InteraccionesPedidos = ({
   const handleBreakfastImmediate = (idx, field, value) => {
     handleBreakfastFormFieldChange(idx, field, value);
   };
+
+  // Crear funciones auxiliares para manejar adiciones con cantidades
+  const breakfastAdditionHandlers = createAdditionHandlers(editForm, handleBreakfastImmediate, handleMealFormFieldChange, true);
+  const mealAdditionHandlers = createAdditionHandlers(editForm, handleBreakfastImmediate, handleMealFormFieldChange, false);
 
   // ===================== Hidratación segura del formulario =====================
   const hydratedOrderIdRef = React.useRef(null);
@@ -1453,12 +1526,24 @@ const InteraccionesPedidos = ({
                           <div className="sm:col-span-2">
                             <label className="block text-sm font-medium mb-1">Adiciones</label>
                             <OptionSelector
-                              title="Adiciones"
+                              title="Adiciones (por desayuno)"
                               emoji="➕"
                               options={breakfastAdditions}
                               selected={row.additions || []}
                               multiple={true}
-                              onImmediateSelect={(sel) => handleBreakfastImmediate(idx, 'additions', sel.map((a) => ({ name: a.name, quantity: a.quantity || 1 })))}
+                              onImmediateSelect={(sel) => {
+                                const updatedSelection = sel.map(add => {
+                                  const existingAdd = row.additions?.find(a => a.id === add.id);
+                                  return {
+                                    ...add,
+                                    quantity: existingAdd ? (existingAdd.quantity || 1) : 1,
+                                  };
+                                });
+                                handleBreakfastImmediate(idx, 'additions', updatedSelection);
+                              }}
+                              onAdd={(addition) => breakfastAdditionHandlers.handleAddAddition(idx, null, addition)}
+                              onRemove={(additionId) => breakfastAdditionHandlers.handleRemoveAddition(idx, null, additionId)}
+                              onIncrease={(additionId) => breakfastAdditionHandlers.handleIncreaseAddition(idx, null, additionId)}
                             />
                           </div>
 
@@ -1574,25 +1659,29 @@ const InteraccionesPedidos = ({
                           <div className="sm:col-span-2">
                             <label className="block text-sm font-medium mb-1">Adiciones</label>
                             <OptionSelector
-                              title="Adiciones"
+                              title="Adiciones (por almuerzo)"
                               emoji="➕"
                               options={additions}
                               selected={row.additions || []}
                               multiple={true}
-                              onImmediateSelect={(sel) =>
-                                handleMealFormFieldChange(
-                                  idx,
-                                  'additions',
-                                  sel.map((a) => ({
-                                    id: a.id,
-                                    name: a.name,
-                                    price: a.price || 0,
-                                    protein: a.protein || '',
-                                    replacement: a.replacement || '',
-                                    quantity: a.quantity || 1,
-                                  }))
-                                )
-                              }
+                              onImmediateSelect={(sel) => {
+                                const updatedSelection = sel.map(add => {
+                                  const existingAdd = row.additions?.find(a => a.id === add.id);
+                                  return {
+                                    ...add,
+                                    id: add.id,
+                                    name: add.name,
+                                    price: add.price || 0,
+                                    protein: add.protein || '',
+                                    replacement: add.replacement || '',
+                                    quantity: existingAdd ? (existingAdd.quantity || 1) : 1,
+                                  };
+                                });
+                                handleMealFormFieldChange(idx, 'additions', updatedSelection);
+                              }}
+                              onAdd={(addition) => mealAdditionHandlers.handleAddAddition(null, idx, addition)}
+                              onRemove={(additionId) => mealAdditionHandlers.handleRemoveAddition(null, idx, additionId)}
+                              onIncrease={(additionId) => mealAdditionHandlers.handleIncreaseAddition(null, idx, additionId)}
                             />
                           </div>
 

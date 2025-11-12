@@ -262,6 +262,7 @@ const DashboardCharts = React.memo(({
   periodStructures = null,
   paymentsRaw = [],
   paymentsAllRaw = [],
+  domiciliosPaymentsOverride = 0,
   // Nuevos props para barra de gastos del día
   totalExpensesTodayProp = 0,
   expensesByProvider = { total:0, byProvider:{}, counts:{} },
@@ -456,7 +457,8 @@ const DashboardCharts = React.memo(({
 
   // Cálculo temprano de gastos y neto para reutilizar
   // Ajuste para fecha seleccionada distinta a hoy: buscar registro histórico
-  const todayISOString = new Date().toISOString().split('T')[0];
+  // Usar fecha local de Bogotá para evitar desfase UTC en comparaciones de "hoy"
+  const todayISOString = ymdInBogota(new Date());
   let adjustedGross = totalGrossToday;
   let adjustedExpenses = totalExpensesTodayProp;
   if(selectedDate && selectedDate !== todayISOString){
@@ -487,13 +489,17 @@ const DashboardCharts = React.memo(({
   }, []);
 
   const incomeCategoriesData = useMemo(() => {
-    // Si la fecha seleccionada es hoy (o no hay selectedDate) usamos categoryTotals actuales.
-    const isTodaySelected = !selectedDate || selectedDate === new Date().toISOString().split('T')[0];
+    // Si el rango es "hoy" o la fecha seleccionada coincide con hoy en Bogotá, usamos categoryTotals actuales.
+    const isTodaySelected = (range === 'today') || (!selectedDate || selectedDate === ymdInBogota(new Date()));
     if (isTodaySelected) {
       const ct = categoryTotals || {};
+      const dAlm = Number(ct.domiciliosAlmuerzo)||0;
+      const dDes = Number(ct.domiciliosDesayuno)||0;
+      const delta = Math.max(0, Number(domiciliosPaymentsOverride||0) - (dAlm + dDes));
+      const dDesDisplay = dDes + delta; // asignar diferencia a desayuno
       return [
-        { name: 'Domicilios Almuerzo', value: Number(ct.domiciliosAlmuerzo)||0 },
-        { name: 'Domicilios Desayuno', value: Number(ct.domiciliosDesayuno)||0 },
+        { name: 'Domicilios Almuerzo', value: dAlm },
+        { name: 'Domicilios Desayuno', value: dDesDisplay },
         { name: 'Almuerzo Mesa', value: Number(ct.mesasAlmuerzo)||0 },
         { name: 'Almuerzo llevar', value: Number(ct.llevarAlmuerzo)||0 },
         { name: 'Desayuno Mesa', value: Number(ct.mesasDesayuno)||0 },
@@ -514,7 +520,7 @@ const DashboardCharts = React.memo(({
       { name: 'Desayuno Mesa', value: Number(c.mesasDesayuno)||0 },
       { name: 'Desayuno llevar', value: 0 }, // histórico no distingue, queda 0
     ];
-  }, [categoryTotals, settledDomiciliosAlmuerzo, settledDomiciliosDesayuno, ingresosData, selectedDate]);
+  }, [categoryTotals, settledDomiciliosAlmuerzo, settledDomiciliosDesayuno, ingresosData, selectedDate, range]);
 
   // Añadimos gastos como séptima barra negativa cuando se expande
   const breakdownData = useMemo(() => {
@@ -675,10 +681,14 @@ const DashboardCharts = React.memo(({
 
     // 4. Hoy (usar siempre adjustedGross para asegurar barra visible inmediatamente)
     if(range==='today'){
+      // Para el día de hoy forzamos el cálculo directo desde las categorías actuales
+      // en vez de confiar en adjustedGross (que podría arrastrar valores históricos inflados)
+      const grossFromCategories = incomeCategoriesData.reduce((s,c)=> s + (Number(c.value)||0), 0);
       if(showIncomeBreakdown){
+        // breakdownData ya incluye incomeCategoriesData + Gastos como barra negativa
         return breakdownData.map(d=>({...d}));
       }
-      return [{ name: selectedDate || 'Hoy', value: Number(adjustedGross)||0 }];
+      return [{ name: selectedDate || 'Hoy', value: grossFromCategories }];
     }
 
     // Año
@@ -738,7 +748,7 @@ const DashboardCharts = React.memo(({
 
     // Fallback
     return [{ name:'Total', value: netToday }];
-  }, [showIncomeBreakdown, drillDayIncome, breakdownData, netToday, adjustedGross, range, drillMonth, ingresosData, selectedDate, periodStructures]);
+  }, [showIncomeBreakdown, drillDayIncome, breakdownData, netToday, adjustedGross, range, drillMonth, ingresosData, selectedDate, periodStructures, incomeCategoriesData]);
 
   // Validar y sanear datos de ingresos para evitar NaN
   const safeIncomeChartData = useMemo(() => {
@@ -876,9 +886,29 @@ const DashboardCharts = React.memo(({
     }
     if(range==='7d' || range==='today'){
       // Mapear datos existentes por fecha
-  const map = {};
-  dailyOrdersChartDataAdapted.forEach(d=>{ map[d.name]=d; });
-      // Construir lista de días (hoy hacia atrás 6) manteniendo orden cronológico
+      const map = {};
+      dailyOrdersChartDataAdapted.forEach(d=>{ map[d.name]=d; });
+
+      if(range==='today'){
+        // Mostrar únicamente la fecha seleccionada (o hoy si no hay selectedDate)
+        const targetISO = selectedDate ? selectedDate : ymdInBogota(new Date());
+        const d = map[targetISO] || { name: targetISO };
+        const dd = d.domiciliosDesayuno||0, md = d.mesasDesayuno||0, ld = d.llevarDesayuno||0, da = d.domiciliosAlmuerzo||0, ma = d.mesasAlmuerzo||0, la = d.llevarAlmuerzo||0;
+        return [{
+          name: targetISO,
+          desDom: dd,
+          desMesa: md,
+          desLle: ld,
+          almDom: da,
+          almMesa: ma,
+          almLle: la,
+          desTotal: dd+md+ld,
+          almTotal: da+ma+la,
+          total: dd+md+ld+da+ma+la
+        }];
+      }
+
+      // range==='7d': Construir lista de días (hoy hacia atrás 6) manteniendo orden cronológico
       const days=[]; for(let i=6;i>=0;i--){ const dt=new Date(); dt.setDate(dt.getDate()-i); const iso= ymdInBogota(dt); days.push(iso); }
       const filled = days.map(day=>{
         const d = map[day] || { name: day };
@@ -896,8 +926,6 @@ const DashboardCharts = React.memo(({
           total: dd+md+ld+da+ma+la
         };
       });
-      // En modo 'today' si solo se requiere el día específico mantener compatibilidad (mostrar un solo día)
-      if(range==='today') return filled.slice(-1);
       return filled;
     }
     return [];
@@ -921,7 +949,7 @@ const DashboardCharts = React.memo(({
           <p className={lineCls}>🛵 Domicilio:<span className="font-semibold">{d.almDom}</span></p>
           <p className={lineCls}>🪑 Mesa:<span className="font-semibold">{d.almMesa}</span></p>
           <p className={lineCls}>📦 Llevar:<span className="font-semibold">{d.almLle}</span></p>
-          <p className="mt-2 font-bold flex justify-between text-[12px]">📊 Total pedidos <span>{d.total}</span></p>
+          <p className="mt-2 font-bold flex justify-between gap-1 text-[12px]">📊 Total pedidos <span>{d.total}</span></p>
         </div>
       </div>
     );
@@ -1117,7 +1145,10 @@ const DashboardCharts = React.memo(({
     }
     // Comportamiento normal para otros casos
     if (single) {
-      const gross = Number(adjustedGross)||0; // usar bruto ajustado (histórico o actual)
+      // Para hoy, alinear el tooltip con la barra usando el bruto sumado desde categorías actuales
+      const gross = (range==='today')
+        ? incomeCategoriesData.reduce((s,c)=> s + (Number(c.value)||0), 0)
+        : (Number(adjustedGross)||0); // otros rangos pueden usar adjustedGross
       return (
         <div className="p-3 rounded-xl shadow-lg border text-xs" style={{backgroundColor: theme==='dark'?'rgba(31,41,55,0.95)':'rgba(255,255,255,0.95)', borderColor: theme==='dark'?'#4b5563':'#e5e7eb', color: chartTextColor, maxWidth:240}}>
           <p className="text-sm font-semibold mb-1">Total ingresos</p>

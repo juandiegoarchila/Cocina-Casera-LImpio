@@ -175,7 +175,9 @@ const calculateCorrectBreakfastTotal = (order) => {
   // Inferir el tipo de orden por cada desayuno (domicilio vs mesa)
   const total = order.breakfasts.reduce((sum, breakfast, idx) => {
     const hasAddress = !!(breakfast?.address?.address || breakfast?.address?.phoneNumber);
-    const breakfastWithType = { ...breakfast, orderType: hasAddress ? 'takeaway' : (breakfast.orderType || 'table') };
+    // Clasificar correctamente: si hay dirección es DOMICILIO (no 'takeaway' que se interpreta como llevar)
+    const inferredType = hasAddress ? 'domicilio' : (breakfast.orderType || 'mesa');
+    const breakfastWithType = { ...breakfast, orderType: inferredType };
     const itemTotal = calculateBreakfastPrice(breakfastWithType);
     console.log('🔍 [TablaPedidos] Desayuno calculado:', { idx: idx + 1, orderType: breakfastWithType.orderType, additions: breakfastWithType.additions, itemTotal });
     return sum + itemTotal;
@@ -211,9 +213,15 @@ const handlePrintDeliveryReceipt = async (order, allSides = []) => {
   // Antes de crear el recibo, si el pedido está Pendiente, intentar marcarlo como En Preparación
   try {
     // Considerar pedidos antiguos sin status o con variantes de mayúsculas/minúsculas
-    const isPending = !order?.status || /pendiente/i.test(order.status);
+    const currentStatus = (order?.status || '').toLowerCase().trim();
+    const isPending = !order?.status || currentStatus === 'pendiente' || currentStatus === '';
+    
+    console.log('🖨️ [Impresión] Iniciando impresión - Estado actual:', order?.status, 'isPending:', isPending);
+    
     if (isPending) {
       const id = order?.id || order?.orderId || order?._id;
+      console.log('🖨️ [Impresión] Buscando documento con ID:', id);
+      
       if (id) {
         // Heurística local para encontrar la colección del pedido (similar a findExistingOrderRef)
         const isBreakfast = order?.type === 'breakfast' || Array.isArray(order?.breakfasts);
@@ -223,8 +231,10 @@ const handlePrintDeliveryReceipt = async (order, allSides = []) => {
         if (order?.__collection) preferred.push(order.__collection);
         if (order?.collectionName && order.collectionName !== order.__collection) preferred.push(order.collectionName);
         const orderedBase = [guess, ...BASE.filter((c) => c !== guess)];
-        const EXTRA_COLLECTIONS = ['orders', 'deliveryOrders', 'tableOrders', 'deliveryBreakfastOrders', 'breakfastOrders', 'domicilioOrders'];
+        const EXTRA_COLLECTIONS = ['orders', 'deliveryOrders', 'tableOrders', 'deliveryBreakfastOrders', 'breakfastOrders', 'domicilioOrders', 'clientOrders'];
         const candidates = [...preferred.filter(Boolean), ...orderedBase, ...EXTRA_COLLECTIONS].filter((v, i, a) => !!v && a.indexOf(v) === i);
+
+        console.log('🖨️ [Impresión] Buscando en colecciones:', candidates);
 
         let foundRef = null;
         for (const col of candidates) {
@@ -233,28 +243,35 @@ const handlePrintDeliveryReceipt = async (order, allSides = []) => {
             const snap = await getDoc(candidateRef);
             if (snap.exists()) {
               foundRef = candidateRef;
+              console.log('🖨️ [Impresión] ✅ Documento encontrado en colección:', col);
               break;
             }
           } catch (e) {
-            // ignorar y continuar
+            console.log('🖨️ [Impresión] ❌ No encontrado en:', col);
           }
         }
 
         if (foundRef) {
           try {
             await updateDoc(foundRef, { status: 'En Preparación', updatedAt: new Date() });
+            console.log('🖨️ [Impresión] ✅ Estado actualizado exitosamente a "En Preparación"');
             try { showToast('success', 'Estado actualizado a "En Preparación" al imprimir.'); } catch(e) {}
           } catch (e) {
-            console.error('[Impresión] No se pudo actualizar estado:', e);
+            console.error('🖨️ [Impresión] ❌ No se pudo actualizar estado:', e);
             try { showToast('error', 'No se pudo actualizar el estado al imprimir.'); } catch(e) {}
           }
         } else {
-          console.warn('[Impresión] No se encontró documento de pedido para actualizar status (id potencial):', id);
+          console.warn('🖨️ [Impresión] ⚠️ No se encontró documento de pedido para actualizar status (id:', id, ')');
+          console.log('🖨️ [Impresión] Objeto order completo:', JSON.stringify(order, null, 2));
         }
+      } else {
+        console.warn('🖨️ [Impresión] ⚠️ No se pudo obtener ID del pedido');
       }
+    } else {
+      console.log('🖨️ [Impresión] ℹ️ El pedido ya no está en estado Pendiente, no se actualiza');
     }
   } catch (e) {
-    console.error('[Impresión] Error al intentar actualizar estado antes de imprimir:', e);
+    console.error('🖨️ [Impresión] ❌ Error al intentar actualizar estado antes de imprimir:', e);
   }
 
   // SOLO imprime el recibo, NO abre la caja registradora
@@ -1098,6 +1115,8 @@ const TablaPedidos = ({
   selectedDate,
   setSelectedDate,
   permissions,
+  editingPaymentsOrder: editingPaymentsOrderProp,
+  setEditingPaymentsOrder: setEditingPaymentsOrderProp,
 }) => {
   const menuRef = useRef(null);
   const [deliveryDraft, setDeliveryDraft] = useState('');
@@ -1155,8 +1174,17 @@ const TablaPedidos = ({
   };
   useEffect(() => () => toastTimer.current && clearTimeout(toastTimer.current), []);
 
-  // ====== Split de pagos: estado para modal local ======
-  const [editingPaymentsOrder, setEditingPaymentsOrder] = useState(null);
+  // ====== Split de pagos: estado para modal local o desde props ======
+  const [editingPaymentsOrderLocal, setEditingPaymentsOrderLocal] = useState(null);
+  
+  // Usar las props si están disponibles, sino usar el estado local
+  const editingPaymentsOrder = editingPaymentsOrderProp !== undefined ? editingPaymentsOrderProp : editingPaymentsOrderLocal;
+  const setEditingPaymentsOrder = setEditingPaymentsOrderProp || setEditingPaymentsOrderLocal;
+
+  // ====== Modal de confirmación para eliminar pedido individual ======
+  const [showConfirmDeleteSingle, setShowConfirmDeleteSingle] = useState(false);
+  const [orderToDelete, setOrderToDelete] = useState(null);
+  const [confirmDeleteText, setConfirmDeleteText] = useState('');
 
   // Permisos (por defecto: vista admin completa)
   const perms = useMemo(() => ({
@@ -1181,7 +1209,8 @@ const TablaPedidos = ({
     'tableOrders',
     'deliveryBreakfastOrders', // <— importante para desayunos
     'breakfastOrders',
-    'domicilioOrders'
+    'domicilioOrders',
+    'clientOrders'
   ];
 
   // ✅ Heurística afinada a tus nombres reales
@@ -1199,8 +1228,21 @@ const TablaPedidos = ({
 
   // ✅ Busca la orden probando todas las variantes conocidas
   const findExistingOrderRef = async (order) => {
-    const id = order?.id;
-    if (!id) throw new Error('Order sin id');
+    // Probar múltiples posibles IDs que podría traer la orden desde distintas vistas/orígenes
+    const idCandidates = [
+      order?.id,
+      order?.uid,
+      order?.orderId,
+      order?.documentId,
+      order?.docId,
+    ]
+      .map((x) => (x ? String(x).trim() : ''))
+      .filter((x) => !!x);
+
+    if (!idCandidates.length) {
+      // Sin ID utilizable
+      return null;
+    }
 
     const preferred = [];
     if (order?.__collection) preferred.push(order.__collection);
@@ -1212,16 +1254,22 @@ const TablaPedidos = ({
     const BASE = ['orders', 'deliveryOrders', 'tableOrders', 'deliveryBreakfastOrders', 'breakfastOrders'];
     const orderedBase = [guess, ...BASE.filter((c) => c !== guess)];
 
-    const candidates = [
+    const collections = [
       ...preferred.filter(Boolean),
       ...orderedBase,
       ...EXTRA_COLLECTIONS,
     ].filter((v, i, a) => !!v && a.indexOf(v) === i); // únicos
 
-    for (const col of candidates) {
-      const ref = doc(db, col, id);
-      const snap = await getDoc(ref);
-      if (snap.exists()) return ref;
+    for (const col of collections) {
+      for (const id of idCandidates) {
+        try {
+          const ref = doc(db, col, id);
+          const snap = await getDoc(ref);
+          if (snap.exists()) return ref;
+        } catch (_) {
+          // continuar probando
+        }
+      }
     }
 
     return null;
@@ -1365,6 +1413,7 @@ const TablaPedidos = ({
   }, [orders]);
 
   // ===== Resumen por Domiciliarios (exacto con split) =====
+  // Mostrar todos los pedidos (pendientes y liquidados) por domiciliario
   const resumen = useMemo(
     () => sumPaymentsByDeliveryAndType(orders || [], { 
       fallbackBuilder: defaultPaymentsForOrder,
@@ -1373,6 +1422,39 @@ const TablaPedidos = ({
     }),
     [orders]
   );
+
+  // Separar pendientes y liquidados para mostrar ambos
+  const resumenPendientes = useMemo(() => {
+    const acc = {};
+    (orders || []).forEach(o => {
+      if (o.status === 'Cancelado') return;
+      if (!o.settled) {
+        const person = o.deliveryPerson || 'Sin asignar';
+        if (!acc[person]) acc[person] = { desayuno: 0, almuerzo: 0 };
+        const isDesayuno = o.type === 'breakfast' || (Array.isArray(o.breakfasts) && o.breakfasts.length > 0);
+        const total = Number(o.total || 0);
+        if (isDesayuno) acc[person].desayuno += total;
+        else acc[person].almuerzo += total;
+      }
+    });
+    return acc;
+  }, [orders]);
+
+  const resumenLiquidados = useMemo(() => {
+    const acc = {};
+    (orders || []).forEach(o => {
+      if (o.status === 'Cancelado') return;
+      if (o.settled) {
+        const person = o.deliveryPerson || 'Sin asignar';
+        if (!acc[person]) acc[person] = { desayuno: 0, almuerzo: 0 };
+        const isDesayuno = o.type === 'breakfast' || (Array.isArray(o.breakfasts) && o.breakfasts.length > 0);
+        const total = Number(o.total || 0);
+        if (isDesayuno) acc[person].desayuno += total;
+        else acc[person].almuerzo += total;
+      }
+    });
+    return acc;
+  }, [orders]);
   const resumenPersons = useMemo(
     () => Object.keys(resumen).sort((a, b) => a.localeCompare(b, 'es')),
     [resumen]
@@ -1380,30 +1462,26 @@ const TablaPedidos = ({
 
   const handleSettle = async (person, buckets) => {
     try {
+      // Permitir liquidar cualquier pedido de domicilio, sin importar el estado ni el domiciliario asignado
       const personKey = String(person || '').trim();
       const toSettle = (orders || []).filter((o) => {
-        const normalized = String(o?.deliveryPerson || 'JUAN').trim();
-        return !o?.settled && normalized === personKey;
+        // Solo excluir pedidos cancelados y ya liquidados
+        const isCancelled = /(cancel)/i.test(o?.status || '');
+        return !o?.settled && !isCancelled;
       });
 
       if (!toSettle.length) {
-        showToast('warning', `No hay pedidos pendientes para liquidar de ${personKey}.`);
+        showToast('warning', `No hay pedidos pendientes para liquidar.`);
         return;
       }
 
-      // Calcular totales por método de pago
-      const totals = {
-        cash: 0,
-        nequi: 0,
-        daviplata: 0
-      };
-
-      toSettle.forEach(order => {
-        const payments = order.payments || [];
-        payments.forEach(payment => {
-          const methodKey = normalizePaymentMethodKey(payment.method);
-          if (methodKey in totals) {
-            totals[methodKey] += Math.floor(Number(payment.amount || 0));
+      // Calcular totales por método usando filas derivadas (soporta legacy y desayunos)
+      const totals = { cash: 0, nequi: 0, daviplata: 0 };
+      toSettle.forEach((order) => {
+        const rows = paymentsRowsFromOrder(order, defaultPaymentsForOrder);
+        rows.forEach((r) => {
+          if (r?.methodKey && (r.methodKey in totals)) {
+            totals[r.methodKey] += Math.floor(Number(r.amount || 0)) || 0;
           }
         });
       });
@@ -1411,30 +1489,66 @@ const TablaPedidos = ({
       let ok = 0, fail = 0;
 
       for (const order of toSettle) {
-        const ref = await findExistingOrderRef(order);
-        if (!ref) { fail++; continue; }
+        // Buscar el pedido en todas las colecciones posibles
+        let ref = await findExistingOrderRef(order);
+        if (!ref) {
+          // Intentar en colecciones alternativas
+          const collections = ['orders', 'deliveryBreakfastOrders', 'clientOrders'];
+          for (const coll of collections) {
+            try {
+              const altRef = doc(db, coll, order.id);
+              // Verificar si existe el documento
+              const altSnap = await getDoc(altRef);
+              if (altSnap.exists()) {
+                ref = altRef;
+                break;
+              }
+            } catch (e) {}
+          }
+        }
+        if (!ref) {
+          // Registrar advertencia pero continuar
+          fail++;
+          continue;
+        }
 
         try {
-          // Determinar qué métodos de pago están presentes
-          const payments = order.payments || [];
-          const hasPaymentMethod = (method) => 
-            payments.some(p => normalizePaymentMethodKey(p.method) === method);
-          // Determinar qué métodos están presentes
-          const hasNequi = hasPaymentMethod('nequi');
-          const hasDaviplata = hasPaymentMethod('daviplata');
-          const hasCash = hasPaymentMethod('cash');
+          // Derivar métodos y montos robustamente
+          const rows = paymentsRowsFromOrder(order, defaultPaymentsForOrder);
+          const present = new Set(rows.map((r) => r.methodKey));
+          const hasNequi = present.has('nequi');
+          const hasDaviplata = present.has('daviplata');
+          const hasCash = present.has('cash');
+
+          // Preparar líneas sintéticas si no existen o queremos asegurar persistencia
+          const toLines = rows.map((r) => ({
+            method: r.methodKey === 'cash' ? 'Efectivo' : r.methodKey === 'nequi' ? 'Nequi' : r.methodKey === 'daviplata' ? 'Daviplata' : 'Otro',
+            amount: Math.floor(Number(r.amount || 0)) || 0,
+          }));
+          const paymentAmount = toLines.reduce((s, l) => s + (Number(l.amount) || 0), 0);
+
           // Construir el objeto de actualización
           const updateData = {
-            settledAt: new Date().toISOString(),
+            settledAt: serverTimestamp ? serverTimestamp() : new Date().toISOString(),
+            settled: true,
+            paymentSettled: {
+              ...(order.paymentSettled || {}),
+              nequi: hasNequi ? true : (order.paymentSettled?.nequi || false),
+              daviplata: hasDaviplata ? true : (order.paymentSettled?.daviplata || false),
+              cash: hasCash ? true : (order.paymentSettled?.cash || false),
+            },
+            // Persistir pagos normalizados para consistencia futura
+            payments: toLines,
+            paymentLines: toLines,
+            paymentAmount,
+            isPaid: true,
+            paymentDate: serverTimestamp ? serverTimestamp() : new Date(),
+            updatedAt: new Date(),
           };
-          // Marcar como settled y actualizar el estado de liquidación de cada método
-          updateData.settled = true;
-          updateData.paymentSettled = {
-            ...(order.paymentSettled || {}),
-            nequi: hasNequi ? true : (order.paymentSettled?.nequi || false),
-            daviplata: hasDaviplata ? true : (order.paymentSettled?.daviplata || false),
-            cash: hasCash ? true : (order.paymentSettled?.cash || false)
-          };
+
+          // Si solo hay una línea, reflejar paymentMethod para compatibilidad
+          if (toLines.length === 1) updateData.paymentMethod = toLines[0].method;
+
           await updateDoc(ref, updateData);
           // También actualizar el documento de Ingresos para la fecha de la orden
           (async function updateIngresosForOrder(o) {
@@ -1627,13 +1741,13 @@ const TablaPedidos = ({
                     )}
                     {perms.showExport && (
                       <>
-                        <button onClick={() => { handleExport(exportToExcel, 'Excel'); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 flex items-center">
+                        <button onClick={() => { handleExport(exportToExcel, 'Excel'); setIsMenuOpen(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 flex items-center">
                           <ArrowDownTrayIcon className="w-4 h-4 mr-2" /> Exportar Excel
                         </button>
-                        <button onClick={() => { handleExport(exportToPDF, 'PDF'); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 flex items-center">
+                        <button onClick={() => { handleExport(exportToPDF, 'PDF'); setIsMenuOpen(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 flex items-center">
                           <ArrowDownTrayIcon className="w-4 h-4 mr-2" /> Exportar PDF
                         </button>
-                        <button onClick={() => { handleExport(exportToCSV, 'CSV'); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 flex items-center">
+                        <button onClick={() => { handleExport(exportToCSV, 'CSV'); setIsMenuOpen(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 flex items-center">
                           <ArrowDownTrayIcon className="w-4 h-4 mr-2" /> Exportar CSV
                         </button>
                       </>
@@ -1919,7 +2033,11 @@ const TablaPedidos = ({
                                 )}
                                 {perms.canDeleteOrder && (
                                   <button
-                                    onClick={() => handleDeleteOrder(order.id)}
+                                    onClick={() => {
+                                      setOrderToDelete(order);
+                                      setShowConfirmDeleteSingle(true);
+                                      setConfirmDeleteText('');
+                                    }}
                                     className="text-red-500 hover:text-red-400 transition-colors duration-150 p-1 rounded-md"
                                     title="Eliminar pedido"
                                     aria-label={`Eliminar pedido ${displayNumber}`}
@@ -2115,6 +2233,95 @@ const TablaPedidos = ({
                     className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
                   >
                     Guardar
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Modal de confirmación para eliminar pedido individual */}
+          {showConfirmDeleteSingle && orderToDelete && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10001]" onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                setShowConfirmDeleteSingle(false);
+                setOrderToDelete(null);
+                setConfirmDeleteText('');
+              }
+            }}>
+              <div className={classNames(
+                "w-full max-w-md p-6 rounded-lg shadow-md text-center mx-4",
+                theme === 'dark' ? 'bg-gray-800 text-gray-200' : 'bg-gray-50 text-gray-900'
+              )}>
+                <h3 className="text-lg font-medium mb-4">Confirmar Eliminación</h3>
+                <p className="mb-4">
+                  Estás a punto de eliminar el pedido con dirección:{' '}
+                  <span className="font-bold text-red-500 block mt-2">
+                    {(() => {
+                      const addr = orderToDelete.meals?.[0]?.address || orderToDelete.breakfasts?.[0]?.address || {};
+                      const migratedAddr = migrateOldAddressForDisplay(addr);
+                      return migratedAddr?.address || 'Sin dirección';
+                    })()}
+                  </span>
+                  {(() => {
+                    const addr = orderToDelete.meals?.[0]?.address || orderToDelete.breakfasts?.[0]?.address || {};
+                    const migratedAddr = migrateOldAddressForDisplay(addr);
+                    if (migratedAddr?.details) {
+                      return (
+                        <span className="text-sm text-gray-600 dark:text-gray-400 block mt-1">
+                          ({migratedAddr.details})
+                        </span>
+                      );
+                    }
+                    return null;
+                  })()}
+                  <span className="text-xs text-gray-500 dark:text-gray-400 block mt-2">
+                    Orden #{orderToDelete.id.substring(0, 8)}
+                  </span>
+                </p>
+                <p className="mb-4 text-sm">
+                  Esta acción es irreversible. Para confirmar, escribe "eliminar" a continuación:
+                </p>
+                <input
+                  type="text"
+                  value={confirmDeleteText}
+                  onChange={e => setConfirmDeleteText(e.target.value)}
+                  className={classNames(
+                    "w-full p-2 rounded-md border text-center text-sm",
+                    theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                    "focus:outline-none focus:ring-1 focus:ring-red-500"
+                  )}
+                  placeholder="escribe 'eliminar'"
+                />
+                <div className="mt-6 flex justify-center gap-2">
+                  <button
+                    onClick={() => {
+                      setShowConfirmDeleteSingle(false);
+                      setOrderToDelete(null);
+                      setConfirmDeleteText('');
+                    }}
+                    className={classNames(
+                      "px-4 py-2 rounded-md text-sm font-medium",
+                      theme === 'dark' ? 'bg-gray-600 hover:bg-gray-700 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-900'
+                    )}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (confirmDeleteText.toLowerCase() === 'eliminar') {
+                        handleDeleteOrder(orderToDelete.id);
+                        setShowConfirmDeleteSingle(false);
+                        setOrderToDelete(null);
+                        setConfirmDeleteText('');
+                      }
+                    }}
+                    disabled={confirmDeleteText.toLowerCase() !== 'eliminar'}
+                    className={classNames(
+                      "px-4 py-2 rounded-md text-sm font-medium",
+                      confirmDeleteText.toLowerCase() !== 'eliminar' ? 'bg-gray-400 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700 text-white'
+                    )}
+                  >
+                    Eliminar
                   </button>
                 </div>
               </div>

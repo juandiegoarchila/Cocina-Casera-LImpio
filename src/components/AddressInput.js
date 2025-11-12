@@ -10,6 +10,7 @@ const STREET_TYPES = ["Calle", "Carrera", "Diagonal", "Transversal"];
 // Lista de barrios disponibles
 const BARRIOS = [
   "Atenas",
+  "villa maría",
   "Berlín",
   "Bilbao",
   "Cañiza I",

@@ -38,6 +38,15 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
   // Filtro de categorías
   const [categoryFilter, setCategoryFilter] = useState('');
 
+  // Validación de mesa/llevar
+  const isTableNumberValid = useMemo(() => {
+    const tableInput = (posTableNumber || '').trim();
+    if (!tableInput) return false;
+    const isNumber = /^\d+$/.test(tableInput);
+    const isLlevar = tableInput.toLowerCase() === 'llevar';
+    return isNumber || isLlevar;
+  }, [posTableNumber]);
+
   const colorPalette = ['#fb923c','#fbbf24','#10b981','#0ea5e9','#6366f1','#ec4899','#f43f5e','#6b7280','#f59e0b'];
   const shapeOptions = [
     { id:'circle', label:'Círculo' },
@@ -98,7 +107,14 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
   };
   const updateCartItemQuantity = (id, qty) => setCartItems(prev => prev.filter(ci => (ci.id===id && qty<=0)? false : true).map(ci => ci.id===id ? { ...ci, quantity: qty } : ci));
   const removeCartItem = (id) => setCartItems(prev => prev.filter(ci=>ci.id!==id));
-  const resetCart = () => { setCartItems([]); setPosCashAmount(''); setPosCalculatedChange(0); setPosNote(''); setPosStage('select'); };
+  const resetCart = () => { 
+    setCartItems([]); 
+    setPosCashAmount(''); 
+    setPosCalculatedChange(0); 
+    setPosNote(''); 
+    setPosStage('select'); 
+    setPosTableNumber(''); // Limpiar número de mesa para el siguiente pedido
+  };
   // Sugerencias híbridas escaladas: para totales grandes agregar 60k,70k,80k...
   const quickCashSuggestions = useMemo(()=>{
     const t = cartTotal;
@@ -154,6 +170,20 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
   // Procesar venta
   const handleProcessPosSale = async () => {
     if (cartItems.length===0) return setError('Agrega artículos');
+    
+    // Validación de mesa/llevar antes de proceder
+    const tableInput = (posTableNumber || '').trim();
+    if (!tableInput) {
+      return setError('Debe ingresar un número de mesa o escribir "llevar"');
+    }
+    
+    // Validar que si no es un número, debe ser exactamente "llevar"
+    const isNumber = /^\d+$/.test(tableInput);
+    const isLlevar = tableInput.toLowerCase() === 'llevar';
+    if (!isNumber && !isLlevar) {
+      return setError('Ingrese un número de mesa válido o escriba "llevar"');
+    }
+    
     if (posStage==='select'){ setPosStage('pay'); return; }
     try {
       // Determinar efectivo recibido y cambio antes de construir payload
@@ -170,7 +200,8 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
       }
       // Inferir servicio (mesa/llevar) y tipo de comida (almuerzo/desayuno)
       const tableNum = (posTableNumber||'').trim();
-      const serviceType = tableNum ? 'mesa' : 'llevar';
+      const isLlevar = tableNum.toLowerCase() === 'llevar';
+      const serviceType = isLlevar ? 'llevar' : 'mesa';
       const hasBreakfastItem = cartItems.some(ci => {
         const t = (ci.type || (posItems.find(p=>p.id===ci.refId)?.type) || '').toLowerCase();
         return t.includes('desayun') || t.includes('breakfast');
@@ -200,7 +231,11 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
           category: ci.category || (posItems.find(p=>p.id===ci.refId)?.category) || null,
         }))
       };
-      if (tableNum) payload.tableNumber = tableNum; else payload.takeaway = true;
+      if (isLlevar) {
+        payload.takeaway = true;
+      } else {
+        payload.tableNumber = tableNum;
+      }
       if (posPaymentMethod==='efectivo'){
         payload.cashReceived = cashReceived;
         payload.changeGiven = changeGiven;
@@ -516,12 +551,25 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
                 ))}
               </div>
               <div className="mb-3">
-                <label className="block text-gray-400 mb-1 text-xs">Número de mesa (opcional)</label>
+                <label className="block text-gray-400 mb-1 text-xs">
+                  Mesa o llevar <span className="text-red-400">*</span>
+                  {!isTableNumberValid && posTableNumber && (
+                    <span className="text-red-400 text-[10px] ml-1">
+                      (Ingrese número de mesa o "llevar")
+                    </span>
+                  )}
+                </label>
                 <input
                   value={posTableNumber}
                   onChange={(e)=>setPosTableNumber(e.target.value)}
-                  placeholder="Ej: 3"
-                  className="w-full px-2 py-2 rounded bg-gray-700 text-white text-xs"
+                  placeholder='Número de mesa o "llevar"'
+                  className={`w-full px-2 py-2 rounded text-xs transition-colors ${
+                    isTableNumberValid 
+                      ? 'bg-gray-700 text-white border-2 border-green-500/50' 
+                      : posTableNumber 
+                        ? 'bg-red-900/30 text-white border-2 border-red-500/70' 
+                        : 'bg-gray-700 text-white border-2 border-gray-600'
+                  }`}
                 />
               </div>
               <div className="flex items-center justify-between mb-4 border-t border-gray-700 pt-4">
@@ -530,7 +578,7 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
               </div>
               <div className="flex gap-2">
                 <button onClick={resetCart} className="flex-1 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded text-sm">Limpiar</button>
-                <button onClick={handleProcessPosSale} className="flex-1 py-2 bg-green-600 hover:bg-green-700 text-white rounded text-sm font-semibold" disabled={cartItems.length===0}>Cobrar</button>
+                <button onClick={handleProcessPosSale} className="flex-1 py-2 bg-green-600 hover:bg-green-700 text-white rounded text-sm font-semibold disabled:bg-gray-500 disabled:cursor-not-allowed" disabled={cartItems.length===0 || !isTableNumberValid}>Cobrar</button>
               </div>
             </>
           ) : (
@@ -599,7 +647,7 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
               <div className="mt-auto pt-2 border-t border-gray-700">
                 <div className="flex gap-2 pt-4">
                   <button onClick={()=>setPosStage('select')} className="flex-1 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded text-sm">Volver</button>
-                  <button onClick={handleProcessPosSale} className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-semibold" disabled={cartItems.length===0}>Cobrar</button>
+                  <button onClick={handleProcessPosSale} className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-semibold disabled:bg-gray-500 disabled:cursor-not-allowed" disabled={cartItems.length===0 || !isTableNumberValid}>Cobrar</button>
                 </div>
               </div>
             </>
