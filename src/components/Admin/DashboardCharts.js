@@ -270,6 +270,7 @@ const DashboardCharts = React.memo(({
   settledDomiciliosDesayuno = 0,
   ingresosData = [],
   pedidosDiariosGuardadosData = [],
+  getCountsForDate = null,
   theme = 'dark',
   chartTextColor = '#ffffff',
   // Rango simplificado (aplica a los tres gráficos principales): 'today' | '7d' | 'month' | 'year'
@@ -836,53 +837,115 @@ const DashboardCharts = React.memo(({
   // Construcción avanzada de datos para gráfico de Pedidos según especificación
   const ordersChartData = useMemo(()=>{
     const monthAbbr = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-    const records = Array.isArray(ingresosData)? ingresosData : [];
+    const savedCounts = Array.isArray(pedidosDiariosGuardadosData)? pedidosDiariosGuardadosData : [];
     const todayBase = selectedDate ? new Date(selectedDate) : new Date();
     const targetYear = todayBase.getFullYear();
 
-    const extractCounts = (rec)=>{
-      const c = rec.categories||{};
-      const desDom = Number(c.domiciliosDesayuno)||0;
-      const desMesa = Number(c.mesasDesayuno)||0;
-      const desLle = Number(c.llevarDesayuno)||0;
-      const almDom = Number(c.domiciliosAlmuerzo)||0;
-      const almMesa = Number(c.mesasAlmuerzo)||0;
-      const almLle = Number(c.llevarAlmuerzo)||0;
-      const desTotal = desDom+desMesa+desLle;
-      const almTotal = almDom+almMesa+almLle;
-      const total = desTotal+almTotal;
-      return {desDom,desMesa,desLle,almDom,almMesa,almLle,desTotal,almTotal,total};
+    // Mapa auxiliar con los conteos detallados disponibles (hoy / selectedDate)
+    const mapDaily = {}; (dailyOrdersChartDataAdapted||[]).forEach(d=>{ mapDaily[d.name]=d; });
+
+    // Helper para construir un entry de conteos a partir de (domicilios, mesas) sin desglose
+    const buildEntry = (name, dom, mes, extra={}) => {
+      const total = (Number(dom)||0) + (Number(mes)||0);
+      return { name, desDom:0, desMesa:0, desLle:0, almDom:0, almMesa:0, almLle:0, desTotal:0, almTotal:0, total, ...extra };
     };
 
     if(range==='year'){
       if(drillMonthOrders!=null){
-        // Mostrar días del mes seleccionado
+        // Días del mes seleccionado usando conteos guardados; si el día es hoy, usamos el detalle en vivo
         const monthIndex = drillMonthOrders;
         const perDay = {};
-        records.forEach(r=>{
+        savedCounts.forEach(r=>{
           if(!r.date) return; const d=new Date(r.date); if(d.getFullYear()!==targetYear|| d.getMonth()!==monthIndex) return;
-          const ymd = d.toISOString().split('T')[0];
-          const counts = extractCounts(r);
-            if(!perDay[ymd]) perDay[ymd] = {...counts}; else {
-              Object.keys(counts).forEach(k=> perDay[ymd][k]+=counts[k]);
-            }
+          const iso = d.toISOString().split('T')[0];
+          perDay[iso] = buildEntry(iso, r.domicilios||0, r.mesas||0);
         });
-        return Object.entries(perDay)
-          .sort((a,b)=> a[0]<b[0]? -1:1)
-          .map(([day,vals])=>({ name: day, ...vals }));
+        // Overlay adicional desde dailyOrdersChartData (si el hook ya tiene algunos días cargados del mes)
+        (Array.isArray(dailyOrdersChartData)? dailyOrdersChartData : []).forEach(d => {
+          const iso = d?.name; if(!iso) return; const dt=new Date(iso); if(dt.getFullYear()!==targetYear || dt.getMonth()!==monthIndex) return;
+          perDay[iso] = buildEntry(iso, d.Domicilios||0, d.Mesas||0);
+        });
+        // Overlay detalle disponible (hoy/selectedDate) si cae en ese mes
+        Object.keys(mapDaily).forEach(iso=>{
+          const d = new Date(iso); if(d.getFullYear()!==targetYear || d.getMonth()!==monthIndex) return;
+          const det = mapDaily[iso];
+          perDay[iso] = {
+            name: iso,
+            desDom: det.domiciliosDesayuno||0, desMesa: det.mesasDesayuno||0, desLle: det.llevarDesayuno||0,
+            almDom: det.domiciliosAlmuerzo||0, almMesa: det.mesasAlmuerzo||0, almLle: det.llevarAlmuerzo||0,
+            desTotal: (det.domiciliosDesayuno||0)+(det.mesasDesayuno||0)+(det.llevarDesayuno||0),
+            almTotal: (det.domiciliosAlmuerzo||0)+(det.mesasAlmuerzo||0)+(det.llevarAlmuerzo||0),
+            total: (det.Domicilios||0)+(det.Mesas||0)
+          };
+        });
+        // Rellenar todos los días del mes para evitar huecos en drill de año
+        const year = targetYear; const daysIn = new Date(year, monthIndex+1, 0).getDate();
+        const list = [];
+        for(let d=1; d<=daysIn; d++){
+          const iso = `${year}-${String(monthIndex+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+          list.push(perDay[iso] || buildEntry(iso, 0, 0));
+        }
+        return list;
       }
-      // 12 meses
-      const perMonth = Array.from({length:12}, (_,i)=>({month:i, desDom:0,desMesa:0,desLle:0,almDom:0,almMesa:0,almLle:0,desTotal:0,almTotal:0,total:0}));
-      records.forEach(r=>{ if(!r.date)return; const d=new Date(r.date); if(d.getFullYear()!==targetYear) return; const m=d.getMonth(); const c=extractCounts(r); Object.keys(c).forEach(k=> perMonth[m][k]+=c[k]); });
-      perMonth.forEach(pm=>{ pm.desTotal = pm.desDom+pm.desMesa+pm.desLle; pm.almTotal = pm.almDom+pm.almMesa+pm.almLle; pm.total = pm.desTotal+pm.almTotal; });
-      return perMonth.map(pm=>({ name: monthAbbr[pm.month], monthIndex: pm.month, ...pm }));
+      // 12 meses: sumar Domicilios+Mesas por mes
+  const perMonth = Array.from({length:12}, (_,i)=>({month:i, dom:0, mesa:0, desDom:0, desMesa:0, desLle:0, almDom:0, almMesa:0, almLle:0}));
+      // 1) Sumar desde guardados (sólo tenemos domicilios y mesas totales)
+  savedCounts.forEach(r=>{ if(!r.date)return; const d=new Date(r.date); if(d.getFullYear()!==targetYear) return; const m=d.getMonth(); perMonth[m].dom += Number(r.domicilios||0); perMonth[m].mesa += Number(r.mesas||0); });
+      // 2) Sumar también desde dailyOrdersChartData (detalle en memoria) para días presentes
+      (Array.isArray(dailyOrdersChartData)? dailyOrdersChartData : []).forEach(d => {
+        const iso = d?.name; if(!iso) return; const dt = new Date(iso); if(dt.getFullYear()!==targetYear) return; const m = dt.getMonth(); perMonth[m].dom += Number(d.Domicilios||0); perMonth[m].mesa += Number(d.Mesas||0); });
+      // 3) Si existe getCountsForDate, sumar desglose por servicio/comida para cada mes con actividad
+      if (typeof getCountsForDate === 'function') {
+        for (let m = 0; m < 12; m++) {
+          // Sólo si hay actividad conocida (dom/mesa) evitamos recorrer meses completamente vacíos
+          if ((perMonth[m].dom + perMonth[m].mesa) === 0) continue;
+          const daysIn = new Date(targetYear, m + 1, 0).getDate();
+          for (let d = 1; d <= daysIn; d++) {
+            const iso = `${targetYear}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+            const c = getCountsForDate(iso);
+            if (!c) continue;
+            perMonth[m].desDom += Number(c.domiciliosDesayuno||0);
+            perMonth[m].desMesa += Number(c.mesasDesayuno||0);
+            perMonth[m].desLle += Number(c.llevarDesayuno||0);
+            perMonth[m].almDom += Number(c.domiciliosAlmuerzo||0);
+            perMonth[m].almMesa += Number(c.mesasAlmuerzo||0);
+            perMonth[m].almLle += Number(c.llevarAlmuerzo||0);
+          }
+        }
+      }
+      // Construir entradas con breakdown (si hay desglose) o con mínimo (almuerzo) como fallback
+      return perMonth.map(pm=>({
+        name: monthAbbr[pm.month],
+        monthIndex: pm.month,
+        desDom: pm.desDom,
+        desMesa: pm.desMesa,
+        desLle: pm.desLle,
+        almDom: pm.almDom || pm.dom,
+        almMesa: pm.almMesa || pm.mesa,
+        almLle: pm.almLle,
+        desTotal: pm.desDom + pm.desMesa + pm.desLle,
+        almTotal: (pm.almDom || pm.dom) + (pm.almMesa || pm.mesa) + pm.almLle,
+        total: (pm.dom + pm.mesa)
+      }));
     }
     if(range==='month'){
-      // Mostrar todos los días del mes actual (selectedDate o hoy)
+      // Días del mes (selectedDate o hoy): mostrar TODOS los días, incluso si no hay registros (total=0)
       const monthIndex = todayBase.getMonth();
+      const year = targetYear;
+      const first = new Date(year, monthIndex, 1);
+      const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
       const perDay = {};
-      records.forEach(r=>{ if(!r.date)return; const d=new Date(r.date); if(d.getFullYear()!==targetYear|| d.getMonth()!==monthIndex) return; const ymd=d.toISOString().split('T')[0]; const c=extractCounts(r); if(!perDay[ymd]) perDay[ymd]={...c}; else Object.keys(c).forEach(k=> perDay[ymd][k]+=c[k]); });
-      return Object.entries(perDay).sort((a,b)=> a[0]<b[0]? -1:1).map(([day,vals])=>({ name: day, ...vals }));
+      // 1) Conteos guardados
+      savedCounts.forEach(r=>{ if(!r.date) return; const d=new Date(r.date); if(d.getFullYear()!==year|| d.getMonth()!==monthIndex) return; const iso=d.toISOString().split('T')[0]; perDay[iso] = buildEntry(iso, r.domicilios||0, r.mesas||0); });
+      // 2) Overlay de detalle si existe para ese día
+      Object.keys(mapDaily).forEach(iso=>{ const d=new Date(iso); if(d.getFullYear()!==year|| d.getMonth()!==monthIndex) return; const det=mapDaily[iso]; perDay[iso] = { name: iso, desDom: det.domiciliosDesayuno||0, desMesa: det.mesasDesayuno||0, desLle: det.llevarDesayuno||0, almDom: det.domiciliosAlmuerzo||0, almMesa: det.mesasAlmuerzo||0, almLle: det.llevarAlmuerzo||0, desTotal: (det.domiciliosDesayuno||0)+(det.mesasDesayuno||0)+(det.llevarDesayuno||0), almTotal: (det.domiciliosAlmuerzo||0)+(det.mesasAlmuerzo||0)+(det.llevarAlmuerzo||0), total: (det.Domicilios||0)+(det.Mesas||0) }; });
+      // 3) Relleno de días vacíos con total 0
+      const allDays = [];
+      for(let d=1; d<=daysInMonth; d++){
+        const iso = `${year}-${String(monthIndex+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+        allDays.push(perDay[iso] || buildEntry(iso, 0, 0));
+      }
+      return allDays;
     }
     if(range==='7d' || range==='today'){
       // Mapear datos existentes por fecha
@@ -929,7 +992,7 @@ const DashboardCharts = React.memo(({
       return filled;
     }
     return [];
-  }, [range, drillMonthOrders, ingresosData, dailyOrdersChartDataAdapted, selectedDate]);
+  }, [range, drillMonthOrders, pedidosDiariosGuardadosData, dailyOrdersChartDataAdapted, selectedDate]);
 
   // Tooltip personalizado de pedidos
   const OrdersTooltip = ({active, payload}) => {

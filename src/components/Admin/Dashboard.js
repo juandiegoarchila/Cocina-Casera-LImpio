@@ -913,6 +913,7 @@ const DashboardInner = ({ theme }) => {
   ingresosData, pedidosDiariosGuardadosData, periodStructures,
   tableOrders, breakfastOrders, salonOrders, breakfastSalonOrders,
   paymentsRaw, paymentsAllRaw,
+  getCountsForDate,
     handleSaveDailyIngresos, handleDeleteDailyIngresos, handleSaveDailyOrders, handleDeleteDailyOrders, handleRebuildDailyIngresos
   } = useDashboardData(db, userId, isAuthReady, notify, startOfDay, endOfDay, selectedDate);
   
@@ -1089,7 +1090,7 @@ const DashboardInner = ({ theme }) => {
         cardHeight={CARD_HEIGHT}
         chartTextColor={chartTextColor}
         dailySalesChartData={ingresosCategoriasData}
-        dailyOrdersChartData={pedidosDiariosChartData}
+  dailyOrdersChartData={pedidosDiariosChartData}
         statusPieChartData={statusPieChartData}
         loading={loading}
         handleSaveDailyIngresos={handleSaveDailyIngresos}
@@ -1110,6 +1111,7 @@ const DashboardInner = ({ theme }) => {
   paymentsRaw={paymentsRaw}
   paymentsAllRaw={paymentsAllRaw}
   domiciliosPaymentsOverride={paymentsDomiciliosTotalCharts}
+  getCountsForDate={getCountsForDate}
       />
 
       <ConfirmationModal 

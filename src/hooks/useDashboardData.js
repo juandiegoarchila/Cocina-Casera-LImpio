@@ -289,6 +289,8 @@ export const useDashboardData = (
   // Guardadas las fechas ya backfilleadas en esta sesión para no escribir repetido
   const backfilledDatesRef = useRef(new Set());
 
+  
+
   /* =====================================================
      Agregaciones estructuradas para vistas: Hoy / 7d / Mes / Año
      ===================================================== */
@@ -559,10 +561,12 @@ export const useDashboardData = (
   });
 
   // Unificar todos los pedidos de salón (excepto desayunos de salón que tratamos aparte para prorrateo)
-  const salonOrders = useMemo(
-    () => [...tableOrders, ...waiterOrders],
-    [tableOrders, waiterOrders]
-  );
+  // Unir pedidos de salón (mesa/llevar) antes de usarlos en efectos. Declarado
+  // lo más arriba posible respecto a donde se consume para evitar errores de
+  // temporal dead zone en dependencias que referencian salonOrders.
+  const salonOrders = useMemo(() => {
+    return [...tableOrders, ...waiterOrders];
+  }, [tableOrders, waiterOrders]);
 
   const checkIfAllLoaded = () => {
     if (
@@ -2106,6 +2110,117 @@ export const useDashboardData = (
         }
       }
 
+      // Fallback adicional: cuando se solicita "Últimos 7 días", si faltan días
+      // dentro del rango (distintos a HOY), reconstruimos sus conteos a partir
+      // de las colecciones en memoria. Esto evita que tras recargar la página
+      // el gráfico muestre sólo HOY hasta que existan documentos históricos.
+      if (ordersFilterRange === '7_days') {
+        // Helper: calcula conteos para una fecha YYYY-MM-DD
+        const computeCountsForDate = (iso) => {
+          let selDom = 0, selMes = 0;
+          let s_dDes = 0, s_dAlm = 0, s_mDes = 0, s_mAlm = 0, s_lDes = 0, s_lAlm = 0;
+          let countLunchUnitsSel = null;
+          try { ({ countLunchUnitsSel } = require('../utils/orderUnits')); } catch(e){ countLunchUnitsSel = null; }
+
+          const unitsOf = (o, isDes) => isDes ? 1 : (countLunchUnitsSel ? countLunchUnitsSel(o) : 1);
+
+          // Orders + clientOrders
+          orders.forEach(order => {
+            const dISO = order.createdAt?.toDate ? new Date(order.createdAt.toDate()).toISOString().split('T')[0] : null;
+            if (dISO === iso) {
+              selDom++;
+              const esDes = isBreakfastOrder(order);
+              const serv = (normalizeServiceFromOrder(order) || 'domicilio').toLowerCase();
+              const u = unitsOf(order, esDes);
+              if (serv === 'domicilio') { if (esDes) s_dDes += 1; else s_dAlm += u; }
+              else if (serv === 'mesa') { if (esDes) s_mDes += 1; else s_mAlm += u; }
+              else if (serv === 'llevar') { if (esDes) s_lDes += 1; else s_lAlm += u; }
+              else { if (esDes) s_dDes += 1; else s_dAlm += u; }
+            }
+          });
+          (clientOrders||[]).forEach(order => {
+            const dISO = order.createdAt?.toDate
+              ? new Date(order.createdAt.toDate()).toISOString().split('T')[0]
+              : (typeof order.createdAtLocal === 'string' ? order.createdAtLocal.split('T')[0] : null);
+            if (dISO === iso) {
+              selDom++;
+              const esDes = isBreakfastOrder(order);
+              const serv = (normalizeServiceFromOrder(order) || 'domicilio').toLowerCase();
+              const u = unitsOf(order, esDes);
+              if (serv === 'domicilio') { if (esDes) s_dDes += 1; else s_dAlm += u; }
+              else if (serv === 'mesa') { if (esDes) s_mDes += 1; else s_mAlm += u; }
+              else if (serv === 'llevar') { if (esDes) s_lDes += 1; else s_lAlm += u; }
+              else { if (esDes) s_dDes += 1; else s_dAlm += u; }
+            }
+          });
+
+          // Salon orders
+          salonOrders.forEach(tableOrder => {
+            const dISO = tableOrder.createdAt?.toDate ? new Date(tableOrder.createdAt.toDate()).toISOString().split('T')[0] : null;
+            if (dISO === iso) {
+              selMes++;
+              const esDes = isBreakfastOrder(tableOrder);
+              const serv = (normalizeServiceFromOrder(tableOrder) || 'mesa').toLowerCase();
+              const u = unitsOf(tableOrder, esDes);
+              if (serv === 'mesa') { if (esDes) s_mDes += 1; else s_mAlm += u; }
+              else if (serv === 'llevar') { if (esDes) s_lDes += 1; else s_lAlm += u; }
+              else if (serv === 'domicilio') { if (esDes) s_dDes += 1; else s_dAlm += u; }
+            }
+          });
+
+          // Breakfast delivery
+          breakfastOrders.forEach(b => {
+            const dISO = getDocDateISO(b);
+            if (dISO === iso) {
+              const serv = (normalizeServiceFromOrder(b) || 'domicilio').toLowerCase();
+              if (serv === 'domicilio') { s_dDes++; selDom++; }
+              else if (serv === 'llevar') { s_lDes++; }
+              else if (serv === 'mesa') { s_mDes++; selMes++; }
+              else { s_dDes++; selDom++; }
+            }
+          });
+
+          // Breakfast salón
+          breakfastSalonOrders.forEach(bo => {
+            const dISO = bo.createdAt?.toDate ? new Date(bo.createdAt.toDate()).toISOString().split('T')[0] : getDocDateISO(bo);
+            if (dISO === iso) {
+              const serv = (normalizeServiceFromOrder(bo) || 'mesa').toLowerCase();
+              if (serv === 'mesa') { s_mDes++; selMes++; }
+              else if (serv === 'llevar') { s_lDes++; }
+              else if (serv === 'domicilio') { s_dDes++; selDom++; }
+              else { s_mDes++; selMes++; }
+            }
+          });
+
+          return {
+            Domicilios: selDom,
+            Mesas: selMes,
+            domiciliosDesayuno: s_dDes,
+            domiciliosAlmuerzo: s_dAlm,
+            mesasDesayuno: s_mDes,
+            mesasAlmuerzo: s_mAlm,
+            llevarDesayuno: s_lDes,
+            llevarAlmuerzo: s_lAlm,
+          };
+        };
+
+        // Recorrer los días del rango y reconstruir los que falten
+        const cursor = new Date(ordersStartDate);
+        cursor.setHours(0,0,0,0);
+        const end = new Date(ordersEndDate);
+        end.setHours(0,0,0,0);
+        const todayStr = todayISO;
+        while (cursor <= end) {
+          const iso = cursor.toISOString().split('T')[0];
+          if (iso !== todayStr) {
+            if (!filteredDailyOrders[iso]) {
+              filteredDailyOrders[iso] = computeCountsForDate(iso);
+            }
+          }
+          cursor.setDate(cursor.getDate()+1);
+        }
+      }
+
       const sortedDates = Object.keys(filteredDailyOrders).sort((a, b) => new Date(a) - new Date(b));
       chartData = sortedDates.map((date) => ({
         name: date,
@@ -2498,6 +2613,97 @@ export const useDashboardData = (
   const filteredBreakfastOrders = filterByDate(breakfastOrders, getDocDateISO);
   const filteredBreakfastSalonOrders = filterByDate(breakfastSalonOrders, o => o.createdAt?.toDate ? new Date(o.createdAt.toDate()).toISOString().split('T')[0] : getDocDateISO(o));
 
+  // Exponer un cómputo reutilizable de conteos por fecha (para gráficos que
+  // necesiten reconstruir meses/años con desglose desayuno/almuerzo por servicio)
+  const getCountsForDate = useCallback((iso) => {
+    if (!iso || typeof iso !== 'string' || iso.length < 10) return null;
+    let selDom = 0, selMes = 0;
+    let s_dDes = 0, s_dAlm = 0, s_mDes = 0, s_mAlm = 0, s_lDes = 0, s_lAlm = 0;
+    let countLunchUnitsSel = null;
+    try { ({ countLunchUnitsSel } = require('../utils/orderUnits')); } catch(e){ countLunchUnitsSel = null; }
+
+    const unitsOf = (o, isDes) => isDes ? 1 : (countLunchUnitsSel ? countLunchUnitsSel(o) : 1);
+
+    // Orders + clientOrders (domicilios almuerzo/desayuno)
+    (orders||[]).forEach(order => {
+      const dISO = order.createdAt?.toDate ? new Date(order.createdAt.toDate()).toISOString().split('T')[0] : null;
+      if (dISO === iso) {
+        selDom++;
+        const esDes = isBreakfastOrder(order);
+        const serv = (normalizeServiceFromOrder(order) || 'domicilio').toLowerCase();
+        const u = unitsOf(order, esDes);
+        if (serv === 'domicilio') { if (esDes) s_dDes += 1; else s_dAlm += u; }
+        else if (serv === 'mesa') { if (esDes) s_mDes += 1; else s_mAlm += u; }
+        else if (serv === 'llevar') { if (esDes) s_lDes += 1; else s_lAlm += u; }
+        else { if (esDes) s_dDes += 1; else s_dAlm += u; }
+      }
+    });
+    (clientOrders||[]).forEach(order => {
+      const dISO = order.createdAt?.toDate
+        ? new Date(order.createdAt.toDate()).toISOString().split('T')[0]
+        : (typeof order.createdAtLocal === 'string' ? order.createdAtLocal.split('T')[0] : null);
+      if (dISO === iso) {
+        selDom++;
+        const esDes = isBreakfastOrder(order);
+        const serv = (normalizeServiceFromOrder(order) || 'domicilio').toLowerCase();
+        const u = unitsOf(order, esDes);
+        if (serv === 'domicilio') { if (esDes) s_dDes += 1; else s_dAlm += u; }
+        else if (serv === 'mesa') { if (esDes) s_mDes += 1; else s_mAlm += u; }
+        else if (serv === 'llevar') { if (esDes) s_lDes += 1; else s_lAlm += u; }
+        else { if (esDes) s_dDes += 1; else s_dAlm += u; }
+      }
+    });
+
+    // Salón (tableOrders + waiterOrders combinados en salonOrders)
+    (salonOrders||[]).forEach(tableOrder => {
+      const dISO = tableOrder.createdAt?.toDate ? new Date(tableOrder.createdAt.toDate()).toISOString().split('T')[0] : getDocDateISO(tableOrder);
+      if (dISO === iso) {
+        selMes++;
+        const esDes = isBreakfastOrder(tableOrder);
+        const serv = (normalizeServiceFromOrder(tableOrder) || 'mesa').toLowerCase();
+        const u = unitsOf(tableOrder, esDes);
+        if (serv === 'mesa') { if (esDes) s_mDes += 1; else s_mAlm += u; }
+        else if (serv === 'llevar') { if (esDes) s_lDes += 1; else s_lAlm += u; }
+        else if (serv === 'domicilio') { if (esDes) s_dDes += 1; else s_dAlm += u; }
+      }
+    });
+
+    // Breakfast delivery
+    (breakfastOrders||[]).forEach(b => {
+      const dISO = getDocDateISO(b);
+      if (dISO === iso) {
+        const serv = (normalizeServiceFromOrder(b) || 'domicilio').toLowerCase();
+        if (serv === 'domicilio') { s_dDes++; selDom++; }
+        else if (serv === 'llevar') { s_lDes++; }
+        else if (serv === 'mesa') { s_mDes++; selMes++; }
+        else { s_dDes++; selDom++; }
+      }
+    });
+
+    // Breakfast salón
+    (breakfastSalonOrders||[]).forEach(bo => {
+      const dISO = bo.createdAt?.toDate ? new Date(bo.createdAt.toDate()).toISOString().split('T')[0] : getDocDateISO(bo);
+      if (dISO === iso) {
+        const serv = (normalizeServiceFromOrder(bo) || 'mesa').toLowerCase();
+        if (serv === 'mesa') { s_mDes++; selMes++; }
+        else if (serv === 'llevar') { s_lDes++; }
+        else if (serv === 'domicilio') { s_dDes++; selDom++; }
+        else { s_mDes++; selMes++; }
+      }
+    });
+
+    return {
+      Domicilios: selDom,
+      Mesas: selMes,
+      domiciliosDesayuno: s_dDes,
+      domiciliosAlmuerzo: s_dAlm,
+      mesasDesayuno: s_mDes,
+      mesasAlmuerzo: s_mAlm,
+      llevarDesayuno: s_lDes,
+      llevarAlmuerzo: s_lAlm,
+    };
+  }, [orders, clientOrders, salonOrders, breakfastOrders, breakfastSalonOrders]);
+
   return {
     loadingData,
   orders: unifiedDeliveryOrders,
@@ -2523,6 +2729,7 @@ export const useDashboardData = (
     statusPieChartData,
     periodStructures,
     saleTypeBreakdown,
+    getCountsForDate,
     handleSaveDailyIngresos,
     handleDeleteDailyIngresos,
     handleRebuildDailyIngresos,
