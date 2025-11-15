@@ -18,10 +18,23 @@ const PRICE_MAP = {
 };
 
 // Normaliza 'orderType' a 'table' | 'takeaway'
-// Acepta sinónimos y aplica una heurística:
-// - 'delivery' / 'domicilio' => 'takeaway'
-// - Si no viene orderType pero hay dirección (pedido de cliente), asumimos 'takeaway'
+// PRIORIDAD: tableNumber determina el tipo automáticamente
+// - Si tableNumber es 'LLevar', 'llevar', vacío => 'takeaway'
+// - Si tableNumber tiene valor (Mesa 1, Mesa 2, etc.) => 'table'
 const normalizeOrderType = (val, meal) => {
+  // PRIORIDAD 1: Verificar tableNumber primero
+  const tableNumber = String(meal?.tableNumber || '').toLowerCase().trim();
+  
+  if (tableNumber) {
+    // Si es llevar
+    if (tableNumber === 'llevar' || tableNumber === 'lllevar' || tableNumber === 'para llevar') {
+      return 'takeaway';
+    }
+    // Si tiene número de mesa (Mesa 1, Mesa 2, etc.)
+    return 'table';
+  }
+  
+  // PRIORIDAD 2: Si no hay tableNumber, verificar orderType explícito
   const raw = typeof val === 'string' ? val : (val?.name || val?.value || '');
   const lc = String(raw || '').toLowerCase().trim();
 
@@ -34,17 +47,16 @@ const normalizeOrderType = (val, meal) => {
     'delivery', 'deliveri', 'deli', 'domicilio', 'domicilios', 'a domicilio'
   ].includes(lc)) return 'takeaway';
 
-  // Heurística: si hay dirección (pedido de cliente) y no hay mesa, tratar como llevar
+  // PRIORIDAD 3: Heurística - si hay dirección (pedido de cliente), tratar como llevar
   const hasAddress =
     !!(meal?.address) ||
     !!(meal?.address?.street) ||
     !!(meal?.address?.phoneNumber) ||
     !!(meal?.address?.name);
-  const hasTable = !!(meal?.tableNumber);
 
-  if (hasAddress && !hasTable) return 'takeaway';
+  if (hasAddress) return 'takeaway';
 
-  // Por defecto conservador: mesa
+  // Por defecto: mesa
   return 'table';
 };
 

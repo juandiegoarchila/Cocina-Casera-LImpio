@@ -134,7 +134,7 @@ const MealItem = ({
 
   const displayMainItem = isCompleteRice ? selectedRiceName : cleanProteinName(meal?.protein?.name) || 'Selecciona';
 
-  const totalSteps = isTableOrder ? (isWaitress ? 7 : 6) : 9; // +1 para orderType en mesera
+  const totalSteps = isTableOrder ? 6 : 9; // Mesa ya incluye orderType automáticamente
   const completedSteps = [
     isSoupComplete,
     isPrincipleComplete,
@@ -142,7 +142,7 @@ const MealItem = ({
     !!meal?.drink,
     isTableOrder ? !!meal?.tableNumber : meal?.cutlery !== null,
     isTableOrder ? !!meal?.paymentMethod : !!meal?.time,
-    ...(isTableOrder ? (isWaitress ? [!!meal?.orderType] : []) : [!!meal?.address?.address, !!meal?.payment]),
+    ...(isTableOrder ? [] : [!!meal?.address?.address, !!meal?.payment]),
     isSidesComplete,
   ].filter(Boolean).length;
 
@@ -150,7 +150,7 @@ const MealItem = ({
 
   const isComplete = isTableOrder
     ? isWaitress
-      ? isSoupComplete && isPrincipleComplete && (isCompleteRice || !!meal?.protein) && !!meal?.drink && !!meal?.tableNumber && !!meal?.paymentMethod && !!meal?.orderType && isSidesComplete
+      ? isSoupComplete && isPrincipleComplete && (isCompleteRice || !!meal?.protein) && !!meal?.drink && !!meal?.tableNumber && !!meal?.paymentMethod && isSidesComplete
       : isSoupComplete && isPrincipleComplete && (isCompleteRice || !!meal?.protein) && !!meal?.drink && !!meal?.tableNumber && !!meal?.paymentMethod && isSidesComplete
     : isSoupComplete && isPrincipleComplete && (isCompleteRice || !!meal?.protein) && !!meal?.drink && !!meal?.time && !!meal?.address?.address && !!meal?.payment && meal?.cutlery !== null && isSidesComplete;
 
@@ -227,6 +227,9 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
         }
         break;
       case 'tableNumber':
+        // Auto-asignar orderType basado en la mesa seleccionada
+        const isLlevar = value?.toLowerCase().includes('llevar') || value?.toLowerCase() === 'lllevar';
+        updatedMeal.orderType = isLlevar ? 'takeaway' : 'table';
         currentSlideIsComplete = !!updatedMeal?.tableNumber;
         if (currentSlideIsComplete && currentSlide < slides.length - 1) {
           scheduleAdvance();
@@ -471,36 +474,7 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
             isComplete: !!meal?.paymentMethod,
             label: 'Método de pago',
             associatedField: 'paymentMethod'
-          },
-...(isWaitress && isTableOrder ? [{
-  component: (
-    <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
-      <h4 className="text-sm font-semibold text-green-700 mb-2">¿Para llevar o para mesa?</h4>
-      <div className="flex space-x-4">
-        <button
-          onClick={() => handleImmediateChange('orderType', 'takeaway')}
-          className={`px-4 py-2 rounded-md ${meal.orderType === 'takeaway' ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-700'}`}
-        >
-          Para llevar
-        </button>
-        <button
-          onClick={() => handleImmediateChange('orderType', 'table')}
-          className={`px-4 py-2 rounded-md ${meal.orderType === 'table' ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-700'}`}
-        >
-          Para mesa
-        </button>
-      </div>
-      {!meal?.orderType && (
-        <p className="text-[10px] text-red-600 bg-red-50 p-1 rounded mt-1">
-          Por favor, selecciona el tipo de pedido
-        </p>
-      )}
-    </div>
-  ),
-  isComplete: !!meal?.orderType,
-  label: 'Tipo de pedido',
-  associatedField: 'orderType'
-}] : [])
+          }
         ]
       : [
           {

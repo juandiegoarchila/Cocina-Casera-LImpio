@@ -357,7 +357,6 @@ const WaiterDashboard = () => {
         'Acompañamientos': 4,
         'Mesa': 5,
         'Método de pago': 6,
-        'Tipo de pedido': 7,
       };
 
       if (!meal?.soup && !meal?.soupReplacement) missing.push('Sopa o reemplazo de sopa');
@@ -367,7 +366,6 @@ const WaiterDashboard = () => {
       if (!isCompleteRice && (!meal?.sides || meal.sides.length === 0)) missing.push('Acompañamientos');
       if (!meal?.tableNumber) missing.push('Mesa');
       if (!meal?.paymentMethod) missing.push('Método de pago');
-      if (!meal?.orderType) missing.push('Tipo de pedido');
 
       if (missing.length > 0) {
         if (process.env.NODE_ENV === 'development') {
@@ -752,12 +750,13 @@ const WaiterDashboard = () => {
           setErrorMessage(`Por favor, selecciona una opción para "${unconfiguredAdditions[0].name}" en Almuerzo #${index + 1}.`);
           return;
         }
-        if (!meal.orderType) {
-          setErrorMessage(`El tipo de pedido es obligatorio para el Almuerzo #${index + 1}.`);
-          return;
+        // Auto-asignar orderType basado en tableNumber si no existe
+        if (!meal.orderType && meal.tableNumber) {
+          const isLlevar = meal.tableNumber.toLowerCase().includes('llevar');
+          meal.orderType = isLlevar ? 'takeaway' : 'table';
         }
-        if (!meal.tableNumber && meal.orderType === 'table') {
-          setErrorMessage(`El número de mesa es obligatorio para pedidos "Para mesa" en Almuerzo #${index + 1}.`);
+        if (!meal.tableNumber) {
+          setErrorMessage(`La mesa es obligatoria para el Almuerzo #${index + 1}.`);
           return;
         }
       }
@@ -817,12 +816,13 @@ const WaiterDashboard = () => {
           setErrorMessage(`Por favor, completa el campo "${missing[0]}" para el Desayuno #${index + 1}.`);
           return;
         }
-        if (!breakfast.orderType) {
-          setErrorMessage(`El tipo de pedido es obligatorio para el Desayuno #${index + 1}.`);
-          return;
+        // Auto-asignar orderType basado en tableNumber si no existe
+        if (!breakfast.orderType && breakfast.tableNumber) {
+          const isLlevar = breakfast.tableNumber.toLowerCase().includes('llevar');
+          breakfast.orderType = isLlevar ? 'takeaway' : 'table';
         }
-        if (!breakfast.tableNumber && breakfast.orderType === 'table') {
-          setErrorMessage(`El número de mesa es obligatorio para pedidos "Para mesa" en Desayuno #${index + 1}.`);
+        if (!breakfast.tableNumber) {
+          setErrorMessage(`La mesa es obligatoria para el Desayuno #${index + 1}.`);
           return;
         }
       }
@@ -1667,26 +1667,20 @@ const WaiterDashboard = () => {
                         />
                       </div>
                       <div>
-                        <label className="text-xs block mb-1 font-medium">Número de Mesa</label>
-                        <input
-                          type="text"
-                          value={meal.tableNumber || ''}
-                          onChange={(e) => handleFormChange(index, 'tableNumber', e.target.value)}
-                          placeholder="Número de mesa"
-                          className="w-full p-2 border rounded text-sm"
+                        <label className="text-xs block mb-1 font-medium">Mesa</label>
+                        <OptionSelector
+                          title="Mesa"
+                          emoji="🍽️"
+                          options={tableOptions}
+                          selected={meal.tableNumber}
+                          multiple={false}
+                          onImmediateSelect={(value) => {
+                            handleFormChange(index, 'tableNumber', value);
+                            // Auto-asignar orderType basado en la mesa seleccionada
+                            const isLlevar = value?.name?.toLowerCase().includes('llevar') || value?.name?.toLowerCase() === 'lllevar';
+                            handleFormChange(index, 'orderType', isLlevar ? 'takeaway' : 'table');
+                          }}
                         />
-                      </div>
-                      <div>
-                        <label className="text-xs block mb-1 font-medium">Tipo de Pedido</label>
-                        <select
-                          value={meal.orderType || ''}
-                          onChange={(e) => handleFormChange(index, 'orderType', e.target.value)}
-                          className="w-full p-2 border rounded text-sm"
-                        >
-                          <option value="">Seleccionar</option>
-                          <option value="table">Para mesa</option>
-                          <option value="takeaway">Para llevar</option>
-                        </select>
                       </div>
                       <div>
                         <label className="text-xs block mb-1 font-medium">Notas</label>
@@ -1854,26 +1848,20 @@ const WaiterDashboard = () => {
                         />
                       </div>
                       <div>
-                        <label className="text-xs block mb-1 font-medium">Número de Mesa</label>
-                        <input
-                          type="text"
-                          value={breakfast.tableNumber || ''}
-                          onChange={(e) => handleFormChange(index, 'tableNumber', e.target.value)}
-                          placeholder="Número de mesa"
-                          className="w-full p-2 border rounded text-sm"
+                        <label className="text-xs block mb-1 font-medium">Mesa</label>
+                        <OptionSelector
+                          title="Mesa"
+                          emoji="🍽️"
+                          options={tableOptions}
+                          selected={breakfast.tableNumber}
+                          multiple={false}
+                          onImmediateSelect={(value) => {
+                            handleFormChange(index, 'tableNumber', value);
+                            // Auto-asignar orderType basado en la mesa seleccionada
+                            const isLlevar = value?.name?.toLowerCase().includes('llevar') || value?.name?.toLowerCase() === 'lllevar';
+                            handleFormChange(index, 'orderType', isLlevar ? 'takeaway' : 'table');
+                          }}
                         />
-                      </div>
-                      <div>
-                        <label className="text-xs block mb-1 font-medium">Tipo de Pedido</label>
-                        <select
-                          value={breakfast.orderType || ''}
-                          onChange={(e) => handleFormChange(index, 'orderType', e.target.value)}
-                          className="w-full p-2 border rounded text-sm"
-                        >
-                          <option value="">Seleccionar</option>
-                          <option value="table">Para mesa</option>
-                          <option value="takeaway">Para llevar</option>
-                        </select>
                       </div>
                       <div>
                         <label className="text-xs block mb-1 font-medium">Notas</label>

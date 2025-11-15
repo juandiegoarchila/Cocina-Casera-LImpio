@@ -2,9 +2,12 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import QRCode from 'qrcode';
 import { db } from '../../config/firebase';
-import { collection, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
-import { CurrencyDollarIcon, PlusCircleIcon, PencilIcon, XCircleIcon } from '@heroicons/react/24/outline';
+import { collection, onSnapshot, addDoc, serverTimestamp, updateDoc, doc } from 'firebase/firestore';
+import { CurrencyDollarIcon, PlusCircleIcon, PencilIcon, XCircleIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '../Auth/AuthProvider';
+import { calculateMealPrice } from '../../utils/MealCalculations';
+import { calculateBreakfastPrice } from '../../utils/BreakfastLogic';
+import OrderSummary from '../OrderSummary';
 
 const formatPrice = (v) => new Intl.NumberFormat('es-CO',{ style:'currency', currency:'COP', maximumFractionDigits:0 }).format(v||0);
 
@@ -37,6 +40,14 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
 
   // Filtro de categorías
   const [categoryFilter, setCategoryFilter] = useState('');
+  
+  // Órdenes pendientes
+  const [tableOrders, setTableOrders] = useState([]);
+  const [breakfastOrders, setBreakfastOrders] = useState([]);
+  const [loadedOrder, setLoadedOrder] = useState(null);
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [showOrderDetailModal, setShowOrderDetailModal] = useState(false);
+  const [selectedOrderDetail, setSelectedOrderDetail] = useState(null);
 
   // Validación de mesa/llevar
   const isTableNumberValid = useMemo(() => {
@@ -64,6 +75,25 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
     });
     return () => unsub && unsub();
   },[]);
+  
+  // Cargar órdenes pendientes
+  useEffect(() => {
+    const unsubTable = onSnapshot(collection(db, 'tableOrders'), (snapshot) => {
+      const orders = snapshot.docs.map(d => ({ id: d.id, ...d.data(), orderType: 'mesa' }));
+      setTableOrders(orders);
+    });
+    const unsubBreakfast = onSnapshot(collection(db, 'breakfastOrders'), (snapshot) => {
+      const orders = snapshot.docs.map(d => ({ id: d.id, ...d.data(), orderType: 'desayuno' }));
+      setBreakfastOrders(orders);
+    });
+    return () => { unsubTable(); unsubBreakfast(); };
+  }, []);
+  
+  // Actualizar hora cada segundo
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Derivados
   const activeItems = useMemo(()=> posItems.filter(i => i.active!==false), [posItems]);
@@ -113,8 +143,79 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
     setPosCalculatedChange(0); 
     setPosNote(''); 
     setPosStage('select'); 
-    setPosTableNumber(''); // Limpiar número de mesa para el siguiente pedido
+    setPosTableNumber('');
+    setLoadedOrder(null);
   };
+  
+  // Cargar orden pendiente en el carrito
+  const loadPendingOrderToCart = (order) => {
+    resetCart();
+    const items = [];
+    
+    if (order.meals && Array.isArray(order.meals)) {
+      order.meals.forEach((meal, idx) => {
+        const mealPrice = calculateMealPrice(meal);
+        items.push({
+          id: `meal-${order.id}-${idx}`,
+          refId: `order-meal-${idx}`,
+          name: `Almuerzo ${idx + 1}${meal.protein?.name ? ` - ${meal.protein.name}` : ''}`,
+          price: mealPrice,
+          quantity: 1
+        });
+      });
+    }
+    
+    if (order.breakfasts && Array.isArray(order.breakfasts)) {
+      order.breakfasts.forEach((breakfast, idx) => {
+        const breakfastPrice = calculateBreakfastPrice(breakfast);
+        items.push({
+          id: `breakfast-${order.id}-${idx}`,
+          refId: `order-breakfast-${idx}`,
+          name: `Desayuno ${idx + 1}`,
+          price: breakfastPrice,
+          quantity: 1
+        });
+      });
+    }
+    
+    if (items.length === 0) {
+      items.push({
+        id: `order-${order.id}`,
+        refId: `order-full`,
+        name: order.orderType === 'desayuno' ? 'Desayuno' : 'Almuerzo',
+        price: order.total || 0,
+        quantity: 1
+      });
+    }
+    
+    setCartItems(items);
+    setPosTableNumber(order.tableNumber || '');
+    setPosOrderType(order.orderType || 'almuerzo');
+    if (order.note) setPosNote(order.note);
+    setPosPaymentMethod(order.paymentMethod?.name?.toLowerCase() || 'efectivo');
+    setLoadedOrder(order);
+    setSuccess(`✅ Orden cargada - Mesa: ${order.tableNumber || 'Llevar'} - Total: ${formatPrice(order.total || 0)}`);
+  };
+  
+  // Mostrar detalles de orden en modal
+  const showOrderDetails = (order, e) => {
+    e.stopPropagation(); // Evitar que se cargue la orden al hacer clic en el botón de info
+    setSelectedOrderDetail(order);
+    setShowOrderDetailModal(true);
+  };
+  
+  // Órdenes pendientes (sin filtro de búsqueda)
+  const pendingOrdersForPOS = useMemo(() => {
+    const combined = [...tableOrders, ...breakfastOrders];
+    return combined
+      .filter(order => !order.isPaid && order.status !== 'Completada')
+      .sort((a, b) => {
+        const timeA = new Date(a.createdAt?.seconds ? a.createdAt.seconds * 1000 : a.createdAt);
+        const timeB = new Date(b.createdAt?.seconds ? b.createdAt.seconds * 1000 : b.createdAt);
+        return timeA - timeB;
+      });
+  }, [tableOrders, breakfastOrders]);
+  
   // Sugerencias híbridas escaladas: para totales grandes agregar 60k,70k,80k...
   const quickCashSuggestions = useMemo(()=>{
     const t = cartTotal;
@@ -186,6 +287,27 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
     
     if (posStage==='select'){ setPosStage('pay'); return; }
     try {
+      // Si hay una orden cargada, actualizarla en lugar de crear una nueva
+      if (loadedOrder) {
+        const collectionName = (loadedOrder.orderType === 'desayuno') ? 'breakfastOrders' : 'tableOrders';
+        await updateDoc(doc(db, collectionName, loadedOrder.id), {
+          isPaid: true,
+          status: 'Completada',
+          updatedAt: serverTimestamp(),
+          paymentDate: serverTimestamp(),
+          paymentMethod: posPaymentMethod,
+          paymentAmount: cartTotal,
+          total: cartTotal,
+          paymentNote: posNote || '',
+          cashReceived: posPaymentMethod === 'efectivo' && posCashAmount ? (parseFloat(posCashAmount)||0) : null,
+          changeGiven: posPaymentMethod === 'efectivo' ? posCalculatedChange : null,
+        });
+        setSuccess(`✅ Orden #${loadedOrder.id.substring(0, 6)} completada - Vueltos: ${formatPrice(posCalculatedChange)}`);
+        resetCart();
+        return;
+      }
+      
+      // Crear nueva venta si no hay orden cargada
       // Determinar efectivo recibido y cambio antes de construir payload
       let cashReceived = null;
       let changeGiven = 0;
@@ -200,8 +322,8 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
       }
       // Inferir servicio (mesa/llevar) y tipo de comida (almuerzo/desayuno)
       const tableNum = (posTableNumber||'').trim();
-      const isLlevar = tableNum.toLowerCase() === 'llevar';
-      const serviceType = isLlevar ? 'llevar' : 'mesa';
+      const isLlevarCheck = tableNum.toLowerCase() === 'llevar';
+      const serviceType = isLlevarCheck ? 'llevar' : 'mesa';
       const hasBreakfastItem = cartItems.some(ci => {
         const t = (ci.type || (posItems.find(p=>p.id===ci.refId)?.type) || '').toLowerCase();
         return t.includes('desayun') || t.includes('breakfast');
@@ -457,6 +579,54 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
               {/* Listado con scroll vertical */}
               <div className="flex-1 relative min-h-0">
                 <div className="h-full max-h-full lg:max-h-[calc(100vh-12rem)] overflow-y-auto overscroll-contain pr-4 space-y-4 custom-scrollbar pt-1">
+                  
+                  {/* ÓRDENES PENDIENTES - Mostrar primero si existen */}
+                  {pendingOrdersForPOS.length > 0 && (
+                    <div>
+                      <div className="flex items-center mb-2">
+                        <span className="text-[10px] uppercase tracking-wide text-orange-400 bg-orange-500/20 px-2 py-1 rounded">🔔 Órdenes Pendientes</span>
+                        <span className="ml-2 text-[10px] text-orange-300">{pendingOrdersForPOS.length}</span>
+                      </div>
+                      <div className="grid gap-4 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
+                        {pendingOrdersForPOS.map(order => {
+                          const orderTime = new Date(order.createdAt?.seconds ? order.createdAt.seconds * 1000 : order.createdAt);
+                          const minutesAgo = Math.floor((currentTime - orderTime) / 60000);
+                          
+                          // Debug
+                          console.log('🔍 Orden pendiente:', {
+                            id: order.id,
+                            tableNumber: order.tableNumber,
+                            tableNumberType: typeof order.tableNumber,
+                            meals: order.meals?.length,
+                            firstMealTable: order.meals?.[0]?.tableNumber
+                          });
+                          
+                          // Detectar si es para llevar basado en el tableNumber
+                          const tableNum = order.tableNumber || order.meals?.[0]?.tableNumber || '';
+                          const isLlevar = !tableNum || 
+                                          tableNum.toLowerCase().includes('llevar');
+                          const displayTable = isLlevar ? 'Llevar' : tableNum;
+                          const displayTotal = order.total || 0;
+                          const orderLabel = order.orderType === 'desayuno' ? '🍳' : '🍽️';
+                          
+                          return (
+                            <div key={order.id} className="relative group">
+                              <button onClick={(e) => showOrderDetails(order, e)} className="absolute -top-2 -right-2 bg-blue-500 hover:bg-blue-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition z-10">
+                                <InformationCircleIcon className="w-4 h-4"/>
+                              </button>
+                              <button onClick={() => loadPendingOrderToCart(order)} className="w-24 h-24 mx-auto flex flex-col items-center justify-center text-center text-xs font-medium shadow-md hover:shadow-xl transition rounded-lg bg-gradient-to-br from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-white relative overflow-hidden">
+                                <span className="text-2xl mb-1">{orderLabel}</span>
+                                <span className="text-[10px] font-bold">{displayTable}</span>
+                                <span className="text-[9px] opacity-80">{minutesAgo}m</span>
+                              </button>
+                              <div className="mt-1 text-center text-[11px] text-orange-400 font-semibold">{formatPrice(displayTotal)}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  
                   {groupedItems.map(g => {
                     const cat = g.category || 'Sin Categoría';
                     return (
@@ -730,6 +900,45 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
                 <button onClick={handleSaveItem} className="flex-1 py-2 bg-green-600 hover:bg-green-700 text-white rounded font-semibold text-sm">Guardar</button>
                 <button onClick={()=>setShowItemEditor(false)} className="flex-1 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded text-sm">Cancelar</button>
                 {editingItem && <button onClick={()=>setItemActive(a=>!a)} className="px-3 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-sm">{itemActive? 'Desactivar':'Activar'}</button>}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Modal de detalles de orden */}
+      {showOrderDetailModal && selectedOrderDetail && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setShowOrderDetailModal(false)}>
+          <div className="bg-gray-800 rounded-lg shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="sticky top-0 bg-gray-800 border-b border-gray-700 px-6 py-4 flex justify-between items-center">
+              <h3 className="text-xl font-bold text-white">
+                {selectedOrderDetail.orderType === 'desayuno' ? '🍳 Detalles del Desayuno' : '🍽️ Detalles del Almuerzo'}
+              </h3>
+              <button onClick={() => setShowOrderDetailModal(false)} className="text-gray-400 hover:text-white transition">
+                <XCircleIcon className="w-6 h-6"/>
+              </button>
+            </div>
+            <div className="p-6">
+              <OrderSummary 
+                meals={selectedOrderDetail.meals || selectedOrderDetail.breakfasts || []} 
+                isAdminView={true}
+                isTableOrder={(() => {
+                  const tableNum = selectedOrderDetail.tableNumber || selectedOrderDetail.meals?.[0]?.tableNumber || '';
+                  const isLlevar = !tableNum || tableNum.toLowerCase().includes('llevar');
+                  return !isLlevar;
+                })()}
+                preCalculatedTotal={selectedOrderDetail.total}
+              />
+              <div className="mt-6 flex gap-3">
+                <button onClick={() => {
+                  loadPendingOrderToCart(selectedOrderDetail);
+                  setShowOrderDetailModal(false);
+                }} className="flex-1 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-semibold transition">
+                  Cargar en caja
+                </button>
+                <button onClick={() => setShowOrderDetailModal(false)} className="flex-1 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-semibold transition">
+                  Cerrar
+                </button>
               </div>
             </div>
           </div>

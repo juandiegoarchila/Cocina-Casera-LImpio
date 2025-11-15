@@ -114,7 +114,6 @@ const BreakfastItem = ({
     address: !!breakfast?.address?.address,
     payment: isTableOrder ? !!breakfast?.paymentMethod : !!breakfast?.payment,
     tableNumber: !!breakfast?.tableNumber,
-    orderType: !!breakfast?.orderType,
     protein: !!breakfast?.protein,
   };
 
@@ -176,6 +175,9 @@ const BreakfastItem = ({
         currentSlideIsComplete = !!value;
         break;
       case 'tableNumber':
+        // Auto-asignar orderType basado en la mesa seleccionada
+        const isLlevar = value?.toLowerCase().includes('llevar') || value?.toLowerCase() === 'lllevar';
+        updatedBreakfast.orderType = isLlevar ? 'takeaway' : 'table';
         currentSlideIsComplete = !!value;
         break;
       case 'orderType':
@@ -500,40 +502,7 @@ const BreakfastItem = ({
             isComplete: stepCompleteness.payment,
             label: stepTranslations.payment,
             associatedField: 'payment',
-          },
-          ...(isWaitress && isTableOrder
-            ? [
-                {
-                  component: (
-                    <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
-                      <h4 className="text-sm font-semibold text-green-700 mb-2">{stepTranslations.orderType}</h4>
-                      <div className="flex space-x-4">
-                        <button
-                          onClick={() => handleImmediateChange('orderType', 'takeaway')}
-                          className={`px-4 py-2 rounded-md ${breakfast.orderType === 'takeaway' ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-700'}`}
-                        >
-                          Para llevar
-                        </button>
-                        <button
-                          onClick={() => handleImmediateChange('orderType', 'table')}
-                          className={`px-4 py-2 rounded-md ${breakfast.orderType === 'table' ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-700'}`}
-                        >
-                          Para mesa
-                        </button>
-                      </div>
-                      {!breakfast?.orderType && (
-                        <p className="text-[10px] text-red-600 bg-red-50 p-1 rounded mt-1">
-                          Por favor, selecciona el tipo de pedido
-                        </p>
-                      )}
-                    </div>
-                  ),
-                  isComplete: stepCompleteness.orderType,
-                  label: stepTranslations.orderType,
-                  associatedField: 'orderType',
-                },
-              ]
-            : []),
+          }
         ]
       : [
           {

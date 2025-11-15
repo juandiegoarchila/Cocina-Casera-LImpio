@@ -88,6 +88,7 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
   // Etapa del flujo POS: 'select' (solo items y total) | 'pay' (resumen ticket + métodos de pago)
   const [posStage, setPosStage] = useState('select');
   const [posNote, setPosNote] = useState('');
+  const [loadedOrder, setLoadedOrder] = useState(null); // Orden pendiente que se cargó en el carrito
   const [showItemEditor, setShowItemEditor] = useState(false);
   const [editingItem, setEditingItem] = useState(null); // objeto del item que se edita
   const [itemEditorMode, setItemEditorMode] = useState('color'); // color | image
@@ -132,8 +133,63 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
   };
   const removeCartItem = (id) => setCartItems(prev => prev.filter(ci => ci.id !== id));
   const resetCart = () => {
-    setCartItems([]); setPosCashAmount(''); setPosCalculatedChange(0); setPosNote(''); setPosStage('select');
+    setCartItems([]); setPosCashAmount(''); setPosCalculatedChange(0); setPosNote(''); setPosStage('select'); setLoadedOrder(null);
   };
+  
+  // Cargar orden pendiente en el carrito POS
+  const loadPendingOrderToCart = (order) => {
+    resetCart();
+    const items = [];
+    
+    // Procesar almuerzos/comidas
+    if (order.meals && Array.isArray(order.meals)) {
+      order.meals.forEach((meal, idx) => {
+        const mealPrice = calculateMealPrice(meal);
+        items.push({
+          id: `meal-${order.id}-${idx}`,
+          refId: `order-meal-${idx}`,
+          name: `Almuerzo ${idx + 1}${meal.protein?.name ? ` - ${meal.protein.name}` : ''}`,
+          price: mealPrice,
+          quantity: 1
+        });
+      });
+    }
+    
+    // Procesar desayunos
+    if (order.breakfasts && Array.isArray(order.breakfasts)) {
+      order.breakfasts.forEach((breakfast, idx) => {
+        const breakfastPrice = calculateBreakfastPrice(breakfast);
+        items.push({
+          id: `breakfast-${order.id}-${idx}`,
+          refId: `order-breakfast-${idx}`,
+          name: `Desayuno ${idx + 1}`,
+          price: breakfastPrice,
+          quantity: 1
+        });
+      });
+    }
+    
+    // Si la orden no tiene meals ni breakfasts, usar el total directo
+    if (items.length === 0) {
+      items.push({
+        id: `order-${order.id}`,
+        refId: `order-full`,
+        name: order.orderType === 'desayuno' ? 'Desayuno' : 'Almuerzo',
+        price: order.total || 0,
+        quantity: 1
+      });
+    }
+    
+    setCartItems(items);
+    setPosTableNumber(order.tableNumber || '');
+    setPosOrderType(order.orderType || 'almuerzo');
+    if (order.note) setPosNote(order.note);
+    setPosPaymentMethod(order.paymentMethod?.name?.toLowerCase() || 'efectivo');
+    setLoadedOrder(order); // Guardar referencia a la orden cargada
+    
+    setSuccess(`✅ Orden cargada - Mesa: ${order.tableNumber || 'Llevar'} - Total: ${formatPrice(order.total || 0)}`);
+  };
+  
   const cartTotal = useMemo(() => cartItems.reduce((s,i)=> s + (i.price * i.quantity), 0), [cartItems]);
 
   // Recalcular vueltos POS
@@ -152,6 +208,27 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
       return; // salir para que el usuario elija método, nota, etc.
     }
     try {
+      // Si hay una orden cargada, actualizarla en lugar de crear una nueva
+      if (loadedOrder) {
+        const collectionName = (loadedOrder.orderType === 'desayuno') ? 'breakfastOrders' : 'tableOrders';
+        await updateDoc(doc(db, collectionName, loadedOrder.id), {
+          isPaid: true,
+          status: 'Completada',
+          updatedAt: serverTimestamp(),
+          paymentDate: serverTimestamp(),
+          paymentMethod: posPaymentMethod,
+          paymentAmount: cartTotal,
+          total: cartTotal,
+          paymentNote: posNote || '',
+          cashReceived: posPaymentMethod === 'efectivo' && posCashAmount ? (parseFloat(posCashAmount)||0) : null,
+          changeGiven: posPaymentMethod === 'efectivo' ? posCalculatedChange : null,
+        });
+        setSuccess(`✅ Orden #${loadedOrder.id.substring(0, 6)} completada - Vueltos: ${formatPrice(posCalculatedChange)}`);
+        resetCart();
+        return;
+      }
+      
+      // Crear nueva venta si no hay orden cargada
       const payload = {
         orderType: posOrderType === 'general' ? 'almuerzo' : posOrderType, // mapear general a almuerzo para colección
         isPaid: true,
@@ -350,6 +427,18 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
         return timeA - timeB;
       });
   }, [tableOrders, breakfastOrders, searchTerm]);
+  
+  // Órdenes pendientes sin filtro de búsqueda (para POS)
+  const pendingOrdersForPOS = useMemo(() => {
+    const combined = [...tableOrders, ...breakfastOrders];
+    const pending = combined.filter(order => !order.isPaid && order.status !== 'Completada');
+    console.log('🔍 [WaiterCashier] Órdenes pendientes para POS:', pending.length, pending);
+    return pending.sort((a, b) => {
+      const timeA = new Date(a.createdAt?.seconds ? a.createdAt.seconds * 1000 : a.createdAt);
+      const timeB = new Date(b.createdAt?.seconds ? b.createdAt.seconds * 1000 : b.createdAt);
+      return timeA - timeB;
+    });
+  }, [tableOrders, breakfastOrders]);
 
   // Agrupar órdenes por mesa
   const ordersByTable = useMemo(() => {
@@ -1334,6 +1423,36 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
                 </div>
               </div>
               <div className="space-y-6">
+                {/* ÓRDENES PENDIENTES - Mostrar primero si existen */}
+                {pendingOrdersForPOS.length > 0 && (
+                  <div>
+                    <div className="flex items-center mb-2">
+                      <span className="text-[10px] uppercase tracking-wide text-orange-400 bg-orange-500/20 px-2 py-1 rounded">🔔 Órdenes Pendientes</span>
+                      <span className="ml-2 text-[10px] text-orange-300">{pendingOrdersForPOS.length}</span>
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
+                      {pendingOrdersForPOS.map(order => {
+                        const orderTime = new Date(order.createdAt?.seconds ? order.createdAt.seconds * 1000 : order.createdAt);
+                        const minutesAgo = Math.floor((currentTime - orderTime) / 60000);
+                        const displayTable = order.tableNumber || 'Llevar';
+                        const displayTotal = order.total || 0;
+                        const orderLabel = order.orderType === 'desayuno' ? '🍳' : '🍽️';
+                        
+                        return (
+                          <div key={order.id} className="relative group">
+                            <button onClick={() => loadPendingOrderToCart(order)} className="w-24 h-24 mx-auto flex flex-col items-center justify-center text-center text-xs font-medium shadow-md hover:shadow-xl transition rounded-lg bg-gradient-to-br from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-white relative overflow-hidden">
+                              <span className="text-2xl mb-1">{orderLabel}</span>
+                              <span className="text-[10px] font-bold">{displayTable}</span>
+                              <span className="text-[9px] opacity-80">{minutesAgo}m</span>
+                            </button>
+                            <div className="mt-1 text-center text-[11px] text-orange-400 font-semibold">{formatPrice(displayTotal)}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                
                 {groupedItems.map(group => (
                   <div key={group.category || 'sin-cat'}>
                     <div className="flex items-center mb-2">
