@@ -1,7 +1,7 @@
 // src/components/Admin/MenuManagement.js
 import React, { useState, useEffect, useRef } from 'react';
 import { db, storage } from '../../config/firebase';
-import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, query, orderBy, setDoc, getDoc, where, limit } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, query, orderBy, setDoc, getDoc, where, limit, deleteField } from 'firebase/firestore';
 import { XMarkIcon, PencilIcon, TrashIcon, CheckCircleIcon, MinusCircleIcon, MagnifyingGlassIcon, PlusIcon } from '@heroicons/react/24/outline';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import Modal from '../Modal';
@@ -197,6 +197,12 @@ const MenuManagement = ({ setError, setSuccess, theme }) => {
       if (selectedCollection === 'additions' || selectedCollection === 'breakfastAdditions') {
         itemData.price = parseFloat(newItem.price);
       }
+      if (selectedCollection === 'proteins') {
+        if (newItem.price && newItem.price.trim() !== '') {
+          itemData.price = parseFloat(newItem.price);
+        }
+        // Si está vacío, no agregar el campo price
+      }
       if (selectedCollection === 'breakfastTypes') {
         itemData.steps = newItem.steps;
         itemData.requiresProtein = newItem.steps.includes('protein');
@@ -316,6 +322,14 @@ const MenuManagement = ({ setError, setSuccess, theme }) => {
 
       if (selectedCollection === 'additions' || selectedCollection === 'breakfastAdditions') {
         itemData.price = parseFloat(editItem.price);
+      }
+      if (selectedCollection === 'proteins') {
+        if (editItem.price && editItem.price.toString().trim() !== '') {
+          itemData.price = parseFloat(editItem.price);
+        } else {
+          // Si el campo está vacío, eliminar el precio de Firebase
+          itemData.price = deleteField();
+        }
       }
       if (selectedCollection === 'breakfastTypes') {
         itemData.steps = editItem.steps;
@@ -746,11 +760,11 @@ const MenuManagement = ({ setError, setSuccess, theme }) => {
                   className={`${getInputFieldClasses()} mt-4`}
                   rows="2"
                 />
-                {(selectedCollection === 'additions' || selectedCollection === 'breakfastAdditions') && (
+                {(selectedCollection === 'additions' || selectedCollection === 'breakfastAdditions' || selectedCollection === 'proteins') && (
                   <input
                     value={newItem.price}
                     onChange={e => setNewItem({ ...newItem, price: e.target.value })}
-                    placeholder="Precio (COP)"
+                    placeholder={selectedCollection === 'proteins' ? "Precio adicional (COP) - opcional" : "Precio (COP)"}
                     type="number"
                     min="0"
                     step="any"
@@ -942,11 +956,11 @@ const MenuManagement = ({ setError, setSuccess, theme }) => {
                 placeholder="Emoji"
                 className={getInputFieldClasses(false)}
               />
-              {(selectedCollection === 'additions' || selectedCollection === 'breakfastAdditions') && (
+              {(selectedCollection === 'additions' || selectedCollection === 'breakfastAdditions' || selectedCollection === 'proteins') && (
                 <input
                   value={editItem.price}
                   onChange={e => setEditItem({ ...editItem, price: e.target.value })}
-                  placeholder="Precio (COP)"
+                  placeholder={selectedCollection === 'proteins' ? "Precio adicional (COP) - opcional" : "Precio (COP)"}
                   type="number"
                   min="0"
                   step="any"

@@ -69,22 +69,31 @@ export const removeMeal = (setMeals, setSuccessMessage, id, meals) => {
 export const calculateMealPrice = (meal) => {
   if (!meal) return 0;
   
-  // Mojarra tiene precio base fijo - verificación robusta
-  const proteinName = meal?.protein?.name || '';
-  const proteinNameClean = proteinName.toLowerCase().trim();
-  const hasMojarra = proteinNameClean === 'mojarra' || proteinNameClean.includes('mojarra');
+  // Debug completo de la proteína
+  console.log('🔍 DEBUG MealLogic - Meal completo:', {
+    mealId: meal?.id,
+    protein: meal?.protein,
+    proteinPrice: meal?.protein?.price,
+    proteinPriceType: typeof meal?.protein?.price
+  });
   
-  if (hasMojarra) {
-    console.log('✅ MealLogic: Mojarra detectada, precio: 16000');
+  // Verificar si la proteína tiene un precio especial configurado
+  const proteinPrice = meal?.protein?.price ? Number(meal.protein.price) : 0;
+  
+  if (proteinPrice > 0) {
+    console.log('✅ MealLogic: Proteína con precio especial detectada:', {
+      name: meal?.protein?.name,
+      price: proteinPrice
+    });
     const additionsPrice = meal?.additions?.reduce((sum, item) => sum + (item.price || 0) * (item.quantity || 1), 0) || 0;
-    return 16000 + additionsPrice;
+    return proteinPrice + additionsPrice;
   }
   
   const hasSoupOrReplacement = meal?.soup?.name && meal.soup.name !== 'Sin sopa' && meal.soup.name !== 'Solo bandeja' || meal?.soupReplacement;
   const basePrice = hasSoupOrReplacement ? 13000 : 12000;
   const additionsPrice = meal?.additions?.reduce((sum, item) => sum + (item.price || 0) * (item.quantity || 1), 0) || 0;
   
-  console.log('⚠️ MealLogic: No mojarra, precio normal:', {
+  console.log('⚠️ MealLogic: Precio normal:', {
     hasSoupOrReplacement,
     basePrice,
     additionsPrice,

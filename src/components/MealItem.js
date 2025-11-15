@@ -102,6 +102,17 @@ const MealItem = ({
     setPendingAddress(meal?.address || {});
   }, [meal]);
 
+  // Sincronizar la proteína seleccionada con los datos actualizados de Firebase
+  useEffect(() => {
+    if (meal?.protein?.id && proteins.length > 0) {
+      const updatedProtein = proteins.find(p => p.id === meal.protein.id);
+      if (updatedProtein && updatedProtein.price !== meal.protein.price) {
+        // El precio cambió, actualizar la proteína
+        onMealChange(id, 'protein', updatedProtein);
+      }
+    }
+  }, [proteins, meal?.protein, id, onMealChange]);
+
   const isSoupComplete = meal?.soup || meal?.soupReplacement;
   const isPrincipleComplete = meal?.principle && (
     (Array.isArray(meal.principle) && meal.principle.length === 1 && meal.principle[0]?.name === 'Remplazo por Principio' && !!meal?.principleReplacement) ||

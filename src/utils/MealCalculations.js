@@ -75,23 +75,25 @@ export const calculateMealPrice = (meal) => {
     return 0;
   }
 
-  // Debug completo del meal
-  console.log('🔍 DEBUG calculateMealPrice COMPLETO:', {
-    mealId: meal?.id,
+  // Debug completo de la proteína
+  console.log('🔍 DEBUG MealCalculations - Proteína:', {
     protein: meal?.protein,
-    proteinName: meal?.protein?.name,
-    fullMeal: JSON.stringify(meal, null, 2)
+    proteinPrice: meal?.protein?.price,
+    proteinPriceType: typeof meal?.protein?.price,
+    proteinPriceNumber: Number(meal?.protein?.price || 0)
   });
 
-  // Mojarra tiene precio base fijo - verificación robusta
-  const proteinName = meal?.protein?.name || '';
-  const proteinNameClean = proteinName.toLowerCase().trim();
-  const hasMojarra = proteinNameClean === 'mojarra' || proteinNameClean.includes('mojarra');
+  // Verificar si la proteína tiene un precio especial configurado
+  const proteinPrice = meal?.protein?.price ? Number(meal.protein.price) : 0;
   
-  if (hasMojarra) {
+  if (proteinPrice > 0) {
     const additions = additionsTotal(meal);
-    const total = 16000 + additions;
-    console.log('✅ Mojarra detectada:', total);
+    const total = proteinPrice + additions;
+    console.log('✅ Proteína con precio especial:', {
+      name: meal?.protein?.name,
+      price: proteinPrice,
+      total
+    });
     return total;
   }
 
