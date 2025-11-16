@@ -52,6 +52,20 @@ const WaiterDashboard = () => {
   const [breakfastTypes, setBreakfastTypes] = useState([]);
   const [breakfastProteins, setBreakfastProteins] = useState([]);
   const [breakfastTimes, setBreakfastTimes] = useState([]);
+  
+  // Opciones de mesa
+  const tableOptions = [
+    { name: 'LLevar' },
+    { name: 'Mesa 1' },
+    { name: 'Mesa 2' },
+    { name: 'Mesa 3' },
+    { name: 'Mesa 4' },
+    { name: 'Mesa 5' },
+    { name: 'Mesa 6' },
+    { name: 'Mesa 7' },
+    { name: 'Mesa 8' }
+  ];
+  
   const [isOrderingDisabled, setIsOrderingDisabled] = useState(false);
   const [orders, setOrders] = useState([]);
   const [activeTab, setActiveTab] = useState('create');
@@ -963,7 +977,7 @@ const WaiterDashboard = () => {
   return (
     <div className={`min-h-screen ${theme === 'dark' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-900'} pb-4`}>
       {/* Header con menú hamburguesa estilo Admin/Delivery */}
-      <Disclosure as="nav" className={`${theme === 'dark' ? 'bg-gray-800' : 'bg-gray-200'} shadow-lg fixed top-0 left-0 right-0 z-50`}>
+      <Disclosure as="nav" className={`${theme === 'dark' ? 'bg-gray-800' : 'bg-gray-200'} shadow-lg fixed top-0 left-0 right-0 z-[100000]`}>
         {({ open }) => (
           <>
             <div className="max-w-full mx-auto px-2 sm:px-4 lg:px-8">
