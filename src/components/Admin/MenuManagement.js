@@ -380,16 +380,17 @@ const MenuManagement = ({ setError, setSuccess, theme }) => {
     { id: 'protein', label: 'Proteína' },
   ];
 
-  const openCropper = (file, forEdit = false) => {
+  const handleImageUpload = (file, forEdit = false) => {
     if (!file) return;
     const reader = new FileReader();
-    reader.addEventListener('load', () => {
-      setCropSrc(reader.result);
-      setCropRect(null);
-      setAspectMode('free');
-      setCropTarget(forEdit ? 'edit' : 'add');
-      setCropModalOpen(true);
-    });
+    reader.onload = (ev) => {
+      const base64Data = ev.target.result;
+      if (forEdit) {
+        setEditItem(prev => ({ ...prev, imageUrl: base64Data }));
+      } else {
+        setNewItem(prev => ({ ...prev, imageUrl: base64Data }));
+      }
+    };
     reader.readAsDataURL(file);
   };
 
@@ -400,6 +401,8 @@ const MenuManagement = ({ setError, setSuccess, theme }) => {
     }
     try {
       setUploadingImage(true);
+      console.log('🖼️ Iniciando proceso de recorte...');
+      
       // Escalar de tamaño mostrado -> tamaño natural
       const sx = imgDisplay.width ? (imgNatural.width / imgDisplay.width) : 1;
       const sy = imgDisplay.height ? (imgNatural.height / imgDisplay.height) : 1;
@@ -409,29 +412,40 @@ const MenuManagement = ({ setError, setSuccess, theme }) => {
         width: Math.round((cropRect.width || imgDisplay.width) * sx),
         height: Math.round((cropRect.height || imgDisplay.height) * sy),
       };
+      
+      console.log('📐 Recortando imagen...', origCrop);
       const blob = await getCroppedImageBlob(cropSrc, origCrop, 0, 'image/jpeg', 0.9);
-      const baseName = cropTarget === 'edit' ? (editItem?.name || 'item') : (newItem?.name || 'item');
-      const fileName = `${baseName.toString().toLowerCase().replace(/[^a-z0-9\-\s]/g, '').trim().replace(/\s+/g, '-')}-${Date.now()}.jpg`;
-      const file = blobToFile(blob, fileName);
-
-      const col = selectedCollection || 'misc';
-      const path = `menu/${col}/${file.name}`;
-      const ref = storageRef(storage, path);
-      await uploadBytes(ref, file);
-      const url = await getDownloadURL(ref);
-      if (cropTarget === 'edit') {
-        setEditItem(prev => ({ ...prev, imageUrl: url }));
-      } else {
-        setNewItem(prev => ({ ...prev, imageUrl: url }));
-      }
-      setSuccess('Imagen recortada y subida correctamente.');
+      console.log('✅ Imagen recortada, tamaño:', blob.size, 'bytes');
+      
+      // Convertir blob a base64 (igual que en CajaPOS)
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64Data = reader.result;
+        console.log('✅ Imagen convertida a base64');
+        
+        if (cropTarget === 'edit') {
+          setEditItem(prev => ({ ...prev, imageUrl: base64Data }));
+        } else {
+          setNewItem(prev => ({ ...prev, imageUrl: base64Data }));
+        }
+        setSuccess('Imagen recortada y guardada correctamente.');
+        setUploadingImage(false);
+        setCropModalOpen(false);
+        setCropSrc('');
+        setCropRect(null);
+      };
+      reader.onerror = () => {
+        throw new Error('Error al convertir imagen a base64');
+      };
+      reader.readAsDataURL(blob);
+      
     } catch (e) {
-      setError(`Error al recortar/subir imagen: ${e.message}`);
-    } finally {
+      console.error('❌ Error en applyCropAndUpload:', e);
+      setError(`Error al recortar imagen: ${e.message}`);
       setUploadingImage(false);
       setCropModalOpen(false);
       setCropSrc('');
-    setCropRect(null);
+      setCropRect(null);
     }
   };
 
@@ -687,7 +701,7 @@ const MenuManagement = ({ setError, setSuccess, theme }) => {
                       <input
                         type="file"
                         accept="image/*"
-                        onChange={(e) => openCropper(e.target.files?.[0] || null, false)}
+                        onChange={(e) => handleImageUpload(e.target.files?.[0] || null, false)}
                         className={`${getInputFieldClasses()} !p-2`}
                       />
                       {uploadingImage && <p className="text-xs text-blue-300 mt-1">Subiendo imagen...</p>}
@@ -735,13 +749,6 @@ const MenuManagement = ({ setError, setSuccess, theme }) => {
                           className="w-20 h-20 object-cover rounded cursor-pointer border border-gray-600"
                           onClick={() => setPreviewImage(newItem.imageUrl)}
                         />
-                        <button
-                          type="button"
-                          onClick={() => setCropTarget('add') || setCropSrc(newItem.imageUrl) || setCropModalOpen(true)}
-                          className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded"
-                        >
-                          Re-recortar
-                        </button>
                         <button
                           type="button"
                           onClick={() => setNewItem(prev => ({ ...prev, imageUrl: '' }))}
@@ -1021,7 +1028,7 @@ const MenuManagement = ({ setError, setSuccess, theme }) => {
                 <input
                   type="file"
                   accept="image/*"
-                  onChange={(e) => openCropper(e.target.files?.[0] || null, true)}
+                  onChange={(e) => handleImageUpload(e.target.files?.[0] || null, true)}
                   className={`${getInputFieldClasses(false)} !p-2`}
                 />
                 {uploadingImage && <p className="text-xs text-blue-300 mt-1">Subiendo imagen...</p>}
@@ -1033,13 +1040,6 @@ const MenuManagement = ({ setError, setSuccess, theme }) => {
                       className="w-24 h-24 object-cover rounded border border-gray-600 cursor-pointer"
                       onClick={() => setPreviewImage(editItem.imageUrl)}
                     />
-                    <button
-                      type="button"
-                      onClick={() => setCropTarget('edit') || setCropSrc(editItem.imageUrl) || setCropModalOpen(true)}
-                      className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded"
-                    >
-                      Re-recortar
-                    </button>
                     <button
                       type="button"
                       onClick={() => setEditItem(prev => ({ ...prev, imageUrl: '' }))}
