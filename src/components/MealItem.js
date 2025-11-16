@@ -134,15 +134,15 @@ const MealItem = ({
 
   const displayMainItem = isCompleteRice ? selectedRiceName : cleanProteinName(meal?.protein?.name) || 'Selecciona';
 
-  const totalSteps = isTableOrder ? 6 : 9; // Mesa ya incluye orderType automáticamente
+  const totalSteps = isTableOrder ? (isWaitress ? 4 : 6) : 9; // Mesero: menos pasos (sin bebida ni pago)
   const completedSteps = [
     isSoupComplete,
     isPrincipleComplete,
     isCompleteRice || !!meal?.protein,
-    !!meal?.drink,
+    ...(isWaitress ? [] : [!!meal?.drink]), // Bebida solo para no-mesero
     isTableOrder ? !!meal?.tableNumber : meal?.cutlery !== null,
-    isTableOrder ? !!meal?.paymentMethod : !!meal?.time,
-    ...(isTableOrder ? [] : [!!meal?.address?.address, !!meal?.payment]),
+    ...(isTableOrder && !isWaitress ? [!!meal?.paymentMethod] : []), // Pago solo para no-mesero en mesa
+    ...(isTableOrder ? [] : [!!meal?.time, !!meal?.address?.address, !!meal?.payment]),
     isSidesComplete,
   ].filter(Boolean).length;
 
@@ -150,7 +150,7 @@ const MealItem = ({
 
   const isComplete = isTableOrder
     ? isWaitress
-      ? isSoupComplete && isPrincipleComplete && (isCompleteRice || !!meal?.protein) && !!meal?.drink && !!meal?.tableNumber && !!meal?.paymentMethod && isSidesComplete
+      ? isSoupComplete && isPrincipleComplete && (isCompleteRice || !!meal?.protein) && !!meal?.tableNumber && isSidesComplete
       : isSoupComplete && isPrincipleComplete && (isCompleteRice || !!meal?.protein) && !!meal?.drink && !!meal?.tableNumber && !!meal?.paymentMethod && isSidesComplete
     : isSoupComplete && isPrincipleComplete && (isCompleteRice || !!meal?.protein) && !!meal?.drink && !!meal?.time && !!meal?.address?.address && !!meal?.payment && meal?.cutlery !== null && isSidesComplete;
 
@@ -416,7 +416,8 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
       label: 'Proteína',
       associatedField: 'protein'
     },
-    {
+    // Ocultar Bebida para mesero (userRole === 3)
+    ...(userRole === 3 ? [] : [{
       component: (
         <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
           <OptionSelector
@@ -431,7 +432,7 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
       isComplete: !!meal?.drink,
       label: 'Bebida',
       associatedField: 'drink'
-    },
+    }]),
     ...(isTableOrder
       ? [
           {
@@ -455,7 +456,8 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
             label: 'Mesa',
             associatedField: 'tableNumber'
           },
-          {
+          // Ocultar Método de Pago para mesero (userRole === 3)
+          ...(userRole === 3 ? [] : [{
             component: (
               <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
                 <h4 className="text-sm font-semibold text-green-700 mb-2">Método de Pago</h4>
@@ -474,7 +476,7 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
             isComplete: !!meal?.paymentMethod,
             label: 'Método de pago',
             associatedField: 'paymentMethod'
-          }
+          }])
         ]
       : [
           {

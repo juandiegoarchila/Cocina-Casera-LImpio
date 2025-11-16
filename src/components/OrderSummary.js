@@ -605,7 +605,7 @@ const MealGroup = ({ group, globalCommonFields, globalCommonAddressFields, isWai
 };
 
 // Componente para resumen de pagos
-const PaymentSummary = ({ paymentSummary, total, isWaiterView, isTableOrder }) => {
+const PaymentSummary = ({ paymentSummary, total, isWaiterView, isTableOrder, isAdminView }) => {
   const allCashOrUnspecified = Object.keys(paymentSummary).every(method => method === 'Efectivo' || method === 'No especificado');
 
   return (
@@ -613,7 +613,7 @@ const PaymentSummary = ({ paymentSummary, total, isWaiterView, isTableOrder }) =
       <p className="text-sm sm:text-base font-bold text-right text-gray-800">
         Total: <span className="text-green-600">${total.toLocaleString('es-CO')}</span>
       </p>
-      {!isWaiterView && !isTableOrder && (
+      {!isWaiterView && !isTableOrder && !isAdminView && (
         <>
           {allCashOrUnspecified ? (
             <>
@@ -715,12 +715,12 @@ const OrderSummary = ({ meals, onSendOrder, calculateTotal, preCalculatedTotal, 
                 <AddressSummary commonAddressFields={commonAddressFields} isCommon={true} globalCommonAddressFields={commonAddressFields} />
               )}
               <hr className="border-t border-gray-300 my-2" />
-              {!isWaiterView && (
+              {!isWaiterView && !isAdminView && (
                 <p className="text-sm text-gray-600">🚚 Estimado: 25-30 min (10-15 si están cerca).</p>
               )}
             </div>
           )}
-          <PaymentSummary paymentSummary={paymentSummary} total={total} isWaiterView={isWaiterView} isTableOrder={isTableOrder} />
+          <PaymentSummary paymentSummary={paymentSummary} total={total} isWaiterView={isWaiterView} isTableOrder={isTableOrder} isAdminView={isAdminView} />
           {onSendOrder && (
             <button
               onClick={onSendOrder}

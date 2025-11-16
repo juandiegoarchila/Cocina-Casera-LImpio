@@ -18,6 +18,7 @@ import OptionSelector from '../OptionSelector';
 import WaiterPayments from './WaiterPayments';
 import WaiterTasks from './WaiterTasks';
 import WaiterCashier from './WaiterCashier';
+import { getColombiaLocalDateString } from '../../utils/bogotaDate';
 import CajaPOS from './CajaPOS';
 import { initializeMealData, handleMealChange, addMeal, duplicateMeal, removeMeal } from '../../utils/MealLogic';
 import { calculateTotal, calculateMealPrice } from '../../utils/MealCalculations';
@@ -153,6 +154,8 @@ const WaiterDashboard = () => {
     });
 
     const ordersUnsubscribe = onSnapshot(collection(db, 'tableOrders'), (snapshot) => {
+      const todayISO = getColombiaLocalDateString(); // Obtener fecha de hoy en formato YYYY-MM-DD
+      
       const orderData = snapshot.docs
         .map(doc => {
           const data = doc.data();
@@ -180,7 +183,17 @@ const WaiterDashboard = () => {
               new Date()
           };
         })
-        .filter(order => order.userId === user?.uid);
+        .filter(order => {
+          // Filtrar por usuario Y por fecha del día actual
+          if (order.userId !== user?.uid) return false;
+          
+          // Obtener fecha de la orden
+          const orderDate = order.createdAtLocal 
+            ? order.createdAtLocal.split('T')[0] 
+            : getColombiaLocalDateString(order.createdAt);
+          
+          return orderDate === todayISO;
+        });
       
       // Guardamos las órdenes de almuerzo y luego ordenamos todas juntas
       setOrders(prev => {
@@ -212,6 +225,8 @@ const WaiterDashboard = () => {
     if (!user || !breakfastAdditions.length) return;
 
     const breakfastOrdersUnsubscribe = onSnapshot(collection(db, 'breakfastOrders'), (snapshot) => {
+      const todayISO = getColombiaLocalDateString(); // Obtener fecha de hoy en formato YYYY-MM-DD
+      
       const breakfastOrders = snapshot.docs
         .map(doc => {
           const data = doc.data();
@@ -248,7 +263,17 @@ const WaiterDashboard = () => {
               new Date()
           };
         })
-        .filter(order => order.userId === user?.uid);
+        .filter(order => {
+          // Filtrar por usuario Y por fecha del día actual
+          if (order.userId !== user?.uid) return false;
+          
+          // Obtener fecha de la orden
+          const orderDate = order.createdAtLocal 
+            ? order.createdAtLocal.split('T')[0] 
+            : getColombiaLocalDateString(order.createdAt);
+          
+          return orderDate === todayISO;
+        });
       
       // Guardamos las órdenes de desayuno y luego ordenamos todas juntas
       setOrders(prev => {
@@ -362,10 +387,9 @@ const WaiterDashboard = () => {
       if (!meal?.soup && !meal?.soupReplacement) missing.push('Sopa o reemplazo de sopa');
       if (!meal?.principle && !meal?.principleReplacement) missing.push('Principio');
       if (!isCompleteRice && !meal?.protein) missing.push('Proteína');
-      if (!meal?.drink) missing.push('Bebida');
+      // Bebida y Método de pago ya NO son requeridos para mesero
       if (!isCompleteRice && (!meal?.sides || meal.sides.length === 0)) missing.push('Acompañamientos');
       if (!meal?.tableNumber) missing.push('Mesa');
-      if (!meal?.paymentMethod) missing.push('Método de pago');
 
       if (missing.length > 0) {
         if (process.env.NODE_ENV === 'development') {
@@ -407,7 +431,7 @@ const WaiterDashboard = () => {
           principle: Array.isArray(meal.principle) ? meal.principle.map(p => ({ name: p.name, replacement: p.replacement || '' })) : [],
           principleReplacement: meal.principleReplacement ? { name: meal.principleReplacement.name } : null,
           protein: meal.protein ? { name: meal.protein.name } : null,
-          drink: meal.drink ? { name: meal.drink.name } : null,
+          drink: meal.drink ? { name: meal.drink.name } : { name: 'Sin bebida' }, // Valor por defecto
           sides: Array.isArray(meal.sides) ? meal.sides.map(s => ({ name: s.name })) : [],
           additions: meal.additions?.map(addition => ({
             id: addition.id,
@@ -418,7 +442,7 @@ const WaiterDashboard = () => {
             price: addition.price || 0,
           })) || [],
           tableNumber: meal.tableNumber || '',
-          paymentMethod: meal.paymentMethod ? { name: meal.paymentMethod.name } : null,
+          payment: meal.payment ? { name: meal.payment.name } : { name: 'Efectivo' }, // Usar 'payment' en lugar de 'paymentMethod'
           orderType: meal.orderType || '',
           notes: meal.notes || '',
         })),
@@ -454,8 +478,8 @@ const WaiterDashboard = () => {
       steps.forEach(step => {
         if (step === 'tableNumber') {
           if (!breakfast.tableNumber) missing.push('tableNumber');
-        } else if (step === 'paymentMethod') {
-          if (!breakfast.paymentMethod && !breakfast.payment) missing.push('paymentMethod');
+        } else if (step === 'paymentMethod' || step === 'drink') {
+          // Bebida y Pago ya NO son requeridos para mesero
         } else if (step === 'orderType') {
           if (!breakfast.orderType) missing.push('orderType');
         } else if (!breakfast[step]) {
@@ -544,7 +568,7 @@ const WaiterDashboard = () => {
           broth: breakfast.broth ? { name: breakfast.broth.name } : null,
           eggs: breakfast.eggs ? { name: breakfast.eggs.name } : null,
           riceBread: breakfast.riceBread ? { name: breakfast.riceBread.name } : null,
-          drink: breakfast.drink ? { name: breakfast.drink.name } : null,
+          drink: breakfast.drink ? { name: breakfast.drink.name } : { name: 'Sin bebida' }, // Valor por defecto
           protein: breakfast.protein ? { name: breakfast.protein.name } : null,
           additions: breakfast.additions?.map(addition => ({
             name: addition.name,
@@ -552,13 +576,13 @@ const WaiterDashboard = () => {
             price: addition.price || 0,
           })) || [],
           tableNumber: breakfast.tableNumber || '',
-          // Normaliza y guarda ambos por compatibilidad
+          // Normaliza y guarda ambos por compatibilidad - Valor por defecto: Efectivo
           paymentMethod: (breakfast.paymentMethod || breakfast.payment)
             ? { name: getMethodName(breakfast.paymentMethod || breakfast.payment) }
-            : null,
+            : { name: 'Efectivo' },
           payment: (breakfast.payment || breakfast.paymentMethod)
             ? { name: getMethodName(breakfast.payment || breakfast.paymentMethod) }
-            : null,
+            : { name: 'Efectivo' },
           orderType: breakfast.orderType || '',
           notes: breakfast.notes || '',
         })),
@@ -1040,6 +1064,7 @@ const WaiterDashboard = () => {
                       <ListBulletIcon className={`w-6 h-6 mr-2 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} />
                       <span>Gestión de Tareas</span>
                     </button>
+                    {/* Caja registradora oculta para meseros
                     <button
                       onClick={() => { setCurrentView('cashier'); setIsSidebarOpen(false); }}
                       className={`flex items-center px-4 py-2 rounded-md text-sm font-medium ${
@@ -1055,6 +1080,7 @@ const WaiterDashboard = () => {
                       <CurrencyDollarIcon className={`w-6 h-6 mr-2 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} />
                       <span>Caja registradora</span>
                     </button>
+                    */}
                     <button
                       onClick={handleLogout}
                       className={`mt-auto flex items-center px-4 py-2 rounded-md text-sm font-medium ${theme === 'dark' ? 'text-red-300 hover:text-white hover:bg-red-700' : 'text-red-600 hover:text-red-800 hover:bg-red-200'} transition-all duration-200`}
@@ -1159,6 +1185,7 @@ const WaiterDashboard = () => {
             </span>
           </button>
 
+          {/* Caja registradora oculta para meseros
           <button
             onClick={() => setCurrentView('cashier')}
             className={`relative flex items-center px-4 py-2 rounded-md text-sm font-medium min-w-[48px]
@@ -1181,6 +1208,7 @@ const WaiterDashboard = () => {
               Caja registradora
             </span>
           </button>
+          */}
 
           <button
             onClick={handleLogout}

@@ -77,6 +77,7 @@ const formatValue = (value) => {
 
 // Devuelve raw pago desde la orden
 const getOrderPaymentRaw = (order) =>
+  order?.meals?.[0]?.payment ??
   order?.meals?.[0]?.paymentMethod ??
   order?.breakfasts?.[0]?.payment ??
   order?.breakfasts?.[0]?.paymentMethod ??

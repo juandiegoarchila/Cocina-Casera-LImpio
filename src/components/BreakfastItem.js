@@ -407,7 +407,8 @@ const BreakfastItem = ({
           },
         ]
       : []),
-  ...(currentSteps.includes('drink')
+  // Ocultar Bebida para mesero (userRole === 3)
+  ...((currentSteps.includes('drink') && userRole !== 3)
       ? [
           {
             component: (
@@ -479,7 +480,8 @@ const BreakfastItem = ({
             label: stepTranslations.tableNumber,
             associatedField: 'tableNumber',
           },
-          {
+          // Ocultar Método de Pago para mesero (userRole === 3)
+          ...(userRole === 3 ? [] : [{
             component: (
               <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
                 <h4 className="text-sm font-semibold text-green-700 mb-2">{stepTranslations.payment}</h4>
@@ -502,7 +504,7 @@ const BreakfastItem = ({
             isComplete: stepCompleteness.payment,
             label: stepTranslations.payment,
             associatedField: 'payment',
-          }
+          }])
         ]
       : [
           {

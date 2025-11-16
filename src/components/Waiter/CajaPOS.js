@@ -23,7 +23,8 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
   const [posCashAmount, setPosCashAmount] = useState('');
   const [posCalculatedChange, setPosCalculatedChange] = useState(0);
   const [posNote, setPosNote] = useState('');
-  const [posStage, setPosStage] = useState('select'); // 'select' | 'pay'
+  const [posStage, setPosStage] = useState('select'); // 'select' | 'pay' | 'completed'
+  const [completedSaleData, setCompletedSaleData] = useState(null);
 
   // Editor de artículos
   const [showItemEditor, setShowItemEditor] = useState(false);
@@ -41,6 +42,9 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
   // Filtro de categorías
   const [categoryFilter, setCategoryFilter] = useState('');
   
+  // Buscador de artículos
+  const [searchTerm, setSearchTerm] = useState('');
+  
   // Órdenes pendientes
   const [tableOrders, setTableOrders] = useState([]);
   const [breakfastOrders, setBreakfastOrders] = useState([]);
@@ -55,7 +59,8 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
     if (!tableInput) return false;
     const isNumber = /^\d+$/.test(tableInput);
     const isLlevar = tableInput.toLowerCase() === 'llevar';
-    return isNumber || isLlevar;
+    const isMesaFormat = /^mesa\s+\d+$/i.test(tableInput); // Acepta "Mesa 7", "mesa 7", etc.
+    return isNumber || isLlevar || isMesaFormat;
   }, [posTableNumber]);
 
   const colorPalette = ['#fb923c','#fbbf24','#10b981','#0ea5e9','#6366f1','#ec4899','#f43f5e','#6b7280','#f59e0b'];
@@ -98,7 +103,17 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
   // Derivados
   const activeItems = useMemo(()=> posItems.filter(i => i.active!==false), [posItems]);
   const categories = useMemo(()=> { const s=new Set(); activeItems.forEach(i=>{ if(i.category) s.add(i.category); }); return Array.from(s).sort(); }, [activeItems]);
-  const filteredItems = useMemo(()=> categoryFilter ? activeItems.filter(i=>i.category===categoryFilter) : activeItems, [activeItems, categoryFilter]);
+  const filteredItems = useMemo(()=> {
+    let items = activeItems;
+    // Filtrar por categoría
+    if (categoryFilter) items = items.filter(i => i.category === categoryFilter);
+    // Filtrar por búsqueda (nombre)
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase().trim();
+      items = items.filter(i => i.name?.toLowerCase().includes(term));
+    }
+    return items;
+  }, [activeItems, categoryFilter, searchTerm]);
   const groupedItems = useMemo(()=>{
     const map = new Map();
     filteredItems.forEach(it => { const k = it.category || ''; if(!map.has(k)) map.set(k, []); map.get(k).push(it); });
@@ -145,6 +160,7 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
     setPosStage('select'); 
     setPosTableNumber('');
     setLoadedOrder(null);
+    setCompletedSaleData(null);
   };
   
   // Cargar orden pendiente en el carrito
@@ -189,12 +205,16 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
     }
     
     setCartItems(items);
-    setPosTableNumber(order.tableNumber || '');
+    
+    // Recuperar tableNumber de la orden o del primer meal/breakfast
+    const tableNum = order.tableNumber || order.meals?.[0]?.tableNumber || order.breakfasts?.[0]?.tableNumber || '';
+    setPosTableNumber(tableNum);
+    
     setPosOrderType(order.orderType || 'almuerzo');
     if (order.note) setPosNote(order.note);
     setPosPaymentMethod(order.paymentMethod?.name?.toLowerCase() || 'efectivo');
     setLoadedOrder(order);
-    setSuccess(`✅ Orden cargada - Mesa: ${order.tableNumber || 'Llevar'} - Total: ${formatPrice(order.total || 0)}`);
+    setSuccess(`✅ Orden cargada - Mesa: ${tableNum || 'Llevar'} - Total: ${formatPrice(order.total || 0)}`);
   };
   
   // Mostrar detalles de orden en modal
@@ -252,18 +272,19 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
     return arr.slice(0, limit);
   },[cartTotal]);
 
-  // Desglose de cambio sugerido (greedy) para COP
+  // Desglose de cambio sugerido (greedy) para COP - incluye billetes y monedas
   const changeBreakdown = useMemo(()=>{
     if (posPaymentMethod !== 'efectivo') return [];
     const change = posCalculatedChange;
     if (change <= 0) return [];
-    const denoms = [50000,20000,10000,5000,2000,1000];
+    // Billetes y monedas colombianas en orden descendente
+    const denoms = [50000, 20000, 10000, 5000, 2000, 1000, 500, 200, 100, 50];
     let remaining = change;
     const parts = [];
     for (const d of denoms){
       if (remaining <= 0) break;
       const q = Math.floor(remaining / d);
-      if (q>0){ parts.push({ d, q }); remaining -= q*d; }
+      if (q>0){ parts.push({ d, q, isCoin: d <= 1000 }); remaining -= q*d; }
     }
     return parts;
   },[posCalculatedChange,posPaymentMethod]);
@@ -278,10 +299,11 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
       return setError('Debe ingresar un número de mesa o escribir "llevar"');
     }
     
-    // Validar que si no es un número, debe ser exactamente "llevar"
+    // Validar que sea un número, "llevar" o formato "Mesa X"
     const isNumber = /^\d+$/.test(tableInput);
     const isLlevar = tableInput.toLowerCase() === 'llevar';
-    if (!isNumber && !isLlevar) {
+    const isMesaFormat = /^mesa\s+\d+$/i.test(tableInput);
+    if (!isNumber && !isLlevar && !isMesaFormat) {
       return setError('Ingrese un número de mesa válido o escriba "llevar"');
     }
     
@@ -290,20 +312,54 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
       // Si hay una orden cargada, actualizarla en lugar de crear una nueva
       if (loadedOrder) {
         const collectionName = (loadedOrder.orderType === 'desayuno') ? 'breakfastOrders' : 'tableOrders';
-        await updateDoc(doc(db, collectionName, loadedOrder.id), {
+        
+        // Actualizar paymentMethod en meals o breakfasts
+        const updatedMeals = (loadedOrder.meals || []).map(meal => ({
+          ...meal,
+          payment: { name: posPaymentMethod.charAt(0).toUpperCase() + posPaymentMethod.slice(1) }
+        }));
+        const updatedBreakfasts = (loadedOrder.breakfasts || []).map(breakfast => ({
+          ...breakfast,
+          payment: { name: posPaymentMethod.charAt(0).toUpperCase() + posPaymentMethod.slice(1) }
+        }));
+        
+        const updateData = {
           isPaid: true,
           status: 'Completada',
           updatedAt: serverTimestamp(),
           paymentDate: serverTimestamp(),
           paymentMethod: posPaymentMethod,
+          payment: posPaymentMethod.charAt(0).toUpperCase() + posPaymentMethod.slice(1), // Agregar campo payment también
           paymentAmount: cartTotal,
           total: cartTotal,
           paymentNote: posNote || '',
           cashReceived: posPaymentMethod === 'efectivo' && posCashAmount ? (parseFloat(posCashAmount)||0) : null,
           changeGiven: posPaymentMethod === 'efectivo' ? posCalculatedChange : null,
+        };
+        
+        // Agregar meals o breakfasts actualizados según el tipo de orden
+        if (loadedOrder.meals && loadedOrder.meals.length > 0) {
+          updateData.meals = updatedMeals;
+        }
+        if (loadedOrder.breakfasts && loadedOrder.breakfasts.length > 0) {
+          updateData.breakfasts = updatedBreakfasts;
+        }
+        
+        await updateDoc(doc(db, collectionName, loadedOrder.id), updateData);
+        // Guardar datos de venta completada antes de mostrar confirmación
+        setCompletedSaleData({
+          total: cartTotal,
+          paymentMethod: posPaymentMethod,
+          // Si es efectivo y no se ingresó monto, asumimos exacto => recibido = total
+          cashReceived: posPaymentMethod === 'efectivo' ? (posCashAmount ? (parseFloat(posCashAmount)||0) : cartTotal) : null,
+          changeGiven: posPaymentMethod === 'efectivo' ? posCalculatedChange : null,
+          changeBreakdown: posPaymentMethod === 'efectivo' ? changeBreakdown : [],
+          orderId: loadedOrder.id,
+          items: cartItems,
+          note: posNote,
+          tableNumber: posTableNumber,
         });
-        setSuccess(`✅ Orden #${loadedOrder.id.substring(0, 6)} completada - Vueltos: ${formatPrice(posCalculatedChange)}`);
-        resetCart();
+        setPosStage('completed');
         return;
       }
       
@@ -353,7 +409,7 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
           category: ci.category || (posItems.find(p=>p.id===ci.refId)?.category) || null,
         }))
       };
-      if (isLlevar) {
+      if (isLlevarCheck) {
         payload.takeaway = true;
       } else {
         payload.tableNumber = tableNum;
@@ -385,8 +441,20 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
           takeaway: payload.takeaway,
         });
       } catch(printErr){ /* silenciar errores de impresión */ }
-      setSuccess('✅ Venta registrada');
-      resetCart();
+      // Guardar datos de venta completada antes de mostrar confirmación
+      setCompletedSaleData({
+        total: cartTotal,
+        paymentMethod: posPaymentMethod,
+        cashReceived,
+        changeGiven,
+        changeBreakdown: posPaymentMethod === 'efectivo' ? changeBreakdown : [],
+        orderId: docRef.id,
+        items: cartItems,
+        note: posNote,
+        tableNumber: payload.tableNumber,
+        takeaway: payload.takeaway,
+      });
+      setPosStage('completed');
     }catch(err){ setError('Error registrando venta: '+err.message); }
   };
 
@@ -524,7 +592,17 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
 
   const handleSaveItem = async () => {
     if(!itemName.trim()||!itemPrice) return setError('Nombre y precio obligatorios');
-    const base = { name:itemName.trim(), price:Math.round(Number(itemPrice)||0), type:itemType, category:itemCategory.trim()||null, color:itemEditorMode==='color'?itemColor:null, shape:itemEditorMode==='color'?itemShape:null, imageData:itemEditorMode==='image'?itemImageData:null, active:itemActive, sortOrder: editingItem?.sortOrder || Date.now() };
+    const base = { 
+      name:itemName.trim(), 
+      price:Math.round(Number(itemPrice)||0), 
+      type:itemType, 
+      category:itemCategory.trim()||null, 
+      color:itemEditorMode==='color'?itemColor:null, 
+      shape:itemShape, // Siempre guardar la forma seleccionada
+      imageData:itemEditorMode==='image'?itemImageData:null, 
+      active:itemActive, 
+      sortOrder: editingItem?.sortOrder || Date.now() 
+    };
     try {
       if (editingItem) { const { updateDoc, doc } = await import('firebase/firestore'); await updateDoc(doc(db,'posItems',editingItem.id), base); setSuccess('Artículo actualizado'); }
       else { await addDoc(collection(db,'posItems'), base); setSuccess('Artículo creado'); }
@@ -546,33 +624,59 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
   return (
   <div className="w-full mx-auto px-3 sm:px-6 py-4 lg:py-3 lg:h-[calc(100vh-5rem)] lg:overflow-hidden">
 
-  <div className={`grid grid-cols-1 ${posStage==='pay' ? 'lg:grid-cols-[440px_1fr]' : 'lg:grid-cols-3'} gap-4 items-start h-full`}>
+  <div className={`grid grid-cols-1 ${posStage==='completed' ? '' : posStage==='pay' ? 'lg:grid-cols-[440px_1fr]' : 'lg:grid-cols-3'} gap-4 items-start h-full`}>
         {/* Catálogo (columna izquierda 2/3) */}
+  {posStage !== 'completed' && (
   <div className={`${posStage==='select' ? 'lg:col-span-2' : 'lg:w-[440px]'} flex flex-col h-full relative min-w-0 min-h-0`}>
           {posStage==='select' ? (
             <>
               {/* Header Catálogo */}
               <div className="sticky top-0 z-20 -mx-3 sm:-mx-6 lg:mx-0 mb-4">
-                <div className="relative overflow-hidden backdrop-blur-md bg-gradient-to-r from-gray-800/90 via-gray-800/80 to-gray-800/90 border border-gray-700/60 rounded-b-xl rounded-t-lg lg:rounded-xl shadow-xl px-4 py-3 flex flex-col gap-2">
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-2">
-                      <div className="p-2 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-500 shadow-inner">
-                        <CurrencyDollarIcon className="w-6 h-6 text-white" />
+                <div className="relative overflow-hidden backdrop-blur-md bg-gradient-to-r from-gray-800/90 via-gray-800/80 to-gray-800/90 border border-gray-700/60 rounded-b-xl rounded-t-lg lg:rounded-xl shadow-xl px-3 sm:px-4 py-3">
+                  {/* Layout responsive: vertical en móvil, horizontal en tablet+ */}
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+                    {/* Título */}
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="p-2 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-500 shadow-inner flex-shrink-0">
+                        <CurrencyDollarIcon className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
                       </div>
-                      <div>
-                        <h2 className="text-lg sm:text-xl font-bold text-white leading-tight">Caja POS</h2>
-                        <p className="text-[11px] text-gray-400 hidden sm:block">Selecciona artículos y procesa el pago rápido</p>
+                      <div className="min-w-0">
+                        <h2 className="text-base sm:text-lg lg:text-xl font-bold text-white leading-tight truncate">Caja POS</h2>
+                        <p className="text-[11px] text-gray-400 hidden lg:block">Selecciona artículos y procesa el pago rápido</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    
+                    {/* Controles (categoría + nuevo) */}
+                    <div className="flex items-center gap-2 flex-wrap">
                       <CategoryFilter current={categoryFilter} onSelect={setCategoryFilter} />
                       {role===2 && (
-                        <button onClick={openNewItemEditor} className="group flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-[.97] text-white rounded-md text-xs font-medium shadow hover:shadow-lg transition">
+                        <button onClick={openNewItemEditor} className="group flex items-center gap-1 px-2.5 sm:px-3 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-[.97] text-white rounded-md text-xs font-medium shadow hover:shadow-lg transition flex-shrink-0">
                           <PlusCircleIcon className="w-4 h-4"/>
                           <span>Nuevo</span>
                         </button>
                       )}
                     </div>
+                  </div>
+                  
+                  {/* Buscador - siempre en su propia fila */}
+                  <div className="relative mt-3">
+                    <input
+                      type="text"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      placeholder="🔍 Buscar artículo..."
+                      className="w-full px-3 py-2 pl-3 pr-8 rounded-lg bg-gray-700/60 text-white text-sm placeholder-gray-400 border border-gray-600/50 focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 focus:outline-none transition"
+                    />
+                    {searchTerm && (
+                      <button
+                        onClick={() => setSearchTerm('')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -587,7 +691,7 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
                         <span className="text-[10px] uppercase tracking-wide text-orange-400 bg-orange-500/20 px-2 py-1 rounded">🔔 Órdenes Pendientes</span>
                         <span className="ml-2 text-[10px] text-orange-300">{pendingOrdersForPOS.length}</span>
                       </div>
-                      <div className="grid gap-4 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
+                      <div className="grid grid-cols-3 gap-3 sm:gap-4 md:grid-cols-4 xl:grid-cols-6">
                         {pendingOrdersForPOS.map(order => {
                           const orderTime = new Date(order.createdAt?.seconds ? order.createdAt.seconds * 1000 : order.createdAt);
                           const minutesAgo = Math.floor((currentTime - orderTime) / 60000);
@@ -614,7 +718,7 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
                               <button onClick={(e) => showOrderDetails(order, e)} className="absolute -top-2 -right-2 bg-blue-500 hover:bg-blue-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition z-10">
                                 <InformationCircleIcon className="w-4 h-4"/>
                               </button>
-                              <button onClick={() => loadPendingOrderToCart(order)} className="w-24 h-24 mx-auto flex flex-col items-center justify-center text-center text-xs font-medium shadow-md hover:shadow-xl transition rounded-lg bg-gradient-to-br from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-white relative overflow-hidden">
+                              <button onClick={() => loadPendingOrderToCart(order)} className="w-20 h-20 sm:w-24 sm:h-24 mx-auto flex flex-col items-center justify-center text-center text-xs font-medium shadow-md hover:shadow-xl transition rounded-lg bg-gradient-to-br from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-white relative overflow-hidden">
                                 <span className="text-2xl mb-1">{orderLabel}</span>
                                 <span className="text-[10px] font-bold">{displayTable}</span>
                                 <span className="text-[9px] opacity-80">{minutesAgo}m</span>
@@ -635,21 +739,39 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
                           <span className="text-[10px] uppercase tracking-wide text-gray-400 bg-gray-700/40 px-2 py-1 rounded">{cat}</span>
                           <span className="ml-2 text-[10px] text-gray-500">{g.items.length}</span>
                         </div>
-                        <div className="grid gap-4 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
+                        <div className="grid grid-cols-3 gap-3 sm:gap-4 md:grid-cols-4 xl:grid-cols-6">
                           {g.items.map(item => {
-                        const shapeClass = item.shape==='circle' ? 'rounded-full' : item.shape==='square' ? 'rounded-lg' : item.shape==='outline' ? 'rounded-full ring-2 ring-offset-2 ring-white' : '';
-                        const hexStyle = item.shape==='hex' ? { clipPath:'polygon(25% 5%,75% 5%,95% 50%,75% 95%,25% 95%,5% 50%)' } : {};
-                        const bg = item.imageData ? `url(${item.imageData})` : (item.color || '#374151');
+                        const bgColor = item.color || '#374151';
                         const isInCart = cartItems.find(ci=>ci.refId===item.id);
+                        
+                        // Clases y estilos según la forma
+                        let containerClass = 'w-20 h-20 sm:w-24 sm:h-24 mx-auto flex flex-col items-center justify-center text-center text-xs font-medium shadow-md hover:shadow-lg transition relative';
+                        let imgContainerStyle = { background: item.imageData ? '#f3f4f6' : (item.shape==='outline'?'transparent': bgColor) };
+                        
+                        if (item.shape === 'circle') {
+                          containerClass += ' rounded-full overflow-hidden';
+                        } else if (item.shape === 'square') {
+                          containerClass += ' rounded-lg overflow-hidden';
+                        } else if (item.shape === 'outline') {
+                          containerClass += ' rounded-full overflow-hidden ring-2 ring-offset-2 ring-white';
+                        } else if (item.shape === 'hex') {
+                          containerClass += ' overflow-hidden';
+                          imgContainerStyle.clipPath = 'polygon(25% 5%,75% 5%,95% 50%,75% 95%,25% 95%,5% 50%)';
+                        } else {
+                          // Por defecto cuadrado
+                          containerClass += ' rounded-lg overflow-hidden';
+                        }
+                        
                         return (
                           <div key={item.id} className="relative group">
-                            {role===2 && <button onClick={()=>openEditItem(item)} className="absolute -top-2 -right-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition"><PencilIcon className="w-4 h-4"/></button>}
+                            {role===2 && <button onClick={()=>openEditItem(item)} className="absolute -top-2 -right-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition z-10"><PencilIcon className="w-4 h-4"/></button>}
                             <button
                               onClick={()=>handleAddPosItem(item)}
-                              className={`w-24 h-24 mx-auto flex flex-col items-center justify-center text-center text-xs font-medium text-gray-900 dark:text-gray-100 shadow-md hover:shadow-lg transition relative overflow-hidden ${shapeClass}`}
-                              style={{ background: item.imageData?bg: item.shape==='outline'?'transparent': bg, backgroundSize:'cover', backgroundPosition:'center', ...hexStyle }}>
+                              className={containerClass}
+                              style={imgContainerStyle}>
+                              {item.imageData && <img src={item.imageData} alt={item.name} className="absolute inset-0 w-full h-full object-contain" />}
                               {!item.imageData && item.shape==='outline' && <div className="absolute inset-0 rounded-full" style={{ boxShadow:`0 0 0 3px ${item.color || '#ffffff'}` }} />}
-                              <span className="z-10 px-1 drop-shadow leading-tight">{item.name}{isInCart && <span className="block text-[10px] font-bold mt-1">x{isInCart.quantity}</span>}</span>
+                              <span className="z-10 px-1 drop-shadow leading-tight text-gray-900">{item.name}{isInCart && <span className="block text-[10px] font-bold mt-1">x{isInCart.quantity}</span>}</span>
                             </button>
                             <div className="mt-1 text-center text-[11px] text-gray-400">{formatPrice(item.price||0)}</div>
                           </div>
@@ -697,9 +819,10 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
             </div>
           )}
         </div>
+  )}
 
-        {/* Resumen / Pago (panel lateral derecho) */}
-  <div className={`${theme==='dark' ? 'bg-gray-800':'bg-white'} rounded-xl p-3 shadow-lg flex flex-col lg:sticky lg:top-0 self-start h-full lg:h-full min-h-0 ${posStage==='pay' ? 'min-w-0' : ''}`}>
+          {/* Resumen / Pago / Confirmación (panel lateral derecho) */}
+        <div className={`${theme==='dark' ? 'bg-gray-800':'bg-white'} rounded-xl shadow-lg flex flex-col ${posStage==='completed' ? 'w-full max-w-2xl mx-auto p-6 lg:p-8 h-full min-h-0' : 'p-3 lg:sticky lg:top-0 self-start h-full lg:h-full min-h-0'} ${posStage==='pay' ? 'min-w-0' : ''}`}>
           {posStage==='select' ? (
             <>
               <h3 className="text-lg font-semibold text-gray-100 mb-3">Resumen</h3>
@@ -751,8 +874,8 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
                 <button onClick={handleProcessPosSale} className="flex-1 py-2 bg-green-600 hover:bg-green-700 text-white rounded text-sm font-semibold disabled:bg-gray-500 disabled:cursor-not-allowed" disabled={cartItems.length===0 || !isTableNumberValid}>Cobrar</button>
               </div>
             </>
-          ) : (
-            // Panel de Pago (nuevo diseño)
+          ) : posStage==='pay' ? (
+            // Panel de Pago
             <>
               <div className="flex-1 min-h-0 overflow-y-auto pr-1 custom-scrollbar">
                 <div className="mb-4 text-center">
@@ -800,7 +923,8 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
                         <div className="mt-2 text-[10px] text-gray-400 flex flex-wrap items-center gap-1">
                           <span className="text-gray-500">Cambio sugerido:</span>
                           {changeBreakdown.map(p => (
-                            <span key={p.d} className="px-1.5 py-0.5 rounded bg-gray-700/60 text-gray-200 border border-gray-600/60">
+                            <span key={p.d} className="px-1.5 py-0.5 rounded bg-gray-700/60 text-gray-200 border border-gray-600/60 flex items-center gap-0.5">
+                              <span className="text-[10px]">{p.isCoin ? '🪙' : '💵'}</span>
                               {p.q}x {formatPrice(p.d)}
                             </span>
                           ))}
@@ -818,6 +942,118 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
                 <div className="flex gap-2 pt-4">
                   <button onClick={()=>setPosStage('select')} className="flex-1 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded text-sm">Volver</button>
                   <button onClick={handleProcessPosSale} className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-semibold disabled:bg-gray-500 disabled:cursor-not-allowed" disabled={cartItems.length===0 || !isTableNumberValid}>Cobrar</button>
+                </div>
+              </div>
+            </>
+          ) : (
+            // Panel de Confirmación de Venta Completada
+            <>
+              <div className="flex-1 overflow-y-auto custom-scrollbar">
+                {/* Badge de confirmación */}
+                <div className="text-center mb-4">
+                  <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-600/20 border-2 border-green-500/50 rounded-full mb-2">
+                    <svg className="w-4 h-4 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span className="text-sm font-bold text-green-400">¡Venta Completada!</span>
+                  </div>
+                </div>
+                  
+                {/* Total cobrado */}
+                <div className="text-center mb-4">
+                  <div className="text-sm uppercase tracking-wider text-gray-400 mb-2 font-medium">TOTAL COBRADO</div>
+                  <div className="text-3xl lg:text-4xl font-extrabold text-green-400 mb-2 leading-tight">{formatPrice(completedSaleData?.total || 0)}</div>
+                  <div className="text-xs text-gray-300 mb-2">
+                    Pagado Con {completedSaleData?.paymentMethod === 'efectivo' ? 'Efectivo' : completedSaleData?.paymentMethod === 'nequi' ? 'Nequi' : 'Daviplata'}
+                  </div>
+                  {completedSaleData?.paymentMethod === 'efectivo' && completedSaleData?.cashReceived != null && (
+                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-blue-700/30 border border-blue-500/50">
+                      <span className="text-base">💵</span>
+                      <span className="text-xs font-semibold text-blue-200">
+                        Recibido: {formatPrice(completedSaleData.cashReceived)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                  
+                {/* Vueltas a entregar o Efectivo exacto */}
+                {completedSaleData?.paymentMethod === 'efectivo' && (
+                  completedSaleData?.changeGiven > 0 ? (
+                    <>
+                    <div className="mb-3 bg-amber-900/30 border border-amber-500/40 rounded-xl p-2">
+                      <div className="flex items-center justify-center gap-1 mb-1">
+                        <span className="text-base">🪙</span>
+                        <span className="text-xs font-semibold text-amber-300">Vueltas a entregar</span>
+                      </div>
+                      <div className="text-xl lg:text-2xl font-bold text-amber-300 text-center">
+                        {formatPrice(completedSaleData.changeGiven)}
+                      </div>
+                    </div>
+                    {/* Desglose sugerido en tarjeta aparte (tono diferente) */}
+                    {completedSaleData?.changeBreakdown?.length > 0 && (
+                      <div className="mb-4 bg-slate-900/50 border border-slate-700 rounded-2xl p-3">
+                        <div className="flex items-center justify-center gap-1.5 mb-2">
+                          <span className="text-base">💵</span>
+                          <span className="text-xs font-medium text-gray-200">Desglose sugerido:</span>
+                        </div>
+                        <div className="space-y-2">
+                          {completedSaleData.changeBreakdown.map(p => (
+                            <div key={p.d} className="flex items-center justify-between bg-slate-800 rounded-xl px-2.5 py-1.5 border border-slate-700">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm">{p.isCoin ? '🪙' : '💵'}</span>
+                                <span className="text-xs sm:text-sm font-medium text-gray-200">{p.q}x {formatPrice(p.d)}</span>
+                              </div>
+                              <span className="text-xs sm:text-sm font-semibold text-white">{formatPrice(p.q * p.d)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    </>
+                  ) : (
+                    <div className="mb-4 bg-emerald-900/30 border-2 border-emerald-600/50 rounded-2xl p-3">
+                      <div className="flex items-center justify-center gap-2">
+                        <span className="text-lg">✅</span>
+                        <span className="text-sm font-semibold text-emerald-300">Efectivo exacto - Sin vueltas</span>
+                      </div>
+                    </div>
+                  )
+                )}
+              </div>
+              
+              {/* Botones de acción */}
+              <div className="mt-5 pt-5 border-t border-gray-700">
+                <div className="grid grid-cols-2 gap-2">
+                  <button 
+                    onClick={() => {
+                      if (completedSaleData) {
+                        printReceipt({
+                          id: completedSaleData.orderId,
+                          date: new Date(),
+                          items: completedSaleData.items,
+                          total: completedSaleData.total,
+                          paymentMethod: completedSaleData.paymentMethod,
+                          cashReceived: completedSaleData.cashReceived,
+                          changeGiven: completedSaleData.changeGiven,
+                          changeBreakdown: completedSaleData.changeBreakdown,
+                          note: completedSaleData.note,
+                          tableNumber: completedSaleData.tableNumber,
+                          takeaway: completedSaleData.takeaway,
+                        });
+                      }
+                    }}
+                    className="py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition shadow-md hover:shadow-lg"
+                  >
+                    <span className="text-sm">🧾</span>
+                    <span className="leading-none">Reimprimir Recibo</span>
+                  </button>
+                  <button 
+                    onClick={resetCart}
+                    className="py-2 px-3 bg-green-600 hover:bg-green-700 text-white rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition shadow-md hover:shadow-lg"
+                  >
+                    <span className="text-[9px] px-1 py-0.5 rounded bg-blue-500 text-white font-semibold tracking-wide">NEW</span>
+                    <span className="leading-none">Nueva Venta</span>
+                  </button>
                 </div>
               </div>
             </>
@@ -860,10 +1096,24 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
                   <label className="block text-xs text-gray-300 mb-1">Imagen</label>
                   <input type="file" accept="image/*" onChange={handleImageFile} className="text-xs" />
                 </div>
+                
+                {/* Selector de forma también para imagen */}
+                <div className="flex flex-wrap gap-2 text-xs">
+                  <label className="block text-xs text-gray-300 w-full mb-1">Forma:</label>
+                  {shapeOptions.map(opt => (
+                    <button key={opt.id} onClick={()=>setItemShape(opt.id)} className={`px-2 py-1 rounded border ${itemShape===opt.id ? 'bg-blue-600 border-blue-500 text-white':'border-gray-600 text-gray-300 hover:bg-gray-700'}`}>{opt.label}</button>
+                  ))}
+                </div>
+                
                 {itemImageData && (
-                  <div className="relative w-24 h-24 rounded-full overflow-hidden ring-2 ring-white">
-                    <img src={itemImageData} alt="preview" className="object-cover w-full h-full" />
-                    <button onClick={()=>setItemImageData(null)} className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full p-1"><XCircleIcon className="w-4 h-4"/></button>
+                  <div className="space-y-2">
+                    <label className="block text-xs text-gray-300">Preview:</label>
+                    <div className="relative w-32 h-32 border-2 border-gray-600 bg-gray-100 overflow-hidden" 
+                         style={itemShape==='hex'?{clipPath:'polygon(25% 5%,75% 5%,95% 50%,75% 95%,25% 95%,5% 50%)'}:{}} 
+                         className={`relative w-32 h-32 border-2 border-gray-600 bg-gray-100 overflow-hidden ${itemShape==='circle'?'rounded-full': itemShape==='square'?'rounded-lg': itemShape==='outline'?'rounded-full ring-4 ring-blue-500':''}`}>
+                      <img src={itemImageData} alt="preview" className="w-full h-full object-contain" />
+                      <button onClick={()=>setItemImageData(null)} className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full p-1 shadow-lg z-10"><XCircleIcon className="w-4 h-4"/></button>
+                    </div>
                   </div>
                 )}
               </div>

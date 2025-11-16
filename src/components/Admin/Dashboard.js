@@ -390,8 +390,10 @@ const GeneralTotalsCard = ({
       const methodRaw = (() => {
         if (order?.payment && typeof order.payment === 'string') return order.payment;
         if (order?.paymentMethod) return order.paymentMethod.name || order.paymentMethod;
-        const mealPM = order?.meals?.[0]?.paymentMethod; if (mealPM) return mealPM.name || mealPM;
-        const bPM = order?.breakfasts?.[0]?.paymentMethod; if (bPM) return bPM.name || bPM;
+        const mealPM = order?.meals?.[0]?.paymentMethod || order?.meals?.[0]?.payment; 
+        if (mealPM) return mealPM.name || mealPM;
+        const bPM = order?.breakfasts?.[0]?.paymentMethod || order?.breakfasts?.[0]?.payment; 
+        if (bPM) return bPM.name || bPM;
         return null;
       })();
       const k = norm(methodRaw);
@@ -491,7 +493,7 @@ const GeneralTotalsCard = ({
         if (Array.isArray(order?.payments) && order.payments.length) {
           order.payments.forEach(p=>{ const k=norm(p.method); const a=parseAmt(p.amount); if(settledFor(k)) sum+=a; });
         } else {
-          const methodRaw = order?.payment || order?.paymentMethod?.name || order?.paymentMethod || order?.meals?.[0]?.paymentMethod?.name || order?.breakfasts?.[0]?.paymentMethod?.name || null;
+          const methodRaw = order?.payment || order?.paymentMethod?.name || order?.paymentMethod || order?.meals?.[0]?.payment?.name || order?.meals?.[0]?.paymentMethod?.name || order?.breakfasts?.[0]?.payment?.name || order?.breakfasts?.[0]?.paymentMethod?.name || null;
           const k = norm(methodRaw);
           const a = parseAmt(order?.total);
           if(settledFor(k)) sum += a;
@@ -994,7 +996,7 @@ const DashboardInner = ({ theme }) => {
         o.payments.forEach(p=>{ const k=norm(p.method); const a=toIntLocal(p.amount); if(settledFor(o,k)) sum+=a; });
         return sum;
       }
-      const methodRaw = o?.payment || o?.paymentMethod?.name || o?.paymentMethod || o?.meals?.[0]?.paymentMethod?.name || o?.breakfasts?.[0]?.paymentMethod?.name || null;
+      const methodRaw = o?.payment || o?.paymentMethod?.name || o?.paymentMethod || o?.meals?.[0]?.payment?.name || o?.meals?.[0]?.paymentMethod?.name || o?.breakfasts?.[0]?.payment?.name || o?.breakfasts?.[0]?.paymentMethod?.name || null;
       const k = norm(methodRaw);
       const a = toIntLocal(o?.total);
       if(settledFor(o,k)) sum += a;
