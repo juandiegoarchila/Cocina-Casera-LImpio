@@ -53,6 +53,14 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
   const [showOrderDetailModal, setShowOrderDetailModal] = useState(false);
   const [selectedOrderDetail, setSelectedOrderDetail] = useState(null);
 
+  // Helper para obtener nombre del mesero desde email
+  const getMeseroName = (email) => {
+    if (!email || email.includes('waiter_') || email.includes('@example.com')) return null;
+    // Extraer la parte antes del @ y capitalizar
+    const name = email.split('@')[0];
+    return name.charAt(0).toUpperCase() + name.slice(1).replace(/[._]/g, ' ');
+  };
+
   // Validación de mesa/llevar
   const isTableNumberValid = useMemo(() => {
     const tableInput = (posTableNumber || '').trim();
@@ -712,6 +720,7 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
                           const displayTable = isLlevar ? 'Llevar' : tableNum;
                           const displayTotal = order.total || 0;
                           const orderLabel = order.orderType === 'desayuno' ? '🍳' : '🍽️';
+                          const meseroName = getMeseroName(order.userEmail);
                           
                           return (
                             <div key={order.id} className="relative group">
@@ -721,6 +730,7 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
                               <button onClick={() => loadPendingOrderToCart(order)} className="w-20 h-20 sm:w-24 sm:h-24 mx-auto flex flex-col items-center justify-center text-center text-xs font-medium shadow-md hover:shadow-xl transition rounded-lg bg-gradient-to-br from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-white relative overflow-hidden">
                                 <span className="text-2xl mb-1">{orderLabel}</span>
                                 <span className="text-[10px] font-bold">{displayTable}</span>
+                                {meseroName && <span className="text-[9px] font-bold text-black">{meseroName}</span>}
                                 <span className="text-[9px] opacity-80">{minutesAgo}m</span>
                               </button>
                               <div className="mt-1 text-center text-[11px] text-orange-400 font-semibold">{formatPrice(displayTotal)}</div>

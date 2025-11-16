@@ -87,6 +87,17 @@ const getOrderPaymentRaw = (order) =>
 
 const getOrderPaymentText = (order) => formatValue(getOrderPaymentRaw(order));
 
+// Obtener origen de la orden (Mesero o Caja POS)
+const getOrderOrigin = (order) => {
+  const email = order?.userEmail;
+  if (!email || email.includes('waiter_') || email.includes('@example.com')) {
+    return 'Caja POS';
+  }
+  // Extraer nombre del email
+  const name = email.split('@')[0];
+  return name.charAt(0).toUpperCase() + name.slice(1).replace(/[._]/g, ' ');
+};
+
 const normalizePaymentKey = (raw) =>
   (typeof raw === 'string' ? raw : formatValue(raw)).toLowerCase().trim();
 
@@ -1414,6 +1425,7 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
                     <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('meals.0.tableNumber')}>
                       Mesa {getSortIcon('meals.0.tableNumber')}
                     </th>
+                    <th className="p-2 sm:p-3 border-b whitespace-nowrap">Origen</th>
                     <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('meals.0.paymentMethod.name')}>
                       Pago {getSortIcon('meals.0.paymentMethod.name')}
                     </th>
@@ -1429,7 +1441,7 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
                 <tbody>
                   {paginatedOrders.length === 0 ? (
                     <tr>
-                      <td colSpan="8" className="p-6 text-center text-gray-500 dark:text-gray-400">
+                      <td colSpan="9" className="p-6 text-center text-gray-500 dark:text-gray-400">
                         No se encontraron órdenes de mesas. Intenta ajustar tu búsqueda.
                       </td>
                     </tr>
@@ -1550,6 +1562,21 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
                               }
                               // Para otros pedidos, usar la lógica normal
                               return formatValue(order.tableNumber || order.meals?.[0]?.tableNumber || order.breakfasts?.[0]?.tableNumber);
+                            })()}
+                          </td>
+                          <td className="p-2 sm:p-3 whitespace-nowrap">
+                            {(() => {
+                              const origin = getOrderOrigin(order);
+                              const isCajaPOS = origin === 'Caja POS';
+                              return (
+                                <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                  isCajaPOS 
+                                    ? 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200' 
+                                    : 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+                                }`}>
+                                  {origin}
+                                </span>
+                              );
                             })()}
                           </td>
                           <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">{paymentDisplay}</td>
