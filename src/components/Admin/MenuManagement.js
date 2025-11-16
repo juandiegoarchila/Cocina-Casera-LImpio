@@ -382,15 +382,43 @@ const MenuManagement = ({ setError, setSuccess, theme }) => {
 
   const handleImageUpload = (file, forEdit = false) => {
     if (!file) return;
+    
+    // Comprimir imagen antes de convertir a base64
+    const img = new Image();
     const reader = new FileReader();
-    reader.onload = (ev) => {
-      const base64Data = ev.target.result;
-      if (forEdit) {
-        setEditItem(prev => ({ ...prev, imageUrl: base64Data }));
-      } else {
-        setNewItem(prev => ({ ...prev, imageUrl: base64Data }));
-      }
+    
+    reader.onload = (e) => {
+      img.src = e.target.result;
+      img.onload = () => {
+        // Crear canvas para redimensionar
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Redimensionar manteniendo proporción (máximo 800px de ancho)
+        const maxWidth = 800;
+        const scale = Math.min(1, maxWidth / img.width);
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        
+        // Dibujar imagen redimensionada
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        
+        // Convertir a base64 con compresión (calidad 0.7)
+        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+        
+        console.log('📦 Imagen comprimida:', {
+          original: Math.round(e.target.result.length / 1024) + 'KB',
+          compressed: Math.round(compressedBase64.length / 1024) + 'KB'
+        });
+        
+        if (forEdit) {
+          setEditItem(prev => ({ ...prev, imageUrl: compressedBase64 }));
+        } else {
+          setNewItem(prev => ({ ...prev, imageUrl: compressedBase64 }));
+        }
+      };
     };
+    
     reader.readAsDataURL(file);
   };
 
