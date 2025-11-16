@@ -223,6 +223,15 @@ const AddressInput = ({ onConfirm, onValidityChange, initialAddress }) => {
     } else if (!isValidPhone(formData.phoneNumber)) {
       newErrors.phoneNumber = "Formato no válido (Ej: 3001234567).";
     }
+    
+    // Validar distancia por número de vía
+    if (formData.streetNumber) {
+      const streetNum = parseInt(formData.streetNumber.replace(/\D/g, ''), 10);
+      if (!isNaN(streetNum) && streetNum > 150) {
+        newErrors.streetNumber = "⚠️ Dirección supera los 4km del restaurante";
+      }
+    }
+    
     setErrors(newErrors);
   }, [formData]);
 
