@@ -55,15 +55,15 @@ const WaiterDashboard = () => {
   
   // Opciones de mesa
   const tableOptions = [
-    { name: 'LLevar' },
-    { name: 'Mesa 1' },
-    { name: 'Mesa 2' },
-    { name: 'Mesa 3' },
-    { name: 'Mesa 4' },
-    { name: 'Mesa 5' },
-    { name: 'Mesa 6' },
-    { name: 'Mesa 7' },
-    { name: 'Mesa 8' }
+    { id: 'llevar', name: 'LLevar' },
+    { id: 'mesa-1', name: 'Mesa 1' },
+    { id: 'mesa-2', name: 'Mesa 2' },
+    { id: 'mesa-3', name: 'Mesa 3' },
+    { id: 'mesa-4', name: 'Mesa 4' },
+    { id: 'mesa-5', name: 'Mesa 5' },
+    { id: 'mesa-6', name: 'Mesa 6' },
+    { id: 'mesa-7', name: 'Mesa 7' },
+    { id: 'mesa-8', name: 'Mesa 8' }
   ];
   
   const [isOrderingDisabled, setIsOrderingDisabled] = useState(false);
@@ -682,30 +682,61 @@ const WaiterDashboard = () => {
     if (order.type === 'lunch') {
       const initializedOrder = {
         ...order,
-        meals: order.meals.map(meal => ({
-          soup: meal.soup || null,
-          soupReplacement: meal.soupReplacement ? {
-            ...meal.soupReplacement,
-            replacement: meal.soupReplacement.replacement || ''
-          } : null,
-          principle: Array.isArray(meal.principle) ? meal.principle.map(p => ({
-            ...p,
-            replacement: p.replacement || ''
-          })) : [],
-          principleReplacement: meal.principleReplacement || null,
-          protein: meal.protein || null,
-          drink: meal.drink || null,
-          sides: meal.sides || [],
-          additions: Array.isArray(meal.additions) ? meal.additions : [],
-          paymentMethod: meal.paymentMethod || null,
-          tableNumber: meal.tableNumber || '',
-          orderType: meal.orderType || '',
-          notes: meal.notes || '',
-          showReplacementsState: {
-            soup: meal.soupReplacement?.name === 'Remplazo por Sopa' && !!meal.soupReplacement?.replacement,
-            principle: meal.principle?.some(opt => opt.name === 'Remplazo por Principio' && !!opt.replacement) || false,
-          },
-        })),
+        meals: order.meals.map(meal => {
+          // Encontrar el objeto completo de la proteína desde el array de proteins
+          const proteinObj = meal.protein ? proteins.find(p => p.name === meal.protein.name) : null;
+          
+          // Encontrar el objeto completo de la sopa desde el array de soups
+          const soupObj = meal.soup ? soups.find(s => s.name === meal.soup.name) : null;
+          
+          // Encontrar el objeto completo de soupReplacement desde el array de soupReplacements
+          const soupReplacementObj = meal.soupReplacement ? soupReplacements.find(sr => sr.name === 'Remplazo por Sopa') : null;
+          
+          // Encontrar los objetos completos de principle desde el array de principles
+          const principleObjs = Array.isArray(meal.principle) ? meal.principle.map(p => {
+            const principleObj = principles.find(pr => pr.name === p.name);
+            return principleObj ? { ...principleObj, replacement: p.replacement || '' } : null;
+          }).filter(Boolean) : [];
+          
+          // Encontrar los objetos completos de sides desde el array de sides
+          const sidesObjs = Array.isArray(meal.sides) ? meal.sides.map(s => 
+            sides.find(sd => sd.name === s.name)
+          ).filter(Boolean) : [];
+          
+          // Encontrar el objeto completo de tableNumber desde el array de tableOptions
+          const tableObj = meal.tableNumber ? tableOptions.find(t => t.name === meal.tableNumber) : null;
+          
+          if (process.env.NODE_ENV === 'development') {
+            console.log('[handleEditOrder] Table debug:', {
+              savedTableNumber: meal.tableNumber,
+              tableObj,
+              tableOptions,
+              foundMatch: !!tableObj
+            });
+          }
+          
+          return {
+            soup: soupObj,
+            soupReplacement: soupReplacementObj ? {
+              ...soupReplacementObj,
+              replacement: meal.soupReplacement.replacement || ''
+            } : null,
+            principle: principleObjs,
+            principleReplacement: meal.principleReplacement || null,
+            protein: proteinObj,
+            drink: meal.drink || null,
+            sides: sidesObjs,
+            additions: Array.isArray(meal.additions) ? meal.additions : [],
+            paymentMethod: meal.paymentMethod || meal.payment || null,
+            tableNumber: tableObj,
+            orderType: meal.orderType || '',
+            notes: meal.notes || '',
+            showReplacementsState: {
+              soup: meal.soupReplacement?.name === 'Remplazo por Sopa' && !!meal.soupReplacement?.replacement,
+              principle: meal.principle?.some(opt => opt.name === 'Remplazo por Principio' && !!opt.replacement) || false,
+            },
+          };
+        }),
       };
       setEditingOrder(initializedOrder);
       if (process.env.NODE_ENV === 'development') {
@@ -806,7 +837,8 @@ const WaiterDashboard = () => {
         }
         // Auto-asignar orderType basado en tableNumber si no existe
         if (!meal.orderType && meal.tableNumber) {
-          const isLlevar = meal.tableNumber.toLowerCase().includes('llevar');
+          const tableNumberName = typeof meal.tableNumber === 'string' ? meal.tableNumber : meal.tableNumber?.name || '';
+          const isLlevar = tableNumberName.toLowerCase().includes('llevar');
           meal.orderType = isLlevar ? 'takeaway' : 'table';
         }
         if (!meal.tableNumber) {
@@ -835,7 +867,7 @@ const WaiterDashboard = () => {
               quantity: a.quantity || 1,
               price: a.price || 0,
             })) : [],
-            tableNumber: meal.tableNumber || '',
+            tableNumber: typeof meal.tableNumber === 'string' ? meal.tableNumber : (meal.tableNumber?.name || ''),
             paymentMethod: meal.paymentMethod ? { name: meal.paymentMethod.name } : null,
             orderType: meal.orderType || '',
             notes: meal.notes || '',
@@ -1609,150 +1641,280 @@ const WaiterDashboard = () => {
           </div>
     )}
   {editingOrder && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white p-4 rounded-lg shadow-lg max-w-md w-full mx-4 overflow-y-auto" style={{ maxHeight: '80vh' }}>
-              <h2 className="text-lg font-bold mb-4">Editar Orden #{editingOrder.id.slice(-4)}</h2>
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 sm:p-8 pt-16 sm:pt-20">
+            <div className="bg-white rounded-lg shadow-2xl w-full max-w-md mx-auto overflow-hidden flex flex-col" style={{ maxHeight: '85vh' }}>
+              {/* Header */}
+              <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-3 py-2 flex justify-between items-center">
+                <div>
+                  <h2 className="text-sm font-bold">✏️ Editar #{editingOrder.id.slice(-4)}</h2>
+                  <p className="text-xs text-blue-100 mt-0.5">
+                    {editingOrder.type === 'lunch' ? `${editingOrder.meals.length} Almuerzo(s)` : `${editingOrder.breakfasts.length} Desayuno(s)`} • 
+                    ${(editingOrder.total || 0).toLocaleString('es-CO')}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setEditingOrder(null)}
+                  className="text-white hover:bg-blue-800 rounded-full p-1 transition-colors"
+                  aria-label="Cerrar"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Contenido scrollable */}
+              <div className="overflow-y-auto flex-1 px-3 sm:px-4 py-3">
               {editingOrder.type === 'lunch' ? (
                 editingOrder.meals.map((meal, index) => (
                   <div key={index} className="mb-4">
-                    <h3 className="text-sm font-medium mb-2">Almuerzo #{index + 1}</h3>
-                    <div className="grid grid-cols-1 gap-2">
-                      <div>
-                        <label className="text-xs block mb-1 font-medium">Sopa o Reemplazo</label>
-                        <OptionSelector
-                          title="Sopa"
-                          emoji="🥣"
-                          options={soups}
-                          selected={meal.soup || meal.soupReplacement}
-                          showReplacements={meal.showReplacementsState?.soup || false}
-                          replacements={soupReplacements.filter(opt => opt.name !== 'Remplazo por Sopa' && opt.name !== 'Solo bandeja')}
-                          selectedReplacement={meal.soupReplacement?.replacement ? { name: meal.soupReplacement.replacement } : null}
-                          multiple={false}
-                          onImmediateSelect={(value) => {
-                            console.log(`[WaiterDashboard] Sopa selected for meal ${index + 1}:`, value);
-                            handleFormChange(index, value?.name === 'Remplazo por Sopa' ? 'soupReplacement' : 'soup', value);
-                          }}
-                          onImmediateReplacementSelect={(replacement) => {
-                            console.log(`[WaiterDashboard] Sopa replacement selected for meal ${index + 1}:`, replacement);
-                            const newMeals = [...editingOrder.meals];
-                            newMeals[index] = {
-                              ...newMeals[index],
-                              soupReplacement: {
-                                ...newMeals[index].soupReplacement,
-                                name: 'Remplazo por Sopa',
-                                replacement: replacement?.name || ''
-                              }
-                            };
-                            setEditingOrder(prev => ({ ...prev, meals: newMeals }));
-                          }}
-                        />
+                    {/* Resumen del pedido actual */}
+                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-l-3 border-blue-500 rounded p-2 mb-2 shadow-sm">
+                      <div className="flex items-center mb-1.5">
+                        <span className="bg-blue-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold mr-1.5">
+                          {index + 1}
+                        </span>
+                        <h3 className="text-xs font-bold text-gray-800">Resumen</h3>
                       </div>
-                      <div>
-                        <label className="text-xs block mb-1 font-medium">Principio o Reemplazo</label>
-                        <OptionSelector
-                          title="Principio"
-                          emoji="🍚"
-                          options={principles}
-                          selected={meal.principle || meal.principleReplacement}
-                          showReplacements={meal.showReplacementsState?.principle || false}
-                          replacements={soupReplacements.filter(opt => opt.name !== 'Remplazo por Sopa' && opt.name !== 'Solo bandeja')}
-                          selectedReplacement={
-                            meal.principle?.find(opt => opt.name === 'Remplazo por Principio')?.replacement
-                              ? { name: meal.principle.find(opt => opt.name === 'Remplazo por Principio').replacement }
-                              : null
-                          }
-                          multiple={true}
-                          showConfirmButton={true}
-                          onImmediateSelect={(value) => {
-                            console.log(`[WaiterDashboard] Principio selected for meal ${index + 1}:`, value);
-                            handleFormChange(index, 'principle', value);
-                          }}
-                          onImmediateReplacementSelect={(replacement) => {
-                            console.log(`[WaiterDashboard] Principio replacement selected for meal ${index + 1}:`, replacement);
-                            const newMeals = [...editingOrder.meals];
-                            newMeals[index] = {
-                              ...newMeals[index],
-                              principle: newMeals[index].principle?.map(opt => ({
-                                ...opt,
-                                replacement: opt.name === 'Remplazo por Principio' ? replacement?.name || '' : opt.replacement
-                              }))
-                            };
-                            setEditingOrder(prev => ({ ...prev, meals: newMeals }));
-                          }}
-                          onConfirm={({ selection }) => handleFormChange(index, 'principle', selection)}
-                        />
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 text-xs">
+                        {meal.soupReplacement && (
+                          <div className="col-span-1 sm:col-span-2 bg-white rounded px-1.5 py-1">
+                            <span className="font-semibold text-gray-700">🥣 Sopa:</span>
+                            <span className="ml-1 text-gray-600">{meal.soupReplacement.replacement}</span>
+                          </div>
+                        )}
+                        {meal.soup && !meal.soupReplacement && (
+                          <div className="col-span-1 sm:col-span-2 bg-white rounded px-1.5 py-1">
+                            <span className="font-semibold text-gray-700">🥣 Sopa:</span>
+                            <span className="ml-1 text-gray-600">{meal.soup.name}</span>
+                          </div>
+                        )}
+                        {meal.principle && meal.principle.length > 0 && (
+                          <div className="col-span-1 sm:col-span-2 bg-white rounded px-1.5 py-1">
+                            <span className="font-semibold text-gray-700">🍚 Principio:</span>
+                            <span className="ml-1 text-gray-600">
+                              {meal.principle.map(p => p.name === 'Remplazo por Principio' ? p.replacement : p.name).join(', ')}
+                            </span>
+                          </div>
+                        )}
+                        {meal.protein && (
+                          <div className="bg-white rounded px-1.5 py-1">
+                            <span className="font-semibold text-gray-700">🍖 Proteína:</span>
+                            <span className="ml-1 text-gray-600">{meal.protein.name}</span>
+                          </div>
+                        )}
+                        {meal.tableNumber && (
+                          <div className="bg-white rounded px-1.5 py-1">
+                            <span className="font-semibold text-gray-700">🍽️ Mesa:</span>
+                            <span className="ml-1 text-gray-600">{meal.tableNumber.name}</span>
+                          </div>
+                        )}
+                        {meal.sides && meal.sides.length > 0 && (
+                          <div className="col-span-1 sm:col-span-2 bg-white rounded px-1.5 py-1">
+                            <span className="font-semibold text-gray-700">🥗 Acompañamientos:</span>
+                            <span className="ml-1 text-gray-600">{meal.sides.map(s => s.name).join(', ')}</span>
+                          </div>
+                        )}
+                        {meal.additions && meal.additions.length > 0 && (
+                          <div className="col-span-1 sm:col-span-2 bg-white rounded px-1.5 py-1">
+                            <span className="font-semibold text-gray-700">➕ Adiciones:</span>
+                            <span className="ml-1 text-gray-600">{meal.additions.map(a => `${a.name} (${a.quantity})`).join(', ')}</span>
+                          </div>
+                        )}
                       </div>
-                      <div>
-                        <label className="text-xs block mb-1 font-medium">Proteína</label>
-                        <OptionSelector
-                          title="Proteína"
-                          emoji="🍖"
-                          options={proteins}
-                          selected={meal.protein}
-                          multiple={false}
-                          onImmediateSelect={(value) => handleFormChange(index, 'protein', value)}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs block mb-1 font-medium">Bebida</label>
-                        <OptionSelector
-                          title="Bebida"
-                          emoji="🥤"
-                          options={drinks}
-                          selected={meal.drink}
-                          multiple={false}
-                          onImmediateSelect={(value) => handleFormChange(index, 'drink', value)}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs block mb-1 font-medium">Acompañamientos</label>
-                        <OptionSelector
-                          title="Acompañamiento"
-                          emoji="🥗"
-                          options={sides}
-                          selected={meal.sides}
-                          multiple={true}
-                          onImmediateSelect={(value) => handleFormChange(index, 'sides', value)}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs block mb-1 font-medium">Método de Pago</label>
-                        <OptionSelector
-                          title="Método de Pago"
-                          emoji="💳"
-                          options={paymentMethods}
-                          selected={meal.paymentMethod}
-                          multiple={false}
-                          onImmediateSelect={(value) => handleFormChange(index, 'paymentMethod', value)}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs block mb-1 font-medium">Mesa</label>
-                        <OptionSelector
-                          title="Mesa"
-                          emoji="🍽️"
-                          options={tableOptions}
-                          selected={meal.tableNumber}
-                          multiple={false}
-                          onImmediateSelect={(value) => {
-                            handleFormChange(index, 'tableNumber', value);
-                            // Auto-asignar orderType basado en la mesa seleccionada
-                            const isLlevar = value?.name?.toLowerCase().includes('llevar') || value?.name?.toLowerCase() === 'lllevar';
-                            handleFormChange(index, 'orderType', isLlevar ? 'takeaway' : 'table');
-                          }}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs block mb-1 font-medium">Notas</label>
-                        <textarea
-                          value={meal.notes || ''}
-                          onChange={(e) => handleFormChange(index, 'notes', e.target.value)}
-                          placeholder="Notas"
-                          className="w-full p-2 border rounded text-sm"
-                        />
-                      </div>
-                      <div>
-                        <h4 className="text-xs font-medium text-gray-700 mb-1">➕ Adiciones para Almuerzo #{index + 1} (opcional)</h4>
+                    </div>
+
+                    {/* Formulario de edición con acordeón */}
+                    <div className="space-y-2">
+                      <details className="group bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                        <summary className="flex items-center justify-between cursor-pointer px-3 py-2 bg-gray-50 hover:bg-gray-100 transition-colors">
+                          <span className="text-sm font-semibold text-gray-700 flex items-center">
+                            <span className="text-base mr-1.5">🥣</span>
+                            Sopa o Reemplazo
+                          </span>
+                          <svg className="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </summary>
+                        <div className="px-3 py-2">
+                          <OptionSelector
+                            title="Sopa"
+                            emoji="🥣"
+                            options={soups}
+                            selected={meal.soup || meal.soupReplacement}
+                            showReplacements={meal.showReplacementsState?.soup || false}
+                            replacements={soupReplacements.filter(opt => opt.name !== 'Remplazo por Sopa' && opt.name !== 'Solo bandeja')}
+                            selectedReplacement={meal.soupReplacement?.replacement ? { name: meal.soupReplacement.replacement } : null}
+                            multiple={false}
+                            onImmediateSelect={(value) => {
+                              console.log(`[WaiterDashboard] Sopa selected for meal ${index + 1}:`, value);
+                              handleFormChange(index, value?.name === 'Remplazo por Sopa' ? 'soupReplacement' : 'soup', value);
+                            }}
+                            onImmediateReplacementSelect={(replacement) => {
+                              console.log(`[WaiterDashboard] Sopa replacement selected for meal ${index + 1}:`, replacement);
+                              const newMeals = [...editingOrder.meals];
+                              newMeals[index] = {
+                                ...newMeals[index],
+                                soupReplacement: {
+                                  ...newMeals[index].soupReplacement,
+                                  name: 'Remplazo por Sopa',
+                                  replacement: replacement?.name || ''
+                                }
+                              };
+                              setEditingOrder(prev => ({ ...prev, meals: newMeals }));
+                            }}
+                          />
+                        </div>
+                      </details>
+
+                      <details className="group bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                        <summary className="flex items-center justify-between cursor-pointer px-3 py-2 bg-gray-50 hover:bg-gray-100 transition-colors">
+                          <span className="text-sm font-semibold text-gray-700 flex items-center">
+                            <span className="text-base mr-1.5">🍚</span>
+                            Principio o Reemplazo
+                          </span>
+                          <svg className="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </summary>
+                        <div className="px-3 py-2">
+                          <OptionSelector
+                            title="Principio"
+                            emoji="🍚"
+                            options={principles}
+                            selected={meal.principle || meal.principleReplacement}
+                            showReplacements={meal.showReplacementsState?.principle || false}
+                            replacements={soupReplacements.filter(opt => opt.name !== 'Remplazo por Sopa' && opt.name !== 'Solo bandeja')}
+                            selectedReplacement={
+                              meal.principle?.find(opt => opt.name === 'Remplazo por Principio')?.replacement
+                                ? { name: meal.principle.find(opt => opt.name === 'Remplazo por Principio').replacement }
+                                : null
+                            }
+                            multiple={true}
+                            showConfirmButton={true}
+                            onImmediateSelect={(value) => {
+                              console.log(`[WaiterDashboard] Principio selected for meal ${index + 1}:`, value);
+                              handleFormChange(index, 'principle', value);
+                            }}
+                            onImmediateReplacementSelect={(replacement) => {
+                              console.log(`[WaiterDashboard] Principio replacement selected for meal ${index + 1}:`, replacement);
+                              const newMeals = [...editingOrder.meals];
+                              newMeals[index] = {
+                                ...newMeals[index],
+                                principle: newMeals[index].principle?.map(opt => ({
+                                  ...opt,
+                                  replacement: opt.name === 'Remplazo por Principio' ? replacement?.name || '' : opt.replacement
+                                }))
+                              };
+                              setEditingOrder(prev => ({ ...prev, meals: newMeals }));
+                            }}
+                            onConfirm={({ selection }) => handleFormChange(index, 'principle', selection)}
+                          />
+                        </div>
+                      </details>
+
+                      <details className="group bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                        <summary className="flex items-center justify-between cursor-pointer px-3 py-2 bg-gray-50 hover:bg-gray-100 transition-colors">
+                          <span className="text-sm font-semibold text-gray-700 flex items-center">
+                            <span className="text-base mr-1.5">🍖</span>
+                            Proteína
+                          </span>
+                          <svg className="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </summary>
+                        <div className="px-3 py-2">
+                          <OptionSelector
+                            title="Proteína"
+                            emoji="🍖"
+                            options={proteins}
+                            selected={meal.protein}
+                            multiple={false}
+                            onImmediateSelect={(value) => handleFormChange(index, 'protein', value)}
+                          />
+                        </div>
+                      </details>
+
+                      <details className="group bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                        <summary className="flex items-center justify-between cursor-pointer px-3 py-2 bg-gray-50 hover:bg-gray-100 transition-colors">
+                          <span className="text-sm font-semibold text-gray-700 flex items-center">
+                            <span className="text-base mr-1.5">🥗</span>
+                            Acompañamientos
+                          </span>
+                          <svg className="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </summary>
+                        <div className="px-3 py-2">
+                          <OptionSelector
+                            title="Acompañamiento"
+                            emoji="🥗"
+                            options={sides}
+                            selected={meal.sides}
+                            multiple={true}
+                            onImmediateSelect={(value) => handleFormChange(index, 'sides', value)}
+                          />
+                        </div>
+                      </details>
+
+                      <details className="group bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                        <summary className="flex items-center justify-between cursor-pointer px-3 py-2 bg-gray-50 hover:bg-gray-100 transition-colors">
+                          <span className="text-sm font-semibold text-gray-700 flex items-center">
+                            <span className="text-base mr-1.5">🍽️</span>
+                            Mesa
+                          </span>
+                          <svg className="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </summary>
+                        <div className="px-3 py-2">
+                          <OptionSelector
+                            title="Mesa"
+                            emoji="🍽️"
+                            options={tableOptions}
+                            selected={meal.tableNumber}
+                            multiple={false}
+                            onImmediateSelect={(value) => {
+                              handleFormChange(index, 'tableNumber', value);
+                              const isLlevar = value?.name?.toLowerCase().includes('llevar') || value?.name?.toLowerCase() === 'lllevar';
+                              handleFormChange(index, 'orderType', isLlevar ? 'takeaway' : 'table');
+                            }}
+                          />
+                        </div>
+                      </details>
+
+                      <details className="group bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                        <summary className="flex items-center justify-between cursor-pointer px-3 py-2 bg-gray-50 hover:bg-gray-100 transition-colors">
+                          <span className="text-sm font-semibold text-gray-700 flex items-center">
+                            <span className="text-base mr-1.5">📝</span>
+                            Notas
+                          </span>
+                          <svg className="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </summary>
+                        <div className="px-3 py-2">
+                          <textarea
+                            value={meal.notes || ''}
+                            onChange={(e) => handleFormChange(index, 'notes', e.target.value)}
+                            placeholder="Ej: Poquito arroz, más plátano..."
+                            className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            rows="2"
+                          />
+                        </div>
+                      </details>
+
+                      <details className="group bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                        <summary className="flex items-center justify-between cursor-pointer px-3 py-2 bg-gray-50 hover:bg-gray-100 transition-colors">
+                          <span className="text-sm font-semibold text-gray-700 flex items-center">
+                            <span className="text-base mr-1.5">➕</span>
+                            Adiciones (opcional)
+                          </span>
+                          <svg className="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </summary>
+                        <div className="px-3 py-2">
                         <OptionSelector
                           title="Adiciones (por almuerzo)"
                           emoji="➕"
@@ -1816,12 +1978,42 @@ const WaiterDashboard = () => {
                           }}
                         />
                         {meal?.additions?.length > 0 && (
-                          <div className="mt-2 text-sm font-semibold text-gray-700">
-                            Total Adiciones de este almuerzo: $
-                            {meal.additions.reduce((sum, item) => sum + (item?.price || 0) * (item?.quantity || 1), 0).toLocaleString('es-CO')}
+                          <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded-lg">
+                            <p className="text-xs font-semibold text-green-800">
+                              Total Adiciones: ${meal.additions.reduce((sum, item) => sum + (item?.price || 0) * (item?.quantity || 1), 0).toLocaleString('es-CO')}
+                            </p>
                           </div>
                         )}
-                      </div>
+                        </div>
+                      </details>
+                    </div>
+
+                    {/* Botón para agregar otro almuerzo */}
+                    <div className="mt-3 pt-3 border-t border-gray-300">
+                      <button
+                        onClick={() => {
+                          const newMeal = {
+                            soup: null,
+                            soupReplacement: null,
+                            principle: [],
+                            protein: null,
+                            sides: [],
+                            tableNumber: meal.tableNumber, // Copiar la mesa del almuerzo actual
+                            additions: [],
+                            notes: '',
+                            showReplacementsState: {}
+                          };
+                          const updatedMeals = [...editingOrder.meals];
+                          updatedMeals.splice(index + 1, 0, newMeal); // Insertar después del almuerzo actual
+                          setEditingOrder(prev => ({ ...prev, meals: updatedMeals }));
+                        }}
+                        className="w-full py-2 px-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                        </svg>
+                        Agregar otro almuerzo a esta orden
+                      </button>
                     </div>
                   </div>
                 ))
@@ -1976,13 +2168,14 @@ const WaiterDashboard = () => {
                           }}
                         />
                         {breakfast?.additions?.length > 0 && (
-                          <div className="mt-2 text-sm font-semibold text-gray-700">
-                            Total Adiciones de este desayuno: $
-                            {breakfast.additions.reduce((sum, item) => {
-                              // Intentar obtener el precio del item directamente, si no está disponible buscar en el catálogo
-                              const price = item.price || breakfastAdditions.find(a => a.name === item.name)?.price || 0;
-                              return sum + price * (item?.quantity || 1);
-                            }, 0).toLocaleString('es-CO')}
+                          <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded-lg">
+                            <p className="text-xs font-semibold text-green-800">
+                              Total Adiciones: $
+                              {breakfast.additions.reduce((sum, item) => {
+                                const price = item.price || breakfastAdditions.find(a => a.name === item.name)?.price || 0;
+                                return sum + price * (item?.quantity || 1);
+                              }, 0).toLocaleString('es-CO')}
+                            </p>
                           </div>
                         )}
                       </div>
@@ -1990,29 +2183,47 @@ const WaiterDashboard = () => {
                   </div>
                 ))
               )}
-              <div>
-                <label className="text-xs block mb-1 font-medium">Total (editable)</label>
-                <input
-                  type="number"
-                  value={editingOrder.total !== undefined ? editingOrder.total : (editingOrder.type === 'lunch' ? calculateTotal(editingOrder.meals, 3) : calculateTotalBreakfastPrice(editingOrder.breakfasts, 3, breakfastTypes))}
-                  onChange={(e) => handleFormChange(-1, 'total', e.target.value)}
-                  placeholder="Total"
-                  className="w-full p-2 border rounded text-sm"
-                />
+              )}
               </div>
-              <div className="flex justify-end space-x-2 mt-4 sticky bottom-4 bg-white py-2">
-                <button
-                  onClick={handleSaveEdit}
-                  className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
-                >
-                  Guardar
-                </button>
-                <button
-                  onClick={() => setEditingOrder(null)}
-                  className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm"
-                >
-                  Cancelar
-                </button>
+
+              {/* Footer con total y botones */}
+              <div className="border-t border-gray-200 bg-gray-50 px-3 py-2 space-y-1.5">
+                <div className="bg-white rounded p-2 border border-blue-200">
+                  <label className="text-xs font-medium text-gray-700 block mb-1">
+                    💰 Total (editable)
+                  </label>
+                  <div className="flex items-center">
+                    <span className="text-sm font-bold text-gray-600 mr-1">$</span>
+                    <input
+                      type="number"
+                      value={editingOrder.total !== undefined ? editingOrder.total : (editingOrder.type === 'lunch' ? calculateTotal(editingOrder.meals, 3) : calculateTotalBreakfastPrice(editingOrder.breakfasts, 3, breakfastTypes))}
+                      onChange={(e) => handleFormChange(-1, 'total', e.target.value)}
+                      placeholder="Total"
+                      className="flex-1 p-1.5 border border-gray-300 rounded text-sm font-bold text-gray-900 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-1.5">
+                  <button
+                    onClick={handleSaveEdit}
+                    className="flex-1 px-3 py-2 bg-gradient-to-r from-green-600 to-green-700 text-white rounded hover:from-green-700 hover:to-green-800 font-medium shadow transition-all flex items-center justify-center gap-1.5 text-xs"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Guardar
+                  </button>
+                  <button
+                    onClick={() => setEditingOrder(null)}
+                    className="px-3 py-2 bg-gradient-to-r from-gray-500 to-gray-600 text-white rounded hover:from-gray-600 hover:to-gray-700 font-medium shadow transition-all flex items-center justify-center gap-1.5 text-xs"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    Cancelar
+                  </button>
+                </div>
               </div>
             </div>
           </div>
