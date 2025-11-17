@@ -48,6 +48,15 @@ const BreakfastItem = ({
   const containerRef = useRef(null);
   const [tables, setTables] = useState([]);
 
+  // Resetear slide a 0 cuando se crea un nuevo desayuno vacío
+  useEffect(() => {
+    const isNewEmptyBreakfast = !breakfast?.type && !breakfast?.broth && 
+                                !breakfast?.eggs && !breakfast?.riceBread;
+    if (isNewEmptyBreakfast && currentSlide !== 0) {
+      setCurrentSlide(0);
+    }
+  }, [breakfast?.type, breakfast?.broth, breakfast?.eggs, breakfast?.riceBread, currentSlide]);
+
   // Cargar mesas solo en pedidos de mesa
   useEffect(() => {
     if (!isTableOrder) return;

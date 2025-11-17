@@ -76,6 +76,17 @@ const MealItem = ({
       advanceTimeoutRef.current = null;
     }, 300);
   };
+  
+  // Resetear slide a 0 cuando se crea un nuevo meal vacío
+  useEffect(() => {
+    const isNewEmptyMeal = !meal?.soup && !meal?.soupReplacement && 
+                           (!meal?.principle || meal.principle.length === 0) && 
+                           !meal?.protein;
+    if (isNewEmptyMeal && currentSlide !== 0) {
+      setCurrentSlide(0);
+    }
+  }, [meal?.soup, meal?.soupReplacement, meal?.principle, meal?.protein, currentSlide]);
+  
   useEffect(() => {
     if (!isTableOrder) return;
     const q = query(collection(db, 'tables'), orderBy('name', 'asc'));
