@@ -381,6 +381,12 @@ const WaiterDashboard = () => {
   }, [successMessage]);
 
   const handleSendOrder = async () => {
+    // Prevenir doble clic
+    if (isLoading) {
+      console.log('[WaiterDashboard] Orden ya está siendo procesada, ignorando clic adicional');
+      return;
+    }
+
     let incompleteMealIndex = null;
     let incompleteSlideIndex = null;
     let firstMissingField = '';
@@ -479,6 +485,12 @@ const WaiterDashboard = () => {
   };
 
   const handleSendBreakfastOrder = async () => {
+    // Prevenir doble clic
+    if (isLoading) {
+      console.log('[WaiterDashboard] Orden de desayuno ya está siendo procesada, ignorando clic adicional');
+      return;
+    }
+
     let incompleteIndex = null;
     let incompleteSlide = null;
     let firstMissingField = '';
@@ -1347,6 +1359,7 @@ const WaiterDashboard = () => {
                 user={{ role: 3 }}
                 breakfastTypes={breakfastTypes}
                 isWaiterView={true}
+                isLoading={isLoading}
               />
             </>
           ) : (
@@ -1404,6 +1417,7 @@ const WaiterDashboard = () => {
                     isWaiterView={false}
                     userRole={3}
                     allSides={sides}
+                    isLoading={isLoading}
                   />
                 );
               })()}
