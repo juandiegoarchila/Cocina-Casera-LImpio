@@ -177,29 +177,78 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
     resetCart();
     const items = [];
     
+    console.log('🔍 [CajaPOS] Cargando orden a carrito:', {
+      orderId: order.id,
+      orderTotal: order.total,
+      mealsCount: order.meals?.length || 0,
+      breakfastsCount: order.breakfasts?.length || 0
+    });
+    
     if (order.meals && Array.isArray(order.meals)) {
       order.meals.forEach((meal, idx) => {
-        const mealPrice = calculateMealPrice(meal);
+        // Calcular precio base del almuerzo SIN adiciones
+        const mealWithoutAdditions = { ...meal, additions: [] };
+        const baseMealPrice = calculateMealPrice(mealWithoutAdditions);
+        
+        console.log(`🔍 [CajaPOS] Meal ${idx + 1}:`, {
+          protein: meal.protein?.name,
+          additions: meal.additions,
+          additionsCount: meal.additions?.length || 0,
+          baseMealPrice: baseMealPrice,
+          tableNumber: meal.tableNumber
+        });
+        
+        // Agregar el almuerzo base
         items.push({
           id: `meal-${order.id}-${idx}`,
           refId: `order-meal-${idx}`,
           name: `Almuerzo ${idx + 1}${meal.protein?.name ? ` - ${meal.protein.name}` : ''}`,
-          price: mealPrice,
+          price: baseMealPrice,
           quantity: 1
         });
+        
+        // Agregar adiciones como ítems separados
+        if (meal.additions && Array.isArray(meal.additions)) {
+          meal.additions.forEach((addition, addIdx) => {
+            items.push({
+              id: `meal-${order.id}-${idx}-addition-${addIdx}`,
+              refId: `order-meal-${idx}-addition-${addIdx}`,
+              name: `  ↳ ${addition.name}${addition.protein ? ` (${addition.protein})` : ''}${addition.replacement ? ` por ${addition.replacement}` : ''}`,
+              price: addition.price || 0,
+              quantity: addition.quantity || 1
+            });
+          });
+        }
       });
     }
     
     if (order.breakfasts && Array.isArray(order.breakfasts)) {
       order.breakfasts.forEach((breakfast, idx) => {
-        const breakfastPrice = calculateBreakfastPrice(breakfast);
+        // Calcular precio base del desayuno SIN adiciones
+        const breakfastWithoutAdditions = { ...breakfast, additions: [] };
+        const baseBreakfastPrice = calculateBreakfastPrice(breakfastWithoutAdditions);
+        
+        // Agregar el desayuno base
         items.push({
           id: `breakfast-${order.id}-${idx}`,
           refId: `order-breakfast-${idx}`,
-          name: `Desayuno ${idx + 1}`,
-          price: breakfastPrice,
+          name: `Desayuno ${idx + 1}${breakfast.type?.name ? ` - ${breakfast.type.name}` : ''}`,
+          price: baseBreakfastPrice,
           quantity: 1
         });
+        
+        // Agregar adiciones como ítems separados
+        if (breakfast.additions && Array.isArray(breakfast.additions)) {
+          breakfast.additions.forEach((addition, addIdx) => {
+            items.push({
+              id: `breakfast-${order.id}-${idx}-addition-${addIdx}`,
+              refId: `order-breakfast-${idx}-addition-${addIdx}`,
+              name: `  ↳ ${addition.name}`,
+              price: addition.price || 0,
+              quantity: addition.quantity || 1
+            });
+          });
+        }
       });
     }
     
@@ -212,6 +261,13 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
         quantity: 1
       });
     }
+    
+    console.log('🔍 [CajaPOS] Items cargados al carrito:', {
+      itemsCount: items.length,
+      items: items.map(i => ({ name: i.name, price: i.price })),
+      totalCalculado: items.reduce((sum, i) => sum + i.price * i.quantity, 0),
+      orderTotal: order.total
+    });
     
     setCartItems(items);
     

@@ -450,7 +450,10 @@ const WaiterDashboard = () => {
           soupReplacement: meal.soupReplacement ? { name: meal.soupReplacement.name, replacement: meal.soupReplacement.replacement || '' } : null,
           principle: Array.isArray(meal.principle) ? meal.principle.map(p => ({ name: p.name, replacement: p.replacement || '' })) : [],
           principleReplacement: meal.principleReplacement ? { name: meal.principleReplacement.name } : null,
-          protein: meal.protein ? { name: meal.protein.name } : null,
+          protein: meal.protein ? { 
+            name: meal.protein.name,
+            price: meal.protein.price || 0  // Incluir precio de la proteína
+          } : null,
           drink: meal.drink ? { name: meal.drink.name } : { name: 'Sin bebida' }, // Valor por defecto
           sides: Array.isArray(meal.sides) ? meal.sides.map(s => ({ name: s.name })) : [],
           additions: meal.additions?.map(addition => ({

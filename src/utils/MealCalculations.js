@@ -96,7 +96,13 @@ export const calculateMealPrice = (meal) => {
   });
 
   // Verificar si la proteína tiene un precio especial configurado
-  const proteinPrice = meal?.protein?.price ? Number(meal.protein.price) : 0;
+  let proteinPrice = meal?.protein?.price ? Number(meal.protein.price) : 0;
+  
+  // Fallback: Si la proteína es Mojarra pero no tiene precio, usar 16000
+  if (!proteinPrice && meal?.protein?.name?.toLowerCase().includes('mojarra')) {
+    proteinPrice = 16000;
+    console.log('⚠️ Mojarra detectada sin precio, usando fallback de 16000');
+  }
   
   if (proteinPrice > 0) {
     const additions = additionsTotal(meal);
@@ -104,6 +110,7 @@ export const calculateMealPrice = (meal) => {
     console.log('✅ Proteína con precio especial:', {
       name: meal?.protein?.name,
       price: proteinPrice,
+      additions,
       total
     });
     return total;
