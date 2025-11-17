@@ -134,7 +134,7 @@ const MealItem = ({
 
   const displayMainItem = isCompleteRice ? selectedRiceName : cleanProteinName(meal?.protein?.name) || 'Selecciona';
 
-  const totalSteps = isTableOrder ? (isWaitress ? 4 : 6) : 9; // Mesero: menos pasos (sin bebida ni pago)
+  const totalSteps = isTableOrder ? (isWaitress ? 5 : 6) : 9; // Mesero: 5 pasos (sopa, principio, proteína, mesa, acompañamientos)
   const completedSteps = [
     isSoupComplete,
     isPrincipleComplete,
