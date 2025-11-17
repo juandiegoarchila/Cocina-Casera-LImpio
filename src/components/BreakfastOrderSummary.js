@@ -588,7 +588,7 @@ const BreakfastGroup = ({
   );
 };
 
-const PaymentSummary = ({ paymentSummary, total, isWaiterView }) => {
+const PaymentSummary = ({ paymentSummary, total, isWaiterView, hidePaymentInstructions = false }) => {
   const allCashOrUnspecified = Object.keys(paymentSummary).every(method => method === 'Efectivo' || method === 'No especificado');
 
   return (
@@ -596,7 +596,7 @@ const PaymentSummary = ({ paymentSummary, total, isWaiterView }) => {
       <p className="text-sm sm:text-base font-bold text-right text-gray-800">
         Total: <span className="text-green-600">${total.toLocaleString('es-CO')}</span>
       </p>
-      {!isWaiterView && (
+      {!isWaiterView && !hidePaymentInstructions && (
         <>
           {allCashOrUnspecified ? (
             <>
@@ -626,7 +626,7 @@ const PaymentSummary = ({ paymentSummary, total, isWaiterView }) => {
   );
 };
 
-const BreakfastOrderSummary = ({ items, onSendOrder, user, breakfastTypes, statusClass = '', showSaveButton = true, selectedPayment, isAdminView = false, isWaiterView: propIsWaiterView, isLoading = false }) => {
+const BreakfastOrderSummary = ({ items, onSendOrder, user, breakfastTypes, statusClass = '', showSaveButton = true, selectedPayment, isAdminView = false, isWaiterView: propIsWaiterView, isLoading = false, hidePaymentInstructions = false }) => {
   const isWaiterView = propIsWaiterView !== undefined ? propIsWaiterView : user?.role === 3;
   const selectedPaymentNameFallback = selectedPayment?.name; // si el padre lo envía, lo usamos como fallback
 
@@ -720,7 +720,7 @@ const BreakfastOrderSummary = ({ items, onSendOrder, user, breakfastTypes, statu
           <hr className="border-t border-gray-300 my-2" />
           
           {/* Mostramos el total al final solo en vista no-admin */}
-          {!isAdminView && !isWaiterView && <p className="text-sm text-gray-600">🚚 Estimado: 25-30 min (10-15 si están cerca).</p>}
+          {!isAdminView && !isWaiterView && !hidePaymentInstructions && <p className="text-sm text-gray-600">🚚 Estimado: 25-30 min (10-15 si están cerca).</p>}
 
           {/* Total al final para vista admin, en la esquina derecha */}
           {isAdminView && (
@@ -736,7 +736,7 @@ const BreakfastOrderSummary = ({ items, onSendOrder, user, breakfastTypes, statu
             </>
           )}
 
-          {!isAdminView && <PaymentSummary paymentSummary={paymentSummary} total={total} isWaiterView={isWaiterView} />}
+          {!isAdminView && <PaymentSummary paymentSummary={paymentSummary} total={total} isWaiterView={isWaiterView} hidePaymentInstructions={hidePaymentInstructions} />}
 
           {onSendOrder && showSaveButton && (
             <button

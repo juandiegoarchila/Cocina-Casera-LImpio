@@ -8,6 +8,7 @@ import { useAuth } from '../Auth/AuthProvider';
 import { calculateMealPrice } from '../../utils/MealCalculations';
 import { calculateBreakfastPrice } from '../../utils/BreakfastLogic';
 import OrderSummary from '../OrderSummary';
+import BreakfastOrderSummary from '../BreakfastOrderSummary';
 
 const formatPrice = (v) => new Intl.NumberFormat('es-CO',{ style:'currency', currency:'COP', maximumFractionDigits:0 }).format(v||0);
 
@@ -707,14 +708,17 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
                           // Debug
                           console.log('🔍 Orden pendiente:', {
                             id: order.id,
+                            orderType: order.orderType,
                             tableNumber: order.tableNumber,
                             tableNumberType: typeof order.tableNumber,
                             meals: order.meals?.length,
-                            firstMealTable: order.meals?.[0]?.tableNumber
+                            breakfasts: order.breakfasts?.length,
+                            firstMealTable: order.meals?.[0]?.tableNumber,
+                            firstBreakfastTable: order.breakfasts?.[0]?.tableNumber
                           });
                           
                           // Detectar si es para llevar basado en el tableNumber
-                          const tableNum = order.tableNumber || order.meals?.[0]?.tableNumber || '';
+                          const tableNum = order.tableNumber || order.meals?.[0]?.tableNumber || order.breakfasts?.[0]?.tableNumber || '';
                           const isLlevar = !tableNum || 
                                           tableNum.toLowerCase().includes('llevar');
                           const displayTable = isLlevar ? 'Llevar' : tableNum;
@@ -1179,16 +1183,28 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
               </button>
             </div>
             <div className="p-6">
-              <OrderSummary 
-                meals={selectedOrderDetail.meals || selectedOrderDetail.breakfasts || []} 
-                isAdminView={true}
-                isTableOrder={(() => {
-                  const tableNum = selectedOrderDetail.tableNumber || selectedOrderDetail.meals?.[0]?.tableNumber || '';
-                  const isLlevar = !tableNum || tableNum.toLowerCase().includes('llevar');
-                  return !isLlevar;
-                })()}
-                preCalculatedTotal={selectedOrderDetail.total}
-              />
+              {selectedOrderDetail.orderType === 'desayuno' ? (
+                <div className="bg-white rounded-lg p-4">
+                  <BreakfastOrderSummary
+                    items={selectedOrderDetail.breakfasts || []}
+                    isAdminView={false}
+                    isWaiterView={false}
+                    showSaveButton={false}
+                    hidePaymentInstructions={true}
+                  />
+                </div>
+              ) : (
+                <OrderSummary 
+                  meals={selectedOrderDetail.meals || []} 
+                  isAdminView={true}
+                  isTableOrder={(() => {
+                    const tableNum = selectedOrderDetail.tableNumber || selectedOrderDetail.meals?.[0]?.tableNumber || selectedOrderDetail.breakfasts?.[0]?.tableNumber || '';
+                    const isLlevar = !tableNum || tableNum.toLowerCase().includes('llevar');
+                    return !isLlevar;
+                  })()}
+                  preCalculatedTotal={selectedOrderDetail.total}
+                />
+              )}
               <div className="mt-6 flex gap-3">
                 <button onClick={() => {
                   loadPendingOrderToCart(selectedOrderDetail);

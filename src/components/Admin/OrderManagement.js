@@ -1161,12 +1161,16 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
       const qOrdersByRange = query(collection(db, 'orders'), where('createdAt', '>=', startOfDay), where('createdAt', '<=', endOfDay));
       const qBreakfastByLocal = query(collection(db, 'deliveryBreakfastOrders'), where('createdAtLocal', '==', dayISO));
       const qBreakfastByRange = query(collection(db, 'deliveryBreakfastOrders'), where('createdAt', '>=', startOfDay), where('createdAt', '<=', endOfDay));
+      const qClientByLocal = query(collection(db, 'clientOrders'), where('createdAtLocal', '==', dayISO));
+      const qClientByRange = query(collection(db, 'clientOrders'), where('createdAt', '>=', startOfDay), where('createdAt', '<=', endOfDay));
 
-      const [snapOrdersLocal, snapOrdersRange, snapBreakfastLocal, snapBreakfastRange] = await Promise.all([
+      const [snapOrdersLocal, snapOrdersRange, snapBreakfastLocal, snapBreakfastRange, snapClientLocal, snapClientRange] = await Promise.all([
         getDocs(qOrdersByLocal),
         getDocs(qOrdersByRange),
         getDocs(qBreakfastByLocal),
-        getDocs(qBreakfastByRange)
+        getDocs(qBreakfastByRange),
+        getDocs(qClientByLocal),
+        getDocs(qClientByRange)
       ]);
 
       // Deduplicar documentos por ID
@@ -1184,6 +1188,8 @@ const OrderManagement = ({ setError, setSuccess, theme }) => {
       pushSnap(snapOrdersRange);
       pushSnap(snapBreakfastLocal);
       pushSnap(snapBreakfastRange);
+      pushSnap(snapClientLocal);
+      pushSnap(snapClientRange);
 
       if (toDeleteRefs.length === 0) {
         setShowConfirmDeleteAll(false);

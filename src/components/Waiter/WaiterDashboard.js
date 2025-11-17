@@ -577,6 +577,7 @@ const WaiterDashboard = () => {
       const order = {
         userId: user.uid,
         userEmail: user.email || `waiter_${user.uid}@example.com`,
+        tableNumber: breakfasts[0]?.tableNumber || '', // Agregar tableNumber a nivel de orden
         breakfasts: breakfasts.map(breakfast => ({
           type: breakfast.type ? { name: breakfast.type.name } : null,
           broth: breakfast.broth ? { name: breakfast.broth.name } : null,
