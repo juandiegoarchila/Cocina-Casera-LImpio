@@ -4,6 +4,25 @@ import Modal from './Modal';
 
 export const isMobile = () => window.innerWidth < 768;
 
+// Función helper para calcular tiempo transcurrido
+const getTimeAgo = (finishedAt) => {
+  if (!finishedAt) return '';
+  
+  const now = new Date();
+  const finished = finishedAt.toDate ? finishedAt.toDate() : new Date(finishedAt);
+  const diffMs = now - finished;
+  const diffMins = Math.floor(diffMs / 60000);
+  
+  if (diffMins < 1) return '1m';
+  if (diffMins < 60) return `${diffMins}m`;
+  
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours}h`;
+  
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays}d`;
+};
+
 const OptionSelector = ({
   title,
   emoji,
@@ -872,8 +891,8 @@ const OptionSelector = ({
                     </span>
                   )}
                   {replacement.isFinished && (
-                    <span className="absolute top-0 right-7 transform translate-x-1/2 -translate-y-1/2 bg-gray-500 text-white text-[10px] font-semibold rounded-full px-2 py-0.5">
-                      AGOTADO
+                    <span className="absolute top-0 right-1 -translate-y-1/2 bg-gray-500 text-white text-[10px] font-semibold rounded-full px-2 py-0.5 whitespace-nowrap z-10">
+                      AGOTADO{replacement.finishedAt && ` ${getTimeAgo(replacement.finishedAt)}`}
                     </span>
                   )}
                   </div>
@@ -980,8 +999,8 @@ const OptionSelector = ({
         </span>
       )}
       {option.isFinished && (
-        <span className="absolute top-0 right-7 transform translate-x-1/2 -translate-y-1/2 bg-gray-500 text-white text-[10px] font-semibold rounded-full px-2 py-0.5">
-          AGOTADO
+        <span className="absolute top-0 right-1 -translate-y-1/2 bg-gray-500 text-white text-[10px] font-semibold rounded-full px-2 py-0.5 whitespace-nowrap z-10">
+          AGOTADO{option.finishedAt && ` ${getTimeAgo(option.finishedAt)}`}
         </span>
       )}
     </div>
@@ -1076,8 +1095,8 @@ const OptionSelector = ({
                   </span>
                 )}
                 {replacement.isFinished && (
-                  <span className="absolute top-0 right-7 transform translate-x-1/2 -translate-y-1/2 bg-gray-500 text-white text-[10px] font-semibold rounded-full px-2 py-0.5">
-                    AGOTADO
+                  <span className="absolute top-0 right-1 -translate-y-1/2 bg-gray-500 text-white text-[10px] font-semibold rounded-full px-2 py-0.5 whitespace-nowrap z-10">
+                    AGOTADO{replacement.finishedAt && ` ${getTimeAgo(replacement.finishedAt)}`}
                   </span>
                 )}
               </div>

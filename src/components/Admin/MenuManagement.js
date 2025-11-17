@@ -346,11 +346,34 @@ const MenuManagement = ({ setError, setSuccess, theme }) => {
 
   const handleToggleFinished = async (item) => {
     try {
-      await updateDoc(doc(db, selectedCollection, item.id), { isFinished: !item.isFinished });
+      const updateData = {
+        isFinished: !item.isFinished,
+        finishedAt: !item.isFinished ? new Date() : null
+      };
+      await updateDoc(doc(db, selectedCollection, item.id), updateData);
       setSuccess(`"${item.name}" ${!item.isFinished ? 'marcado como agotado' : 'marcado como disponible'}.`);
     } catch (error) {
       setError(`Error al actualizar: ${error.message}`);
     }
+  };
+
+  // Función helper para calcular tiempo transcurrido
+  const getTimeAgo = (finishedAt) => {
+    if (!finishedAt) return '';
+    
+    const now = new Date();
+    const finished = finishedAt.toDate ? finishedAt.toDate() : new Date(finishedAt);
+    const diffMs = now - finished;
+    const diffMins = Math.floor(diffMs / 60000);
+    
+    if (diffMins < 1) return '1m';
+    if (diffMins < 60) return `${diffMins}m`;
+    
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h`;
+    
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays}d`;
   };
 
   const filteredItems = items.filter(item => {
@@ -895,7 +918,9 @@ const MenuManagement = ({ setError, setSuccess, theme }) => {
                             <span className="ml-2 px-2 py-0.5 bg-green-500/20 text-green-300 text-xs font-bold rounded-full mt-1 sm:mt-0">NUEVO</span>
                           )}
                           {item.isFinished && (
-                            <span className="ml-2 px-2 py-0.5 bg-red-500/20 text-red-300 text-xs font-bold rounded-full mt-1 sm:mt-0">AGOTADO</span>
+                            <span className="ml-2 px-2 py-0.5 bg-red-500/20 text-red-300 text-xs font-bold rounded-full mt-1 sm:mt-0">
+                              AGOTADO{item.finishedAt && ` ${getTimeAgo(item.finishedAt)}`}
+                            </span>
                           )}
                         </div>
                         {item.description && <p className={`text-sm mt-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>{item.description}</p>}
