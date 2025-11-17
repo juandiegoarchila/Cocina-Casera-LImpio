@@ -35,13 +35,17 @@ export const calculateBreakfastPrice = (breakfast, userRole, breakfastTypes = []
 
   const typeName = breakfast.type.name.toLowerCase().trim();
   const brothName = (breakfast.broth?.name || '').toLowerCase().trim();
-  const orderType = breakfast.orderType || 'takeaway';
+  // Determinar si es pedido a domicilio verificando si tiene dirección
+  const hasAddress = breakfast.address?.address || 
+                    (breakfast.address && Object.keys(breakfast.address).length > 0);
+  const orderType = hasAddress ? 'takeaway' : (breakfast.orderType || 'table');
 
   const priceMap = {
     'solo huevos': { default: { mesa: 7000, llevar: 8000 } },
     'solo caldo': {
       'caldo de costilla': { mesa: 7000, llevar: 8000 },
       'caldo de pescado': { mesa: 7000, llevar: 8000 },
+      'caldo de pollo': { mesa: 8000, llevar: 9000 },
       'caldo de pata': { mesa: 8000, llevar: 9000 },
       'caldo de pajarilla': { mesa: 9000, llevar: 10000 },
       default: { mesa: 7000, llevar: 8000 },
@@ -49,6 +53,7 @@ export const calculateBreakfastPrice = (breakfast, userRole, breakfastTypes = []
     'desayuno completo': {
       'caldo de costilla': { mesa: 11000, llevar: 12000 },
       'caldo de pescado': { mesa: 11000, llevar: 12000 },
+      'caldo de pollo': { mesa: 12000, llevar: 13000 },
       'caldo de pata': { mesa: 12000, llevar: 13000 },
       'caldo de pajarilla': { mesa: 13000, llevar: 14000 },
       default: { mesa: 11000, llevar: 12000 },
