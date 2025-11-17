@@ -35,10 +35,10 @@ export const calculateBreakfastPrice = (breakfast, userRole, breakfastTypes = []
 
   const typeName = breakfast.type.name.toLowerCase().trim();
   const brothName = (breakfast.broth?.name || '').toLowerCase().trim();
-  // Determinar si es pedido a domicilio verificando si tiene dirección
+  // Determinar orderType: priorizar breakfast.orderType, luego verificar dirección
   const hasAddress = breakfast.address?.address || 
                     (breakfast.address && Object.keys(breakfast.address).length > 0);
-  const orderType = hasAddress ? 'takeaway' : (breakfast.orderType || 'table');
+  const orderType = breakfast.orderType || (hasAddress ? 'takeaway' : 'table');
 
   const priceMap = {
     'solo huevos': { default: { mesa: 7000, llevar: 8000 } },
@@ -204,11 +204,14 @@ export const calculateBreakfastProgress = (breakfast, isTableOrder, isWaitress, 
   if (currentSteps.includes('broth')) mandatorySteps.push('broth');
   if (currentSteps.includes('eggs')) mandatorySteps.push('eggs');
   if (currentSteps.includes('riceBread')) mandatorySteps.push('riceBread');
-  if (currentSteps.includes('drink')) mandatorySteps.push('drink');
+  // Solo requerir drink si NO es mesero
+  if (currentSteps.includes('drink') && !isWaitress) mandatorySteps.push('drink');
   if (currentSteps.includes('protein') && breakfastType.requiresProtein) mandatorySteps.push('protein');
 
   if (isTableOrder) {
-    mandatorySteps.push('tableNumber', 'payment');
+    mandatorySteps.push('tableNumber');
+    // Solo requerir payment si NO es mesero (userRole 3)
+    if (!isWaitress) mandatorySteps.push('payment');
     if (isWaitress) mandatorySteps.push('orderType');
   } else {
     mandatorySteps.push('cutlery', 'time', 'address', 'payment');
@@ -224,7 +227,7 @@ export const calculateBreakfastProgress = (breakfast, isTableOrder, isWaitress, 
     cutlery: breakfast?.cutlery !== null,
     time: !!breakfast?.time,
     address: !!breakfast?.address?.address,
-    payment: !!breakfast?.payment,
+    payment: isTableOrder ? !!breakfast?.paymentMethod : !!breakfast?.payment,
     tableNumber: !!breakfast?.tableNumber,
     orderType: !!breakfast?.orderType,
   };
@@ -235,6 +238,9 @@ export const calculateBreakfastProgress = (breakfast, isTableOrder, isWaitress, 
 
   if (process.env.NODE_ENV === 'development') {
     console.log(`[BreakfastCalculations] Progress: ${completedSteps}/${totalSteps} steps completed, ${Math.round(percentage)}%`);
+    console.log(`[BreakfastCalculations] Mandatory steps:`, mandatorySteps);
+    console.log(`[BreakfastCalculations] Step completeness:`, stepCompleteness);
+    console.log(`[BreakfastCalculations] Missing steps:`, mandatorySteps.filter(step => !stepCompleteness[step]));
   }
 
   return Math.round(percentage);

@@ -177,7 +177,7 @@ const BreakfastItem = ({
       case 'tableNumber':
         // Auto-asignar orderType basado en la mesa seleccionada
         const isLlevar = value?.toLowerCase().includes('llevar') || value?.toLowerCase() === 'lllevar';
-        updatedBreakfast.orderType = isLlevar ? 'takeaway' : 'table';
+        onBreakfastChange(id, 'orderType', isLlevar ? 'takeaway' : 'table');
         currentSlideIsComplete = !!value;
         break;
       case 'orderType':
@@ -644,7 +644,6 @@ const BreakfastItem = ({
       ? stepCompleteness.type &&
         currentSteps.every((step) => stepCompleteness[step]) &&
         stepCompleteness.tableNumber &&
-        stepCompleteness.payment &&
         stepCompleteness.orderType
       : stepCompleteness.type &&
         currentSteps.every((step) => stepCompleteness[step]) &&
