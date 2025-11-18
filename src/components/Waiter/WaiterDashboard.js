@@ -1339,12 +1339,7 @@ const WaiterDashboard = () => {
             </div>
   {/* Eliminado el selector anterior para evitar duplicidad */}
   {activeTab === 'create' ? (
-          isOrderingDisabled || menuType === 'closed' ? (
-            <div className="flex flex-col items-center justify-center text-center bg-red-50 text-red-700 p-4 rounded-lg shadow-md">
-              <h2 className="text-xl font-bold">🚫 Restaurante cerrado</h2>
-              <p className="text-sm">Los pedidos estarán disponibles nuevamente mañana.</p>
-            </div>
-          ) : menuType === 'breakfast' ? (
+          menuType === 'breakfast' ? (
             <>
               <div className="mb-4">
                 <div className="flex items-center justify-center bg-white p-3 rounded-lg shadow-sm">
