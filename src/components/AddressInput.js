@@ -171,6 +171,10 @@ const InputField = ({
         // Evitar que contenedores padres consuman el toque
         e.stopPropagation();
       }}
+      onTouchMove={(e) => {
+        // Evitar que el movimiento táctil dentro del input propague un swipe al padre
+        e.stopPropagation();
+      }}
       onTouchEnd={(e) => {
         // iOS: asegurar foco con un solo tap y evitar click fantasma
         e.preventDefault();
@@ -183,6 +187,7 @@ const InputField = ({
           try { el.setSelectionRange(len, len); } catch (_) {}
         }
       }}
+      style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', ...(placeholderBold ? { fontWeight: value ? 'normal' : '600' } : {}) }}
       className={`w-full p-2 border rounded-md focus:outline-none focus:ring-2 ${
         error ? "border-red-500 focus:ring-red-500" : "focus:ring-green-500"
       } ${placeholderBold ? 'placeholder-bold' : ''}`}
@@ -209,6 +214,7 @@ const AddressInput = ({ onConfirm, onValidityChange, initialAddress }) => {
   const barrioRef = useRef(null);
   const [streetMenuOpen, setStreetMenuOpen] = useState(false);
   const [barrioMenuOpen, setBarrioMenuOpen] = useState(false);
+  const rootRef = useRef(null);
 
   const isValidPhone = (phone) => /^3\d{9}$/.test(phone);
 
@@ -296,12 +302,16 @@ const AddressInput = ({ onConfirm, onValidityChange, initialAddress }) => {
   const onTouchStartGeneric = (e) => {
     const t = e.touches && e.touches[0];
     if (!t) return;
+    // Evitar que el contenedor padre capture el inicio del gesto
+    try { e.stopPropagation(); } catch (_) {}
     touchInfoRef.current = { x: t.clientX, y: t.clientY, moved: false };
   };
 
   const onTouchMoveGeneric = (e) => {
     const t = e.touches && e.touches[0];
     if (!t) return;
+    // Evitar que el movimiento propague y active el stepper padre
+    try { e.stopPropagation(); } catch (_) {}
     const dx = t.clientX - touchInfoRef.current.x;
     const dy = t.clientY - touchInfoRef.current.y;
     if (Math.abs(dx) > 8 || Math.abs(dy) > 8) touchInfoRef.current.moved = true;
@@ -339,6 +349,8 @@ const AddressInput = ({ onConfirm, onValidityChange, initialAddress }) => {
   const onSelectTouchMove = (e) => {
     const t = e.touches && e.touches[0];
     if (!t) return;
+    // Evitar propagar swipe al padre mientras se interactúa con el select
+    try { e.stopPropagation(); } catch (_) {}
     const dx = Math.abs(t.clientX - touchInfoRef.current.x);
     const dy = Math.abs(t.clientY - touchInfoRef.current.y);
     if (dx > 10 || dy > 10) touchInfoRef.current.moved = true;
@@ -363,9 +375,32 @@ const AddressInput = ({ onConfirm, onValidityChange, initialAddress }) => {
   // siempre mostrar teléfono limpio
   const phoneValue = normalizePhone(formData.phoneNumber);
 
+  // Escuchar cambios de slide para resetear estados interactivos (menus, focus)
+  useEffect(() => {
+    const handler = (e) => {
+      try { e.stopPropagation(); } catch (_) {}
+      // Cerrar menús y desenfocar inputs/textarea dentro del componente
+      setStreetMenuOpen(false);
+      setBarrioMenuOpen(false);
+      touchInfoRef.current.moved = false;
+      try {
+        if (rootRef.current) {
+          const els = rootRef.current.querySelectorAll('input, textarea, [role="combobox"]');
+          els.forEach((el) => {
+            try { if (typeof el.blur === 'function') el.blur(); } catch (_) {}
+          });
+        }
+      } catch (_) {}
+      // No confirmamos automáticamente; simplemente cerramos/limpiamos
+      setIsConfirmed(false);
+    };
+    window.addEventListener('slideChanged', handler, { capture: true });
+    return () => window.removeEventListener('slideChanged', handler, { capture: true });
+  }, []);
+
   if (isConfirmed) {
     return (
-      <div className="bg-white p-4 rounded-lg shadow space-y-3 text-sm sm:text-base">
+      <div ref={rootRef} className="bg-white p-4 rounded-lg shadow space-y-3 text-sm sm:text-base">
         <h4 className="font-semibold text-gray-800">📋 Dirección guardada</h4>
         <p>
           <span className="font-medium text-blue-600">Dirección</span>
@@ -401,7 +436,7 @@ const AddressInput = ({ onConfirm, onValidityChange, initialAddress }) => {
   }
 
   return (
-    <div className="bg-white p-4 rounded-lg shadow space-y-4 text-sm sm:text-base">
+    <div ref={rootRef} className="bg-white p-4 rounded-lg shadow space-y-4 text-sm sm:text-base">
       {/* Tipo de vía */}
       <div>
         <label className="block font-medium text-gray-700 mb-1">Tipo de vía</label>

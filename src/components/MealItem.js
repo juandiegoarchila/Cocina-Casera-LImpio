@@ -679,6 +679,31 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
     return () => clearTimeout(timer);
   }, [isComplete, currentSlide, slides.length]);
 
+  // Cuando cambia el slide, desenfocar cualquier input activo y notificar a hijos
+  useEffect(() => {
+    try {
+      if (document && document.activeElement && typeof document.activeElement.blur === 'function') {
+        document.activeElement.blur();
+      }
+    } catch (_) {}
+    try {
+      window.dispatchEvent(new CustomEvent('slideChanged', { detail: { slideIndex: currentSlide } }));
+    } catch (_) {}
+  }, [currentSlide]);
+
+  // Escuchar evento global slideChanged (por si otro componente lo dispara)
+  useEffect(() => {
+    const handler = (e) => {
+      // Al cambiar de slide, resetear estados temporales para evitar que valores
+      // sin confirmar persistan y reabran teclados/editores anteriores.
+      try { if (typeof document !== 'undefined' && document.activeElement && typeof document.activeElement.blur === 'function') document.activeElement.blur(); } catch(_){}
+      setPendingTime(meal?.time || null);
+      setPendingAddress(meal?.address || {});
+    };
+    window.addEventListener('slideChanged', handler, { capture: true });
+    return () => window.removeEventListener('slideChanged', handler, { capture: true });
+  }, [meal]);
+
   useEffect(() => {
     const handleUpdateSlide = (event) => {
       if (event.detail && event.detail.slideIndex !== undefined) setCurrentSlide(event.detail.slideIndex);
