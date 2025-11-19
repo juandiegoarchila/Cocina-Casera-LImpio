@@ -1,7 +1,7 @@
 //src/components/Admin/ClosingTime.js
 import { useState, useEffect } from 'react';
 import { db } from '../../config/firebase';
-import { doc, setDoc, onSnapshot } from 'firebase/firestore';
+import { doc, setDoc, onSnapshot, updateDoc } from 'firebase/firestore';
 
 const ClosingTime = ({ setError, setSuccess, theme }) => {
   const [isOrderingDisabled, setIsOrderingDisabled] = useState(false);
@@ -126,6 +126,24 @@ const ClosingTime = ({ setError, setSuccess, theme }) => {
               className={`mt-4 w-full py-2 rounded-md font-semibold ${loading ? 'opacity-70 cursor-not-allowed' : ''} ${isDark ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-blue-500 hover:bg-blue-600 text-white'}`}
             >
               Guardar Mensaje
+            </button>
+            <button
+              onClick={async () => {
+                if (loading) return;
+                try {
+                  setLoading(true);
+                  const nonce = Date.now();
+                  await updateDoc(doc(db, 'settings', 'global'), { forceUpdateNonce: nonce });
+                  setSuccess('Forzar actualización enviado a clientes');
+                } catch (err) {
+                  setError(`Error al forzar actualización: ${err.message}`);
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              className={`mt-3 w-full py-2 rounded-md font-semibold ${isDark ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'bg-indigo-500 hover:bg-indigo-600 text-white'}`}
+            >
+              Forzar actualización
             </button>
           </div>
         </div>

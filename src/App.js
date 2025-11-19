@@ -27,6 +27,7 @@ import { calculateTotalBreakfastPrice, generateMessageFromBreakfasts, calculateB
 import { encodeMessage } from './utils/Helpers';
 import CajaPOS from './components/Waiter/CajaPOS';
 import { getColombiaLocalDateString } from './utils/bogotaDate';
+import UpdateAvailable from './components/UpdateAvailable';
 
 const StaffHub = lazy(() => import('./components/Auth/StaffHub')); 
 const AdminPage = lazy(() => import('./components/Admin/AdminPage'));
@@ -90,6 +91,7 @@ const App = () => {
   const lastInfoEventRef = useRef({ key: '', ts: 0 });
   const prevDataRef = useRef({}); // { collectionName: [{id, isFinished, name}, ...] }
   const loadedCollectionsRef = useRef(new Set()); // evita avisos en la carga inicial
+  const lastForceUpdateRef = useRef(null);
   const [optionsReady, setOptionsReady] = useState(false);
   const optionsTimeoutRef = useRef(null);
 
@@ -375,6 +377,18 @@ const App = () => {
         title: data.globalNoticeTitle || '🚫 Restaurante cerrado',
         message: data.globalNoticeMessage || 'Los pedidos estarán disponibles nuevamente mañana.'
       });
+      try {
+        const nonce = data.forceUpdateNonce;
+        if (nonce && nonce !== lastForceUpdateRef.current) {
+          lastForceUpdateRef.current = nonce;
+          // Disparar evento para que clientes muestren el modal de actualización
+          try {
+            window.dispatchEvent(new CustomEvent('force-update', { detail: { nonce } }));
+          } catch (_) {
+            try { window.dispatchEvent(new Event('force-update')); } catch (_) {}
+          }
+        }
+      } catch (_) {}
     }, (error) => {
       if (process.env.NODE_ENV === 'development') console.error('Error al escuchar settings/global:', error);
       setErrorMessage('Error al cargar configuración. Intenta de nuevo más tarde.');
@@ -986,6 +1000,7 @@ try {
         <Route path="/caja-pos" element={<ProtectedRoute allowedRoles={[2,3]}><CajaPOS /></ProtectedRoute>} />
         <Route path="/" element={
           <div className="min-h-screen bg-gray-200 flex flex-col relative">
+            <UpdateAvailable />
             <Header />
             {/* Aviso global como banner cuando está abierto: desactivado por solicitud */}
             {showCookieBanner && (

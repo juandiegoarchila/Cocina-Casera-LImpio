@@ -1,9 +1,10 @@
 //src/components/Admin/AdminPage.js
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { useNavigate, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { auth } from '../../config/firebase';
+import { auth, db } from '../../config/firebase';
 import { signOut } from 'firebase/auth';
 import { useAuth } from '../Auth/AuthProvider';
+import { doc, updateDoc } from 'firebase/firestore';
 import { Disclosure, Transition } from '@headlessui/react';
 import {
   Bars3Icon, XMarkIcon, ChartBarIcon, UserGroupIcon,
@@ -58,6 +59,16 @@ const AdminPage = () => {
       navigate('/login');
     } catch (error) {
       setError(`Error al cerrar sesión: ${error.message}`);
+    }
+  };
+
+  const handleForceUpdate = async () => {
+    try {
+      const nonce = Date.now();
+      await updateDoc(doc(db, 'settings', 'global'), { forceUpdateNonce: nonce });
+      setSuccess('Mensaje de actualización enviado a clientes');
+    } catch (error) {
+      setError(`Error al enviar el aviso: ${error.message}`);
     }
   };
 
