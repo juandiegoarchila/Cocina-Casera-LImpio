@@ -177,6 +177,8 @@ const InputField = ({
       }}
       onTouchEnd={(e) => {
         // iOS: asegurar foco con un solo tap y evitar click fantasma
+        // No forzar foco si acabamos de cambiar de slide
+        try { if (window.__lastSlideChange && (Date.now() - window.__lastSlideChange) < 350) return; } catch(_){}
         e.preventDefault();
         e.stopPropagation();
         const el = e.currentTarget;

@@ -596,6 +596,8 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
                   onChange={(e) => handleImmediateChange('notes', e.target.value)}
                   placeholder="Ejemplo: Sin ensalada dulce, más papa a la francesa, etc"
                   onTouchEnd={(e) => {
+                    // Evitar re-enfocar si acabamos de cambiar de slide
+                    try { if (window.__lastSlideChange && (Date.now() - window.__lastSlideChange) < 350) return; } catch(_){}
                     e.preventDefault();
                     e.stopPropagation();
                     const el = e.currentTarget;
@@ -638,6 +640,8 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
                   onChange={(e) => handleImmediateChange('notes', e.target.value)}
                   placeholder="Ejemplo: Poquito arroz, más plátano en lugar de ensalada, etc"
                   onTouchEnd={(e) => {
+                    // Evitar re-enfocar si acabamos de cambiar de slide
+                    try { if (window.__lastSlideChange && (Date.now() - window.__lastSlideChange) < 350) return; } catch(_){}
                     e.preventDefault();
                     e.stopPropagation();
                     const el = e.currentTarget;
@@ -687,6 +691,8 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
       }
     } catch (_) {}
     try {
+      // marcar cambio de slide para que inputs no se re-enfoquen inmediatamente
+      try { window.__lastSlideChange = Date.now(); } catch (_) {}
       window.dispatchEvent(new CustomEvent('slideChanged', { detail: { slideIndex: currentSlide } }));
     } catch (_) {}
   }, [currentSlide]);

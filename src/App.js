@@ -90,6 +90,8 @@ const App = () => {
   const lastInfoEventRef = useRef({ key: '', ts: 0 });
   const prevDataRef = useRef({}); // { collectionName: [{id, isFinished, name}, ...] }
   const loadedCollectionsRef = useRef(new Set()); // evita avisos en la carga inicial
+  const [optionsReady, setOptionsReady] = useState(false);
+  const optionsTimeoutRef = useRef(null);
 
   // Listener global para opciones que se agoten en tiempo real
   useEffect(() => {
@@ -291,9 +293,37 @@ const App = () => {
       setBreakfastTimes, setBreakfastProteins
     ];
 
+    // Precargar desde cache localStorage para mostrar options al instante si existen
+    try {
+      let cachedCount = 0;
+      collections.forEach((col, index) => {
+        try {
+          const cached = localStorage.getItem('cached_' + col);
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              const setter = setters[index];
+              if (typeof setter === 'function') setter(parsed);
+              cachedCount += 1;
+            }
+          }
+        } catch (_) { /* noop */ }
+      });
+      // Si todas las colecciones tienen cache, considerarlas listas inmediatamente
+      if (cachedCount === collections.length) {
+        setOptionsReady(true);
+      }
+    } catch (_) {}
+
+    // Fallback: si no recibimos snapshots en X ms, dejamos continuar (pero mostramos aviso)
+    try { optionsTimeoutRef.current = setTimeout(() => { if (!optionsReady) { setOptionsReady(true); setErrorMessage('Tiempo de carga excedido. Mostrando lo disponible.'); } }, 10000); } catch(_) {}
+
     const unsubscribers = collections.map((col, index) =>
       onSnapshot(collection(db, col), (snapshot) => {
         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        // Guardar en cache para próximas visitas (respuesta rápida al cargar)
+        try { localStorage.setItem('cached_' + col, JSON.stringify(data)); } catch (_) {}
 
         // Detección de nuevas opciones agotadas (isFinished cambia de false/undefined a true)
         const prev = prevDataRef.current[col] || [];
@@ -322,6 +352,14 @@ const App = () => {
             : 'Algunas opciones no están disponibles. Intenta de nuevo más tarde.');
         }
         window.dispatchEvent(new Event('optionsUpdated'));
+
+        // Si ya hemos recibido todas las colecciones, marcar optionsReady
+        try {
+          if (loadedCollectionsRef.current.size === collections.length) {
+            setOptionsReady(true);
+            if (optionsTimeoutRef.current) { clearTimeout(optionsTimeoutRef.current); optionsTimeoutRef.current = null; }
+          }
+        } catch(_) {}
       }, (error) => {
         if (process.env.NODE_ENV === 'development') console.error(`Error al escuchar ${col}:`, error);
         setErrorMessage(process.env.NODE_ENV === 'production'
@@ -345,6 +383,7 @@ const App = () => {
     return () => {
       unsubscribers.forEach(unsubscribe => unsubscribe());
       settingsUnsubscribe();
+      try { if (optionsTimeoutRef.current) clearTimeout(optionsTimeoutRef.current); } catch(_) {}
     };
   }, []);
 
@@ -925,7 +964,7 @@ try {
     }
   };
 
-  if (loading) {
+  if (loading || !optionsReady) {
     return <FullScreenLoader message="Cargando..." />;
   }
 
