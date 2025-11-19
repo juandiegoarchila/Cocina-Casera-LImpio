@@ -1,5 +1,14 @@
 // src/index.js
 import React from 'react';
+// Desactivar logs innecesarios en producción para evitar fugas de información
+// y uso indebido desde la consola del navegador. Solo permitimos logs en desarrollo.
+if (process.env.NODE_ENV !== 'development') {
+  try {
+    console.log = () => {};
+    console.debug = () => {};
+    console.info = () => {};
+  } catch (_) {}
+}
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import './styles.css';
