@@ -36,6 +36,7 @@ const defaultItem = {
   cost: 0, // costo de compra
   minStock: 0, // stock mínimo
   activatedDate: '', // fecha de llegada del producto
+    costFormatted: '', // para mostrar el input formateado
 };
 
 const numberOrZero = (v) => {
@@ -60,6 +61,22 @@ export default function Inventory({ setError, setSuccess, theme }) {
   const [selectedItem, setSelectedItem] = useState(null);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(defaultItem);
+  // Sincronizar costFormatted al editar producto existente
+  React.useEffect(() => {
+    if (showModal) {
+      let cost = form.cost || 0;
+      // Si ya hay un costFormatted, no sobrescribir si está editando
+      if (!form.costFormatted && cost) {
+        // Formatear el número a string con puntos y coma
+        const parts = cost.toFixed(2).split('.');
+        let entera = parts[0];
+        let decimal = parts[1];
+        entera = entera.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+        setForm(f => ({ ...f, costFormatted: decimal && decimal !== '00' ? `${entera},${decimal}` : entera }));
+      }
+    }
+    // eslint-disable-next-line
+  }, [showModal]);
   const [exporting, setExporting] = useState(false);
   const [itemHistory, setItemHistory] = useState([]);
 
@@ -351,7 +368,7 @@ export default function Inventory({ setError, setSuccess, theme }) {
           activatedAt,
           createdAt: serverTimestamp(),
           durations: [],
-          costHistory: [{ cost: payload.cost, date: serverTimestamp() }],
+          costHistory: [{ cost: payload.cost, date: new Date() }],
         });
         setSuccess && setSuccess('Ítem creado');
       }
@@ -822,15 +839,32 @@ export default function Inventory({ setError, setSuccess, theme }) {
                 
                 <label className="text-sm">
                   Costo del producto
-                  <input 
-                    type="number" 
-                    step="0.01" 
-                    min="0" 
-                    value={form.cost} 
-                    onChange={e=>setForm({...form, cost:e.target.value})} 
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    pattern="[0-9.,]*"
+                    value={form.costFormatted}
+                    onChange={e => {
+                      let val = e.target.value.replace(/[^\d.,]/g, '');
+                      // Separar parte entera y decimal
+                      let [entera, decimal] = val.split(',');
+                      entera = entera ? entera.replace(/\./g, '') : '';
+                      // Formatear miles
+                      let enteraForm = entera.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+                      let final = decimal !== undefined ? `${enteraForm},${decimal}` : enteraForm;
+                      // Guardar en el form
+                      setForm({
+                        ...form,
+                        costFormatted: final,
+                        cost: val ? Number(entera + (decimal !== undefined ? '.' + decimal : '')) : ''
+                      });
+                    }}
+                    placeholder="Ej: 120.000 o 120.000,50"
                     className={`mt-1 w-full px-3 py-2 rounded border ${theme==='dark'?'bg-gray-900 border-gray-700':'bg-white border-gray-300'}`}
                   />
+                  <span className="text-xs text-gray-400 mt-1 block">Usa punto para miles y coma para decimales (Ej: 120.000,50)</span>
                 </label>
+                  {/* Campo de puntuación/calculadora manual eliminado */}
                 
                 <label className="text-sm">
                   Stock mínimo (alerta)

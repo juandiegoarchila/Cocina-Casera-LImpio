@@ -690,6 +690,34 @@ const GeneralTotalsCard = ({
                     <Row left="- De Salón:" right={money(methodTotals.byOrigin.salon.cash)} />
                   </div>
                 </Transition>
+                {/* Bloque visual alineado tipo columnas, solo visible si showCashBreakdown */}
+                <Transition show={showCashBreakdown}>
+                  <div className="mt-4 flex flex-col items-center w-full">
+                    <div className="flex flex-row justify-center w-full max-w-xs mx-auto" style={{marginBottom: '-0.2em'}}>
+                      <div className="flex-1 flex flex-col items-center">
+                        <span className="text-xs text-gray-500 font-semibold mb-0.5">Caja</span>
+                        <span className="text-green-500 font-bold font-mono">{methodTotals.cash.toLocaleString('es-CO')}</span>
+                      </div>
+                      <div className="w-10 flex flex-col items-center justify-end">
+                        <span className="text-lg text-gray-500 font-bold mb-0.5">-</span>
+                      </div>
+                      <div className="flex-1 flex flex-col items-center">
+                        <span className="text-xs text-gray-500 font-semibold mb-0.5">Gastos</span>
+                        <span className="text-red-400 font-bold font-mono">{Math.abs(expensesDisplay).toLocaleString('es-CO')}</span>
+                      </div>
+                    </div>
+                    {/* Resultado centrado debajo del signo menos */}
+                    <div className="flex flex-row justify-center w-full max-w-xs mx-auto mt-0.5" style={{ position: 'relative', height: '1.5em' }}>
+                      <div className="flex-1"></div>
+                      <div className="w-10 flex items-center justify-center" style={{ position: 'relative' }}>
+                        <span style={{ position: 'absolute', left: '50%', top: '0.2em', transform: 'translate(-50%, 0)' }} className="block text-center font-extrabold text-emerald-500">
+                          {(methodTotals.cash - Math.abs(expensesDisplay)).toLocaleString('es-CO')}
+                        </span>
+                      </div>
+                      <div className="flex-1"></div>
+                    </div>
+                  </div>
+                </Transition>
               </div>
 
               <div className="cursor-pointer" onClick={() => setShowDaviBreakdown(v => !v)}>
