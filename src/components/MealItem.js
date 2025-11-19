@@ -44,10 +44,11 @@ const MealItem = ({
   const [currentSlide, setCurrentSlide] = useState(0);
   // Auto-cierre de sección de Adiciones: usar ref para evitar cierres indeseados
   const additionsCloseRef = useRef(null);
-  const [touchStartX, setTouchStartX] = useState(0);
-  const [touchStartY, setTouchStartY] = useState(0);
+  // Usar refs para coordenadas/timbra de arrastre evita valores "stale"
+  const touchStartXRef = useRef(0);
+  const touchStartYRef = useRef(0);
   const [isSwiping, setIsSwiping] = useState(false); // usado como bandera de arrastre
-  const [dragDx, setDragDx] = useState(0); // desplazamiento actual en px
+  const dragDxRef = useRef(0); // desplazamiento actual en px
   const dragStartTimeRef = useRef(0);
   const dragJustHappenedRef = useRef(false); // para bloquear clicks fantasma tras un arrastre
   const [showMaxMealsError, setShowMaxMealsError] = useState(false);
@@ -77,15 +78,17 @@ const MealItem = ({
     }, 300);
   };
   
-  // Resetear slide a 0 cuando se crea un nuevo meal vacío
+  // Resetear slide a 0 solo cuando se monta o cambia el `id` (nuevo meal creado).
+  // Evita que la vista vuelva automáticamente al primer slide mientras el usuario
+  // está navegando manualmente entre slides si todavía no seleccionó una opción.
   useEffect(() => {
     const isNewEmptyMeal = !meal?.soup && !meal?.soupReplacement && 
                            (!meal?.principle || meal.principle.length === 0) && 
                            !meal?.protein;
-    if (isNewEmptyMeal && currentSlide !== 0) {
+    if (isNewEmptyMeal) {
       setCurrentSlide(0);
     }
-  }, [meal?.soup, meal?.soupReplacement, meal?.principle, meal?.protein, currentSlide]);
+  }, [id]);
   
   useEffect(() => {
     if (!isTableOrder) return;
@@ -752,10 +755,10 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
 
   const handleTouchStart = (e) => {
     const touch = e.touches[0];
-    setTouchStartX(touch.clientX);
-    setTouchStartY(touch.clientY);
+    touchStartXRef.current = touch.clientX;
+    touchStartYRef.current = touch.clientY;
     setIsSwiping(false);
-    setDragDx(0);
+    dragDxRef.current = 0;
     dragStartTimeRef.current = Date.now();
   // no marcamos arrastre todavía; solo cuando detectemos predominancia horizontal en touchMove
     dragJustHappenedRef.current = false;
@@ -773,8 +776,8 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
     if (!slideRef.current || !containerRef.current) return;
     const touchX = e.touches[0].clientX;
     const touchY = e.touches[0].clientY;
-    const dx = touchX - touchStartX; // >0 derecha, <0 izquierda
-    const dy = touchY - touchStartY;
+    const dx = touchX - touchStartXRef.current; // >0 derecha, <0 izquierda
+    const dy = touchY - touchStartYRef.current;
 
     // Solo arrastrar si hay predominancia horizontal
     if (Math.abs(dx) > Math.abs(dy) + 10) {
@@ -782,7 +785,7 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
       setIsSwiping(true);
       dragJustHappenedRef.current = true;
       try { window.__isMealDragging = true; } catch {}
-      setDragDx(dx);
+      dragDxRef.current = dx;
       const width = containerRef.current.offsetWidth || 1;
       const basePercent = -(currentSlide * 100);
       const dragPercent = (dx / width) * 100;
@@ -796,9 +799,9 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
 
   const finishDrag = useCallback(() => {
     // Solo actuar si hubo arrastre
-    if (!isSwiping && Math.abs(dragDx) < 2) return;
+    if (!isSwiping && Math.abs(dragDxRef.current) < 2) return;
     const width = containerRef.current ? containerRef.current.offsetWidth : 1;
-    const dx = dragDx;
+    const dx = dragDxRef.current;
     const dt = Date.now() - dragStartTimeRef.current;
     const velocity = Math.abs(dx) / Math.max(dt, 1); // px/ms
 
@@ -828,9 +831,9 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
     }
 
     // Limpiar estado de arrastre
-    setTouchStartX(0);
-    setTouchStartY(0);
-    setDragDx(0);
+    touchStartXRef.current = 0;
+    touchStartYRef.current = 0;
+    dragDxRef.current = 0;
     setIsSwiping(false);
     if (containerRef.current) {
       containerRef.current.classList.remove('dragging');
@@ -839,7 +842,7 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
     try { window.__lastMealDragTime = Date.now(); window.__isMealDragging = false; } catch {}
     // Evitar clicks fantasma inmediatamente después del arrastre
     setTimeout(() => { dragJustHappenedRef.current = false; }, 300);
-  }, [isSwiping, dragDx, currentSlide, slides.length]);
+  }, [isSwiping, currentSlide, slides.length]);
 
   const handleTouchEnd = () => {
     finishDrag();
@@ -997,7 +1000,7 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
                   e.stopPropagation();
                 }
               }}
-              style={{ transition: 'height 0.3s ease-in-out' }}
+              style={{ transition: 'height 0.3s ease-in-out', touchAction: 'pan-y' }}
             >
               <div
                 ref={slideRef}
