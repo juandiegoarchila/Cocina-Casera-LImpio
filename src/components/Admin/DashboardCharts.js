@@ -1954,7 +1954,11 @@ const DashboardCharts = React.memo(({
                 Object.entries(gp.menuTimes).forEach(([k,v])=> rows.push({section:'General', category:'Horario de menú', option: canonicalDisplay(k), count:v}));
               }
               // Mesas: incluir como fila única para poder filtrar por 'Mesas'
-              if(typeof gp.tables !== 'undefined'){
+              if (gp.tables && typeof gp.tables === 'object' && !Array.isArray(gp.tables)) {
+                Object.entries(gp.tables).forEach(([k,v]) => {
+                  rows.push({ section: 'General', category: 'Mesas', option: canonicalDisplay(k), count: Number(v) || 0 });
+                });
+              } else if (typeof gp.tables !== 'undefined') {
                 rows.push({section:'General', category:'Mesas', option:'Mesas (pedidos de salón)', count: Number(gp.tables)||0});
               }
               // Desayuno: cada objeto dentro de counts.breakfast (types, proteins, broths, ...)

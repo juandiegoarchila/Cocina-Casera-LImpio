@@ -2734,7 +2734,7 @@ export const useDashboardData = (
       general: {
         paymentMethods: {},
         menuTimes: {},
-        tables: 0,
+        tables: {},
       }
     };
 
@@ -2829,10 +2829,24 @@ export const useDashboardData = (
       // Algunas órdenes creadas por el mesero guardan el número de mesa dentro de cada meal (meals[].tableNumber)
       // Detectar mesa tanto si normalizeServiceFromOrder(o) devuelve 'mesa' como si alguna meal tiene tableNumber definido.
       const serv = (normalizeServiceFromOrder(o) || '').toString().toLowerCase();
-      const hasMealTable = Array.isArray(o.meals) && o.meals.some(m => {
-        return (m && (m.tableNumber || m.mesa || m.table));
-      });
-      if (serv === 'mesa' || hasMealTable) counts.general.tables = (counts.general.tables || 0) + 1;
+      // Buscar nombre/valor de mesa en raíz o dentro de meals
+      const tableRoot = safeName(o.tableNumber || o.mesa || o.table);
+      let tableName = tableRoot || null;
+      if (!tableName && Array.isArray(o.meals)) {
+        for (const m of o.meals) {
+          const candidate = safeName(m?.tableNumber || m?.mesa || m?.table);
+          if (candidate) { tableName = candidate; break; }
+        }
+      }
+      const hasMealTable = !!tableName;
+      if (serv === 'mesa' || hasMealTable) {
+        if (tableName) {
+          counts.general.tables[tableName] = (counts.general.tables[tableName] || 0) + 1;
+        } else {
+          // fallback: incrementar contador genérico bajo clave especial
+          counts.general.tables['Mesas (pedidos de salón)'] = (counts.general.tables['Mesas (pedidos de salón)'] || 0) + 1;
+        }
+      }
       if (isBreakfastOrder(o)) {
         const items = Array.isArray(o.breakfasts) ? o.breakfasts : (o.breakfast ? [o.breakfast] : []);
         items.forEach(b => processBreakfastItem(b));
