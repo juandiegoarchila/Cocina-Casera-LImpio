@@ -2826,8 +2826,13 @@ export const useDashboardData = (
     const allSalon = [...tableOrders, ...waiterOrders];
     allSalon.filter(inDay).forEach(o => {
       // contar mesas
+      // Algunas órdenes creadas por el mesero guardan el número de mesa dentro de cada meal (meals[].tableNumber)
+      // Detectar mesa tanto si normalizeServiceFromOrder(o) devuelve 'mesa' como si alguna meal tiene tableNumber definido.
       const serv = (normalizeServiceFromOrder(o) || '').toString().toLowerCase();
-      if (serv === 'mesa') counts.general.tables = (counts.general.tables || 0) + 1;
+      const hasMealTable = Array.isArray(o.meals) && o.meals.some(m => {
+        return (m && (m.tableNumber || m.mesa || m.table));
+      });
+      if (serv === 'mesa' || hasMealTable) counts.general.tables = (counts.general.tables || 0) + 1;
       if (isBreakfastOrder(o)) {
         const items = Array.isArray(o.breakfasts) ? o.breakfasts : (o.breakfast ? [o.breakfast] : []);
         items.forEach(b => processBreakfastItem(b));
