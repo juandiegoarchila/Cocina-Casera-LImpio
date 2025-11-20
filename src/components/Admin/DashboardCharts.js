@@ -35,6 +35,20 @@ const scrollbarStyles = `
     scrollbar-width: thin;
     scrollbar-color: var(--scrollbar-thumb-color, #4a5568) var(--scrollbar-track-color, #2d3748);
   }
+  /* Estilos para el selector de Categoría dentro del panel Conteo de Opciones */
+  .conteo-select {
+    background-color: transparent; /* mantiene el fondo del control */
+    color: var(--select-text-color, #e5e7eb) !important;
+  }
+  /* Forzar estilos en las opciones del dropdown (soportado en Chromium/Firefox en cierta medida) */
+  .conteo-select option {
+    background-color: var(--select-option-bg, #0b1220) !important;
+    color: var(--select-option-color, #e5e7eb) !important;
+  }
+  .conteo-select option:checked {
+    background-color: var(--select-option-selected-bg, #0f1724) !important;
+    color: var(--select-option-selected-color, #ffffff) !important;
+  }
 `;
 
 const SkeletonLoader = ({ type, theme, isMobile }) => {
@@ -54,6 +68,8 @@ const SkeletonLoader = ({ type, theme, isMobile }) => {
           ></div>
         ))}
       </div>
+      
+      
     );
   } else if (type === 'pie') {
     return (
@@ -271,6 +287,7 @@ const DashboardCharts = React.memo(({
   ingresosData = [],
   pedidosDiariosGuardadosData = [],
   getCountsForDate = null,
+  getOptionCountsForDate = null,
   theme = 'dark',
   chartTextColor = '#ffffff',
   // Rango simplificado (aplica a los tres gráficos principales): 'today' | '7d' | 'month' | 'year'
@@ -296,6 +313,11 @@ const DashboardCharts = React.memo(({
   const [drillDayOrders, setDrillDayOrders] = useState(null);
   const [expenseFilterRange, setExpenseFilterRange] = useState('7d'); // reutilizamos para gastos pero usando mismos botones
   const [selectedRecipient, setSelectedRecipient] = useState(null);
+  // Controles para la vista de Conteo de Opciones
+  const [viewMode, setViewMode] = useState('table'); // future: 'table' | 'compact'
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showNonZeroOnly, setShowNonZeroOnly] = useState(true);
+  const [categoryFilter, setCategoryFilter] = useState('all');
 
 
   useEffect(() => {
@@ -1865,6 +1887,235 @@ const DashboardCharts = React.memo(({
             </ResponsiveContainer>
           )}
         </motion.div>
+      </div>
+
+      {/* Option counts summary (Desayuno / Almuerzo) - versión visual mejorada */}
+      <div className="mt-8">
+        <div className={classNames('p-6 rounded-2xl shadow-xl border', theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200')}>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-xl font-semibold text-gray-200 dark:text-gray-100">Consumo Diario (por Opción)</h3>
+              <div className="text-sm text-gray-400">Resumen por fecha</div>
+            </div>
+            <div className="text-sm text-gray-400">Fecha: <strong className="ml-2">{selectedDate || ymdInBogota(new Date())}</strong></div>
+          </div>
+
+          {typeof getOptionCountsForDate === 'function' ? (() => {
+            const iso = selectedDate ? selectedDate : ymdInBogota(new Date());
+            const counts = getOptionCountsForDate(iso) || { general: {}, breakfast: {}, lunch: {} };
+
+            // Helpers para normalizar / canonicalizar nombres y aliases
+            const normalizeKey = (s) => {
+              if (!s && s !== 0) return '';
+              let t = String(s).trim().toLowerCase();
+              // quitar tildes
+              t = t.normalize ? t.normalize('NFD').replace(/[\u0300-\u036f]/g, '') : t;
+              // colapsar espacios múltiples
+              t = t.replace(/\s+/g, ' ');
+              // detectar patrón de letras separadas por espacios (E F E C T I V O) -> juntar
+              const tokens = t.split(' ');
+              if (tokens.length > 1 && tokens.every(tok => /^[a-z]$/.test(tok))) {
+                t = tokens.join('');
+              }
+              return t;
+            };
+
+            const capitalizeWords = (s) => {
+              return String(s||'').split(' ').map(w=> w.length ? w[0].toUpperCase()+w.slice(1) : w).join(' ');
+            };
+
+            // Diccionario de aliases (canonical -> display)
+            const aliases = {
+              'nequi': 'Nequi',
+              'daviplata': 'Daviplata',
+              'efectivo': 'Efectivo',
+              'cash': 'Efectivo',
+              'creditcard': 'Tarjeta',
+              'tarjeta': 'Tarjeta',
+            };
+
+            const canonicalDisplay = (raw) => {
+              const n = normalizeKey(raw);
+              if (!n) return '';
+              if (aliases[n]) return aliases[n];
+              // fallback: presentar con mayúscula inicial por palabra para legibilidad
+              return capitalizeWords(n);
+            };
+
+            // Construir filas unificadas: { section, category, option, count }
+            const buildRows = () => {
+              const rows = [];
+              // General: métodos de pago y horarios de menú como categorías
+              const gp = counts.general || {};
+              if (gp.paymentMethods) {
+                Object.entries(gp.paymentMethods).forEach(([k,v])=> rows.push({section:'General', category:'Método de pago', option: canonicalDisplay(k), count:v}));
+              }
+              if (gp.menuTimes) {
+                Object.entries(gp.menuTimes).forEach(([k,v])=> rows.push({section:'General', category:'Horario de menú', option: canonicalDisplay(k), count:v}));
+              }
+              // Mesas: incluir como fila única para poder filtrar por 'Mesas'
+              if(typeof gp.tables !== 'undefined'){
+                rows.push({section:'General', category:'Mesas', option:'Mesas (pedidos de salón)', count: Number(gp.tables)||0});
+              }
+              // Desayuno: cada objeto dentro de counts.breakfast (types, proteins, broths, ...)
+              const bf = counts.breakfast || {};
+              const breakfastCategories = { types: 'Tipos', proteins: 'Proteínas', broths: 'Caldos', additions: 'Adiciones', riceOrBread: 'Arroz / Pan', drinks: 'Bebidas', eggs: 'Huevos', breakfastTimes: 'Horarios (desayuno)' };
+              Object.entries(breakfastCategories).forEach(([key,label])=>{
+                const obj = bf[key] || {};
+                Object.entries(obj).forEach(([k,v])=> rows.push({section:'Desayuno', category:label, option:canonicalDisplay(k), count:v}));
+              });
+              // Almuerzo
+              const ln = counts.lunch || {};
+              const lunchCategories = { soups: 'Sopas', soupReplacements: 'Reemplazos de Sopa', principles: 'Principios', proteins: 'Proteínas', sides: 'Acompañamientos', additions: 'Adiciones', lunchTimes: 'Horarios (almuerzo)' };
+              Object.entries(lunchCategories).forEach(([key,label])=>{
+                const obj = ln[key] || {};
+                Object.entries(obj).forEach(([k,v])=> rows.push({section:'Almuerzo', category:label, option:canonicalDisplay(k), count:v}));
+              });
+              return rows;
+            };
+
+            const rowsAll = buildRows();
+
+            // Filtrado por búsqueda (aplica sobre todas las filas)
+            const filteredBySearch = rowsAll.filter(r=> {
+              if(!searchTerm) return true;
+              const q = searchTerm.toLowerCase();
+              return (r.option||'').toLowerCase().includes(q) || (r.category||'').toLowerCase().includes(q) || (r.section||'').toLowerCase().includes(q);
+            });
+
+            // Filtrado por categoría (selector principal de panel)
+            const normalize = (s) => String(s||'').normalize ? String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim() : String(s||'').toLowerCase().trim();
+            const exactMatches = categoryFilter === 'all' ? filteredBySearch : filteredBySearch.filter(r => normalize(r.category) === normalize(categoryFilter));
+            // Si no hay matches exactos (posibles diferencias de acentos / paréntesis / pequeñas variaciones), usar inclusión como fallback
+            const filteredByCategory = (exactMatches && exactMatches.length>0) ? exactMatches : (categoryFilter === 'all' ? filteredBySearch : filteredBySearch.filter(r => normalize(r.category).includes(normalize(categoryFilter))));
+            // Ordenamiento por defecto: por cantidad descendente
+            const sorted = filteredByCategory.slice().sort((a,b)=> (b.count||0) - (a.count||0));
+
+            // Visible rows (no filtro 'Solo >0' porque fue removido)
+            const filteredNonZero = sorted;
+            // Suma total visible (después de filtros y búsqueda y categoría)
+            const totalVisible = filteredNonZero.reduce((s,r)=> s + (Number(r.count)||0), 0);
+
+            // CSV export (exporta la vista actualmente filtrada)
+            const exportCSV = () => {
+              const header = ['Sección','Categoría','Opción','Conteo','% del visible'];
+              const lines = [header.join(',')];
+              filteredNonZero.slice().sort((a,b)=> (b.count||0)-(a.count||0)).forEach(r=> {
+                const safe = v => `"${String(v||'').replace(/"/g,'""')}"`;
+                const pct = totalVisible ? ((Number(r.count||0)/totalVisible)*100).toFixed(1) + '%' : '0%';
+                lines.push([safe(r.section), safe(r.category), safe(r.option), r.count||0, pct].join(','));
+              });
+              const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `conteo_opciones_${iso}.csv`;
+              document.body.appendChild(a);
+              a.click();
+              a.remove();
+              URL.revokeObjectURL(url);
+            };
+
+            return (
+              <div>
+                {/* Controls */}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                  {/* Controles reorganizados para mobile: apilar y usar anchuras completas */}
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
+                    <label className="text-sm text-gray-400">Categoría:</label>
+                    <select value={categoryFilter} onChange={(e)=>setCategoryFilter(e.target.value)} className="conteo-select bg-transparent border rounded px-2 py-1 text-sm text-gray-100 w-full sm:w-auto">
+                      <option value="all">Todas</option>
+                      <option value="Sopas">Sopas</option>
+                      <option value="Reemplazos de Sopa">Reemplazos de Sopa</option>
+                      <option value="Principios">Principios</option>
+                      <option value="Proteínas">Proteínas</option>
+                      <option value="Bebidas">Bebidas</option>
+                      <option value="Acompañamientos">Acompañamientos</option>
+                      <option value="Adiciones">Adiciones</option>
+                      <option value="Horarios (almuerzo)">Horarios de Almuerzo</option>
+                      <option value="Horarios (desayuno)">Horarios de Desayuno</option>
+                      <option value="Método de pago">Métodos de Pago</option>
+                      <option value="Huevos">Huevos para Desayuno</option>
+                      <option value="Caldos">Caldo para Desayuno</option>
+                      <option value="Arroz / Pan">Arroz o Pan para Desayuno</option>
+                      <option value="Tipos">Tipos de Desayuno</option>
+                      <option value="Mesas">Mesas</option>
+                    </select>
+                    <input value={searchTerm} onChange={(e)=>setSearchTerm(e.target.value)} placeholder="Buscar opción, categoría..." className="px-3 py-1 rounded border bg-transparent text-sm text-gray-100 w-full sm:w-64" />
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button onClick={exportCSV} className="px-2 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm">Exportar CSV</button>
+                  </div>
+                </div>
+
+                {/* Tabla unificada (desktop) / tarjetas (mobile) */}
+                <div className={classNames('rounded', theme==='dark' ? 'bg-gray-900/30' : 'bg-white')}>
+                  {isMobileDevice ? (
+                    <div className="space-y-3 p-1">
+                      {filteredNonZero.length ? filteredNonZero.map((r, idx) => (
+                        <div key={`card-${idx}`} className={classNames('p-3 rounded-lg', idx%2 ? (theme==='dark' ? 'bg-gray-800' : 'bg-gray-50') : 'bg-transparent', theme==='dark' ? 'border border-gray-800' : 'border border-gray-100')}>
+                          <div className="flex justify-between items-start gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="text-xs text-gray-400 truncate">{r.section} • {r.category}</div>
+                              <div className="text-sm font-medium text-gray-100 truncate" title={r.option}>{r.option || '(sin opción)'}</div>
+                            </div>
+                            <div className="text-right ml-3 flex-shrink-0">
+                              <div className="text-sm font-semibold text-gray-100">{r.count}</div>
+                              <div className="text-xs text-gray-400">{totalVisible ? ((Number(r.count||0)/totalVisible)*100).toFixed(1) + '%' : '0%'}</div>
+                            </div>
+                          </div>
+                        </div>
+                      )) : (
+                        <div className="p-3 text-sm text-gray-400">No hay resultados.</div>
+                      )}
+                      {filteredNonZero.length ? (
+                        <div className="p-2 text-right text-sm text-gray-100">Total visible: <strong>{totalVisible}</strong></div>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[700px]">
+                        <thead>
+                          <tr>
+                            <th className="text-xs text-gray-400 text-left p-3">Sección</th>
+                            <th className="text-xs text-gray-400 text-left p-3">Categoría</th>
+                            <th className="text-xs text-gray-400 text-left p-3">Opción</th>
+                            <th className="text-xs text-gray-400 text-right p-3">Conteo</th>
+                            <th className="text-xs text-gray-400 text-right p-3">%</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredNonZero.length ? filteredNonZero.map((r, idx)=> (
+                            <tr key={`${r.section}-${r.category}-${r.option}-${idx}`} className={classNames(idx%2 ? '' : (theme==='dark' ? 'bg-gray-900/20' : 'bg-gray-50'), 'border-b', theme==='dark' ? 'border-gray-800' : 'border-gray-200')}>
+                              <td className="py-2 px-3 align-top text-sm text-gray-200 truncate" style={{maxWidth:140}} title={r.section}>{r.section}</td>
+                              <td className="py-2 px-3 align-top text-sm text-gray-200 truncate" style={{maxWidth:180}} title={r.category}>{r.category}</td>
+                              <td className="py-2 px-3 align-top text-sm text-gray-100 truncate" style={{maxWidth:360}} title={r.option}>{r.option || '(sin opción)'}</td>
+                              <td className="py-2 px-3 align-top text-sm text-right text-gray-100"><strong>{r.count}</strong></td>
+                              <td className="py-2 px-3 align-top text-sm text-right text-gray-100">{totalVisible ? ((Number(r.count||0)/totalVisible)*100).toFixed(1) + '%' : '0%'}</td>
+                            </tr>
+                          )) : (
+                            <tr><td colSpan={5} className="p-4 text-sm text-gray-400">No hay resultados.</td></tr>
+                          )}
+                        </tbody>
+                        {filteredNonZero.length ? (
+                          <tfoot>
+                            <tr>
+                              <td colSpan={4} className="text-sm text-gray-300 p-3 text-right">Total visible</td>
+                              <td className="text-sm text-gray-100 p-3 text-right"><strong>{totalVisible}</strong></td>
+                            </tr>
+                          </tfoot>
+                        ) : null}
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })() : (
+            <div className="text-sm text-gray-400">Función de conteo no disponible.</div>
+          )}
+        </div>
       </div>
     </div>
   );

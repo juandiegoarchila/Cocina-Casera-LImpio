@@ -943,7 +943,7 @@ const DashboardInner = ({ theme }) => {
   ingresosData, pedidosDiariosGuardadosData, periodStructures,
   tableOrders, breakfastOrders, salonOrders, breakfastSalonOrders,
   paymentsRaw, paymentsAllRaw,
-  getCountsForDate,
+  getCountsForDate, getOptionCountsForDate,
     handleSaveDailyIngresos, handleDeleteDailyIngresos, handleSaveDailyOrders, handleDeleteDailyOrders, handleRebuildDailyIngresos
   } = useDashboardData(db, userId, isAuthReady, notify, startOfDay, endOfDay, selectedDate);
   
@@ -1142,6 +1142,7 @@ const DashboardInner = ({ theme }) => {
   paymentsAllRaw={paymentsAllRaw}
   domiciliosPaymentsOverride={paymentsDomiciliosTotalCharts}
   getCountsForDate={getCountsForDate}
+      getOptionCountsForDate={getOptionCountsForDate}
       />
 
       <ConfirmationModal 

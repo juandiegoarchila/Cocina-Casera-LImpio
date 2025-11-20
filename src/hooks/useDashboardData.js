@@ -2704,6 +2704,168 @@ export const useDashboardData = (
     };
   }, [orders, clientOrders, salonOrders, breakfastOrders, breakfastSalonOrders]);
 
+  // Devuelve conteos por opción (desayuno/almuerzo) para una fecha ISO (YYYY-MM-DD)
+  const getOptionCountsForDate = (isoDate) => {
+    const inDay = (o) => getDocDateISO(o) === isoDate;
+    const counts = {
+      breakfast: {
+        types: {},
+        broths: {},
+        proteins: {},
+        drinks: {},
+        additions: {},
+        cutlery: { yes: 0, no: 0 },
+        eggs: {},
+        riceOrBread: {},
+        breakfastTimes: {},
+        breakfastPayments: {},
+      },
+      lunch: {
+        soups: {},
+        soupReplacements: {},
+        principles: {},
+        proteins: {},
+        sides: {},
+        additions: {},
+        cutlery: { yes: 0, no: 0 },
+        lunchTimes: {},
+        lunchPayments: {},
+      },
+      general: {
+        paymentMethods: {},
+        menuTimes: {},
+        tables: 0,
+      }
+    };
+
+    const addCount = (map, name) => { if(!name) return; map[name] = (map[name] || 0) + 1; };
+
+    const safeName = (v) => {
+      if (v === null || typeof v === 'undefined') return null;
+      if (typeof v === 'string') return v.trim();
+      if (typeof v === 'object') return (v.name || v.label || v.value || '').toString().trim();
+      return String(v).trim();
+    };
+
+    const addMap = (map, name) => { if(!name) return; map[name] = (map[name] || 0) + 1; };
+
+    const processBreakfastItem = (b) => {
+      const t = safeName(b?.type || b?.type?.name);
+      if (t) addMap(counts.breakfast.types, t);
+      const broth = safeName(b?.broth?.name || b?.broth);
+      if (broth) addMap(counts.breakfast.broths, broth);
+      const prot = safeName(b?.protein?.name || b?.protein);
+      if (prot) addMap(counts.breakfast.proteins, prot);
+      const drink = safeName(b?.drink?.name || b?.drink);
+      if (drink) addMap(counts.breakfast.drinks, drink);
+      const eggs = safeName(b?.eggs?.name || b?.eggs);
+      if (eggs) addMap(counts.breakfast.eggs, eggs);
+      const adds = Array.isArray(b?.additions) ? b.additions : [];
+      adds.forEach(a => addMap(counts.breakfast.additions, safeName(a?.name || a)));
+      // arroz o pan
+      const riceBread = safeName(b?.riceBread || b?.riceOrBread);
+      if (riceBread) addMap(counts.breakfast.riceOrBread, riceBread);
+      // horario de desayuno
+      const time = safeName(b?.time || b?.hora || b?.schedule);
+      if (time) addMap(counts.breakfast.breakfastTimes, time);
+      // pago por item (fallback)
+      const pay = safeName(b?.payment?.name || b?.payment || b?.paymentMethod?.name || b?.paymentMethod);
+      if (pay) addMap(counts.breakfast.breakfastPayments, pay);
+      if (b?.cutlery === true || String(b?.cutlery).toLowerCase() === 'sí' || String(b?.cutlery).toLowerCase() === 'si') counts.breakfast.cutlery.yes++; else if (b?.cutlery === false || String(b?.cutlery).toLowerCase() === 'no') counts.breakfast.cutlery.no++;
+    };
+
+    const processMealItem = (m) => {
+      const soup = safeName(m?.soup?.name || m?.soup);
+      if (soup) addMap(counts.lunch.soups, soup);
+      // reemplazo de sopa
+      const soupReplacement = safeName(m?.soupReplacement || m?.replacement || m?.replacementSoup || m?.reemplazo);
+      if (soupReplacement) addMap(counts.lunch.soupReplacements, soupReplacement);
+      const principles = Array.isArray(m?.principle) ? m.principle : (m?.principle ? [m.principle] : []);
+      principles.forEach(p => addMap(counts.lunch.principles, safeName(p?.name || p)));
+      const prot = safeName(m?.protein?.name || m?.protein);
+      if (prot) addMap(counts.lunch.proteins, prot);
+      const sides = Array.isArray(m?.sides) ? m.sides : (m?.sides ? [m.sides] : []);
+      sides.forEach(s => addMap(counts.lunch.sides, safeName(s?.name || s)));
+      const adds = Array.isArray(m?.additions) ? m.additions : [];
+      adds.forEach(a => addMap(counts.lunch.additions, safeName(a?.name || a)));
+      // horario de almuerzo
+      const time = safeName(m?.time || m?.hora || m?.schedule);
+      if (time) addMap(counts.lunch.lunchTimes, time);
+      // pago por plato
+      const pay = safeName(m?.payment?.name || m?.payment || m?.paymentMethod?.name || m?.paymentMethod);
+      if (pay) addMap(counts.lunch.lunchPayments, pay);
+      if (m?.cutlery === true || String(m?.cutlery).toLowerCase() === 'sí' || String(m?.cutlery).toLowerCase() === 'si') counts.lunch.cutlery.yes++; else if (m?.cutlery === false || String(m?.cutlery).toLowerCase() === 'no') counts.lunch.cutlery.no++;
+    };
+
+    // Merge delivery orders
+    const mergedDelivery = [...orders];
+    (clientOrders || []).forEach(o => { if (!mergedDelivery.find(x => x.id === o.id)) mergedDelivery.push(o); });
+
+    // Process delivery orders
+    mergedDelivery.filter(inDay).forEach(o => {
+      if (isBreakfastOrder(o)) {
+        const items = Array.isArray(o.breakfasts) ? o.breakfasts : (o.breakfast ? [o.breakfast] : []);
+        items.forEach(b => processBreakfastItem(b));
+        // payment methods at order level
+        const payOrder = safeName(o.paymentMethod?.name || o.payment || o.paymentMethod || (o.payments && o.payments[0] && o.payments[0].method));
+        if (payOrder) addMap(counts.general.paymentMethods, payOrder);
+        // horario/menu
+        const menuTime = safeName(o.menuTime || o.time || o.hora || o.schedule);
+        if (menuTime) addMap(counts.general.menuTimes, menuTime);
+      } else {
+        const items = Array.isArray(o.meals) ? o.meals : (o.meal ? [o.meal] : []);
+        items.forEach(m => processMealItem(m));
+        const payOrder = safeName(o.paymentMethod?.name || o.payment || o.paymentMethod || (o.payments && o.payments[0] && o.payments[0].method));
+        if (payOrder) addMap(counts.general.paymentMethods, payOrder);
+        const menuTime = safeName(o.menuTime || o.time || o.hora || o.schedule);
+        if (menuTime) addMap(counts.general.menuTimes, menuTime);
+      }
+    });
+
+    // Process salon orders (mesa/llevar)
+    const allSalon = [...tableOrders, ...waiterOrders];
+    allSalon.filter(inDay).forEach(o => {
+      // contar mesas
+      const serv = (normalizeServiceFromOrder(o) || '').toString().toLowerCase();
+      if (serv === 'mesa') counts.general.tables = (counts.general.tables || 0) + 1;
+      if (isBreakfastOrder(o)) {
+        const items = Array.isArray(o.breakfasts) ? o.breakfasts : (o.breakfast ? [o.breakfast] : []);
+        items.forEach(b => processBreakfastItem(b));
+        const payOrder = safeName(o.paymentMethod?.name || o.payment || o.paymentMethod || (o.payments && o.payments[0] && o.payments[0].method));
+        if (payOrder) addMap(counts.general.paymentMethods, payOrder);
+        const menuTime = safeName(o.menuTime || o.time || o.hora || o.schedule);
+        if (menuTime) addMap(counts.general.menuTimes, menuTime);
+      } else {
+        const items = Array.isArray(o.meals) ? o.meals : (o.meal ? [o.meal] : []);
+        items.forEach(m => processMealItem(m));
+        const payOrder = safeName(o.paymentMethod?.name || o.payment || o.paymentMethod || (o.payments && o.payments[0] && o.payments[0].method));
+        if (payOrder) addMap(counts.general.paymentMethods, payOrder);
+        const menuTime = safeName(o.menuTime || o.time || o.hora || o.schedule);
+        if (menuTime) addMap(counts.general.menuTimes, menuTime);
+      }
+    });
+
+    // Breakfast specific collection (salón delivery separate)
+    (breakfastOrders || []).filter(inDay).forEach(o => {
+      const items = Array.isArray(o.breakfasts) ? o.breakfasts : (o.breakfast ? [o.breakfast] : []);
+      items.forEach(b => processBreakfastItem(b));
+      const payOrder = safeName(o.paymentMethod?.name || o.payment || o.paymentMethod || (o.payments && o.payments[0] && o.payments[0].method));
+      if (payOrder) addMap(counts.general.paymentMethods, payOrder);
+      const menuTime = safeName(o.menuTime || o.time || o.hora || o.schedule);
+      if (menuTime) addMap(counts.general.menuTimes, menuTime);
+    });
+    (breakfastSalonOrders || []).filter(inDay).forEach(o => {
+      const items = Array.isArray(o.breakfasts) ? o.breakfasts : (o.breakfast ? [o.breakfast] : []);
+      items.forEach(b => processBreakfastItem(b));
+      const payOrder = safeName(o.paymentMethod?.name || o.payment || o.paymentMethod || (o.payments && o.payments[0] && o.payments[0].method));
+      if (payOrder) addMap(counts.general.paymentMethods, payOrder);
+      const menuTime = safeName(o.menuTime || o.time || o.hora || o.schedule);
+      if (menuTime) addMap(counts.general.menuTimes, menuTime);
+    });
+
+    return counts;
+  };
+
   return {
     loadingData,
   orders: unifiedDeliveryOrders,
@@ -2730,6 +2892,7 @@ export const useDashboardData = (
     periodStructures,
     saleTypeBreakdown,
     getCountsForDate,
+    getOptionCountsForDate,
     handleSaveDailyIngresos,
     handleDeleteDailyIngresos,
     handleRebuildDailyIngresos,
