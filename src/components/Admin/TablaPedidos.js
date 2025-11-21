@@ -1186,6 +1186,14 @@ const TablaPedidos = ({
   const [orderToDelete, setOrderToDelete] = useState(null);
   const [confirmDeleteText, setConfirmDeleteText] = useState('');
 
+  // Vista: 'list' o 'cards' (persistida en localStorage)
+  const [viewMode, setViewMode] = useState(() => {
+    try { return localStorage.getItem('ordersViewMode') || 'list'; } catch (e) { return 'list'; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('ordersViewMode', viewMode); } catch (e) {}
+  }, [viewMode]);
+
   // Permisos (por defecto: vista admin completa)
   const perms = useMemo(() => ({
     canEditOrder: true,
@@ -1690,7 +1698,7 @@ const TablaPedidos = ({
               <button
                 onClick={() => setShowProteinModal(true)}
                 className={classNames(
-                  'flex items-center justify-center gap-2 px-3 py-2 sm:px-5 sm:py-3 rounded-lg text-xs sm:text-sm font-semibold transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 flex-shrink-0',
+                  'flex items-center justify-center gap-2 px-2 py-1.5 sm:px-5 sm:py-3 rounded-md text-xs sm:text-sm font-semibold transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 flex-shrink-0',
                   theme === 'dark' ? 'bg-gray-600 hover:bg-gray-500 text-white border border-gray-500' : 'bg-gray-200 hover:bg-gray-300 text-gray-900 border border-gray-400'
                 )}
               >
@@ -1700,7 +1708,7 @@ const TablaPedidos = ({
             )}
             <label
               className={classNames(
-                'relative flex items-center justify-center gap-2 px-3 py-2 sm:px-5 sm:py-3 rounded-lg text-xs sm:text-sm font-semibold shadow-sm border transition-colors duration-200 flex-shrink-0 cursor-pointer',
+                'relative flex items-center justify-center gap-2 px-2 py-1 sm:px-5 sm:py-3 rounded-md text-xs sm:text-sm font-semibold shadow-sm border transition-colors duration-200 flex-shrink min-w-0 max-w-[160px] sm:max-w-none cursor-pointer',
                 theme === 'dark' ? 'bg-gray-700 text-white border-gray-500' : 'bg-gray-200 text-gray-900 border-gray-400'
               )}
               onClick={(e) => {
@@ -1708,7 +1716,7 @@ const TablaPedidos = ({
                 if (input) input.showPicker();
               }}
             >
-              {displayDate}
+              <span className="truncate">{displayDate}</span>
               <input
                 type="date"
                 value={selectedDate}
@@ -1727,33 +1735,60 @@ const TablaPedidos = ({
               {isMenuOpen && (
                 <div className={classNames('absolute right-0 mt-2 w-48 rounded-lg shadow-xl z-50', theme === 'dark' ? 'bg-gray-700 text-gray-200' : 'bg-white text-gray-900')}>
                   <div className="py-1">
-                    <button onClick={() => { setOrderTypeFilter('breakfast'); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">Ver Desayunos</button>
-                    <button onClick={() => { setOrderTypeFilter('lunch'); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">Ver Almuerzos</button>
-                    <button onClick={() => { setOrderTypeFilter('all'); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">Ver Todos</button>
+                    <button onClick={() => { setOrderTypeFilter('breakfast'); setIsMenuOpen(false); }} className="block w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">
+                      <div className="flex items-center justify-between">
+                        <span>Ver Desayunos</span>
+                        {orderTypeFilter === 'breakfast' && <span className="text-green-500 font-semibold">✓</span>}
+                      </div>
+                    </button>
+                    <button onClick={() => { setOrderTypeFilter('lunch'); setIsMenuOpen(false); }} className="block w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">
+                      <div className="flex items-center justify-between">
+                        <span>Ver Almuerzos</span>
+                        {orderTypeFilter === 'lunch' && <span className="text-green-500 font-semibold">✓</span>}
+                      </div>
+                    </button>
+                    <button onClick={() => { setOrderTypeFilter('all'); setIsMenuOpen(false); }} className="block w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">
+                      <div className="flex items-center justify-between">
+                        <span>Ver Todos</span>
+                        {orderTypeFilter === 'all' && <span className="text-green-500 font-semibold">✓</span>}
+                      </div>
+                    </button>
+                    <button onClick={() => { setViewMode('list'); setIsMenuOpen(false); }} className="block w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">
+                      <div className="flex items-center justify-between">
+                        <span>Lista</span>
+                        {viewMode === 'list' && <span className="text-green-500 font-semibold">✓</span>}
+                      </div>
+                    </button>
+                    <button onClick={() => { setViewMode('cards'); setIsMenuOpen(false); }} className="block w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">
+                      <div className="flex items-center justify-between">
+                        <span>Tarjetas</span>
+                        {viewMode === 'cards' && <span className="text-green-500 font-semibold">✓</span>}
+                      </div>
+                    </button>
                     {perms.showMenuGenerateOrder && (
-                      <button onClick={() => { setShowAddOrderModal(true); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">Generar Orden</button>
+                      <button onClick={() => { setShowAddOrderModal(true); setIsMenuOpen(false); }} className="block w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">Generar Orden</button>
                     )}
                     {perms.showPreviews && (
                       <>
-                        <button onClick={() => { handleOpenPreview(); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">Vista Previa PDF</button>
-                        <button onClick={() => { handleOpenExcelPreview(); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">Vista Previa Excel</button>
+                        <button onClick={() => { handleOpenPreview(); setIsMenuOpen(false); }} className="block w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">Vista Previa PDF</button>
+                        <button onClick={() => { handleOpenExcelPreview(); setIsMenuOpen(false); }} className="block w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">Vista Previa Excel</button>
                       </>
                     )}
                     {perms.showExport && (
                       <>
-                        <button onClick={() => { handleExport(exportToExcel, 'Excel'); setIsMenuOpen(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 flex items-center">
-                          <ArrowDownTrayIcon className="w-4 h-4 mr-2" /> Exportar Excel
+                        <button onClick={() => { handleExport(exportToExcel, 'Excel'); setIsMenuOpen(false); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 flex items-center justify-between">
+                          <div className="flex items-center"><ArrowDownTrayIcon className="w-4 h-4 mr-2" /> <span>Exportar Excel</span></div>
                         </button>
-                        <button onClick={() => { handleExport(exportToPDF, 'PDF'); setIsMenuOpen(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 flex items-center">
-                          <ArrowDownTrayIcon className="w-4 h-4 mr-2" /> Exportar PDF
+                        <button onClick={() => { handleExport(exportToPDF, 'PDF'); setIsMenuOpen(false); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 flex items-center justify-between">
+                          <div className="flex items-center"><ArrowDownTrayIcon className="w-4 h-4 mr-2" /> <span>Exportar PDF</span></div>
                         </button>
-                        <button onClick={() => { handleExport(exportToCSV, 'CSV'); setIsMenuOpen(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 flex items-center">
-                          <ArrowDownTrayIcon className="w-4 h-4 mr-2" /> Exportar CSV
+                        <button onClick={() => { handleExport(exportToCSV, 'CSV'); setIsMenuOpen(false); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 flex items-center justify-between">
+                          <div className="flex items-center"><ArrowDownTrayIcon className="w-4 h-4 mr-2" /> <span>Exportar CSV</span></div>
                         </button>
                       </>
                     )}
                     {perms.showDeleteAll && (
-                      <button onClick={() => { setShowConfirmDeleteAll(true); setIsMenuOpen(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 text-red-500">Eliminar Todos</button>
+                      <button onClick={() => { setShowConfirmDeleteAll(true); setIsMenuOpen(false); }} className="block w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 text-red-500">Eliminar Todos</button>
                     )}
                   </div>
                 </div>
@@ -1770,129 +1805,127 @@ const TablaPedidos = ({
             </div>
           ) : (
             <>
-              <div className="overflow-x-auto select-text">
-                <table className="min-w-full text-left border-collapse text-sm select-text">
-                  <thead>
-                    <tr className={classNames('font-semibold sticky top-0 z-10 shadow-sm', theme === 'dark' ? 'bg-gray-700 text-gray-200' : 'bg-gray-100 text-gray-700')}>
-                      <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('orderNumber')}>Nº {getSortIcon('orderNumber')}</th>
-                      <th className="p-2 sm:p-3 border-b whitespace-nowrap">Detalles</th>
-                      <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('address')}>Dirección {getSortIcon('address')}</th>
-                      <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('phone')}>Teléfono {getSortIcon('phone')}</th>
-                      <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('time')}>Hora {getSortIcon('time')}</th>
-                      <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('payment')}>Pago {getSortIcon('payment')}</th>
-                      <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('total')}>Total {getSortIcon('total')}</th>
-                      <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('deliveryPerson')}>Domiciliario {getSortIcon('deliveryPerson')}</th>
-                      <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('status')}>Estado {getSortIcon('status')}</th>
-                      <th className="p-2 sm:p-3 border-b whitespace-nowrap">Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {orders.length === 0 ? (
-                      <tr>
-                        <td colSpan="10" className="p-6 text-center text-gray-500 dark:text-gray-400">No se encontraron pedidos. Intenta ajustar tu búsqueda o filtros.</td>
+              {viewMode === 'list' ? (
+                <div className="overflow-x-auto select-text">
+                  {/* tabla existente (sin cambios estructurales) */}
+                  <table className="min-w-full text-left border-collapse text-sm select-text">
+                    <thead>
+                      <tr className={classNames('font-semibold sticky top-0 z-10 shadow-sm', theme === 'dark' ? 'bg-gray-700 text-gray-200' : 'bg-gray-100 text-gray-700')}>
+                        <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('orderNumber')}>Nº {getSortIcon('orderNumber')}</th>
+                        <th className="p-2 sm:p-3 border-b whitespace-nowrap">Detalles</th>
+                        <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('address')}>Dirección {getSortIcon('address')}</th>
+                        <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('phone')}>Teléfono {getSortIcon('phone')}</th>
+                        <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('time')}>Hora {getSortIcon('time')}</th>
+                        <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('payment')}>Pago {getSortIcon('payment')}</th>
+                        <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('total')}>Total {getSortIcon('total')}</th>
+                        <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('deliveryPerson')}>Domiciliario {getSortIcon('deliveryPerson')}</th>
+                        <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('status')}>Estado {getSortIcon('status')}</th>
+                        <th className="p-2 sm:p-3 border-b whitespace-nowrap">Acciones</th>
                       </tr>
-                    ) : (
-                      orders.map((order, index) => {
-                        const displayNumber =
-                          sortOrder === 'asc'
-                            ? (currentPage - 1) * itemsPerPage + index + 1
-                            : totalOrders - ((currentPage - 1) * itemsPerPage + index);
+                    </thead>
+                    <tbody>
+                      {orders.length === 0 ? (
+                        <tr>
+                          <td colSpan="10" className="p-6 text-center text-gray-500 dark:text-gray-400">No se encontraron pedidos. Intenta ajustar tu búsqueda o filtros.</td>
+                        </tr>
+                      ) : (
+                        orders.map((order, index) => {
+                          const displayNumber =
+                            sortOrder === 'asc'
+                              ? (currentPage - 1) * itemsPerPage + index + 1
+                              : totalOrders - ((currentPage - 1) * itemsPerPage + index);
 
-                        const addressDisplay = getAddressDisplay(order.meals?.[0]?.address || order.breakfasts?.[0]?.address);
+                          const addressDisplay = getAddressDisplay(order.meals?.[0]?.address || order.breakfasts?.[0]?.address);
 
-                        const rawLegacy = cleanText(
-                          order.payment ||
-                          order.meals?.[0]?.payment?.name ||
-                          order.breakfasts?.[0]?.payment?.name ||
-                          'Sin pago'
-                        );
+                          const rawLegacy = cleanText(
+                            order.payment ||
+                            order.meals?.[0]?.payment?.name ||
+                            order.breakfasts?.[0]?.payment?.name ||
+                            'Sin pago'
+                          );
 
-                        const paymentDisplay = paymentMethodsOnly(order);
+                          const paymentDisplay = paymentMethodsOnly(order);
 
-                        const statusClass =
-                          order.status === 'Pendiente' ? 'bg-yellow-500 text-black'
-                            : order.status === 'En Preparación' ? 'bg-purple-500 text-white'
-                            : order.status === 'En Camino' ? 'bg-blue-500 text-white'
-                            : order.status === 'Entregado' ? 'bg-green-500 text-white'
-                            : order.status === 'Cancelado' ? 'bg-red-500 text-white'
-                            : '';
+                          const statusClass =
+                            order.status === 'Pendiente' ? 'bg-yellow-500 text-black'
+                              : order.status === 'En Preparación' ? 'bg-purple-500 text-white'
+                              : order.status === 'En Camino' ? 'bg-blue-500 text-white'
+                              : order.status === 'Entregado' ? 'bg-green-500 text-white'
+                              : order.status === 'Cancelado' ? 'bg-red-500 text-white'
+                              : '';
 
-                        const timeValue = order.meals?.[0]?.time || order.breakfasts?.[0]?.time || order.time || null;
-                        let displayTime = 'N/A';
-                        // timeValue puede ser: string, {name}, Firestore Timestamp, Date, o null
-                        if (typeof timeValue === 'string' && timeValue.trim()) {
-                          displayTime = timeValue;
-                        } else if (timeValue instanceof Date) {
-                          displayTime = timeValue.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
-                        } else if (timeValue && typeof timeValue === 'object') {
-                          // Firestore Timestamp tiene toDate(); también aceptamos { name }
-                          if (typeof timeValue.toDate === 'function') {
-                            try {
-                              const d = timeValue.toDate();
-                              displayTime = d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
-                            } catch (e) {
-                              displayTime = timeValue.name || 'N/A';
-                            }
-                          } else if (timeValue.name && typeof timeValue.name === 'string') {
-                            displayTime = timeValue.name;
-                          } else {
-                            displayTime = 'N/A';
+                          const timeValue = order.meals?.[0]?.time || order.breakfasts?.[0]?.time || order.time || null;
+                          let displayTime = 'N/A';
+                          if (typeof timeValue === 'string' && timeValue.trim()) {
+                            displayTime = timeValue;
+                          } else if (timeValue instanceof Date) {
+                            displayTime = timeValue.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+                          } else if (timeValue && typeof timeValue === 'object') {
+                            if (typeof timeValue.toDate === 'function') {
+                              try { const d = timeValue.toDate(); displayTime = d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }); } catch (e) { displayTime = timeValue.name || 'N/A'; }
+                            } else if (timeValue.name && typeof timeValue.name === 'string') { displayTime = timeValue.name; } else { displayTime = 'N/A'; }
                           }
-                        }
-                        // Si no hay time explícito, usar createdAt como fallback (si existe)
-                        if ((displayTime === 'N/A' || !displayTime) && order.createdAt) {
-                          try {
-                            const ca = order.createdAt && typeof order.createdAt.toDate === 'function' ? order.createdAt.toDate() : (order.createdAt instanceof Date ? order.createdAt : new Date(order.createdAt));
-                            displayTime = ca.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
-                          } catch (e) {
-                            // mantener 'N/A' si falla
+                          if ((displayTime === 'N/A' || !displayTime) && order.createdAt) {
+                            try { const ca = order.createdAt && typeof order.createdAt.toDate === 'function' ? order.createdAt.toDate() : (order.createdAt instanceof Date ? order.createdAt : new Date(order.createdAt)); displayTime = ca.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }); } catch (e) {}
                           }
-                        }
 
-                        return (
-                          <tr
-                            key={order.id}
-                            className={classNames(
-                              'border-b transition-colors duration-150',
-                              theme === 'dark' ? 'border-gray-700 hover:bg-gray-700' : 'border-gray-200 hover:bg-gray-50',
-                              index % 2 === 0 ? (theme === 'dark' ? 'bg-gray-750' : 'bg-gray-50') : ''
-                            )}
-                          >
-                            <td className="p-2 sm:p-3 text-gray-300">{displayNumber}</td>
-                            <td className="p-2 sm:p-3 text-gray-300">
-                              <button
-                                onClick={() => setShowMealDetails(order)}
-                                className="text-blue-400 hover:text-blue-300 text-xs sm:text-sm flex items-center"
-                                title="Ver detalles de la bandeja"
-                              >
-                                <InformationCircleIcon className="w-4 h-4 mr-1" />
-                                Ver
-                              </button>
-                            </td>
-                            <td className="p-2 sm:p-3 text-gray-300 max-w-[250px] sm:max-w-xs">
-                              <DireccionConCronometro order={order} />
-                            </td>
-                            <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">
-                              {order.meals?.[0]?.address?.phoneNumber ||
-                                order.breakfasts?.[0]?.address?.phoneNumber ||
-                                'N/A'}
-                            </td>
-                            <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">{displayTime}</td>
-                            <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">{paymentDisplay}</td>
-                            <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">
-                              ${order.type === 'breakfast' 
-                                ? calculateCorrectBreakfastTotal(order).toLocaleString('es-CO') 
-                                : (order.total?.toLocaleString('es-CO') || '0')}
-                            </td>
-                            <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">
-                              {editingDeliveryId === order.id ? (
-                                <>
-                                  <input
-                                    list={`delivery-list-${order.id}`}
-                                    value={deliveryDraft}
-                                    onChange={(e) => setDeliveryDraft(e.target.value)}
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter') {
+                          return (
+                            <tr
+                              key={order.id}
+                              className={classNames(
+                                'border-b transition-colors duration-150',
+                                theme === 'dark' ? 'border-gray-700 hover:bg-gray-700' : 'border-gray-200 hover:bg-gray-50',
+                                index % 2 === 0 ? (theme === 'dark' ? 'bg-gray-750' : 'bg-gray-50') : ''
+                              )}
+                            >
+                              <td className="p-2 sm:p-3 text-gray-300">{displayNumber}</td>
+                              <td className="p-2 sm:p-3 text-gray-300">
+                                <button
+                                  onClick={() => setShowMealDetails(order)}
+                                  className="text-blue-400 hover:text-blue-300 text-xs sm:text-sm flex items-center"
+                                  title="Ver detalles de la bandeja"
+                                >
+                                  <InformationCircleIcon className="w-4 h-4 mr-1" />
+                                  Ver
+                                </button>
+                              </td>
+                              <td className="p-2 sm:p-3 text-gray-300 max-w-[250px] sm:max-w-xs">
+                                <DireccionConCronometro order={order} />
+                              </td>
+                              <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">
+                                {order.meals?.[0]?.address?.phoneNumber ||
+                                  order.breakfasts?.[0]?.address?.phoneNumber ||
+                                  'N/A'}
+                              </td>
+                              <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">{displayTime}</td>
+                              <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">{paymentDisplay}</td>
+                              <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">
+                                ${order.type === 'breakfast' 
+                                  ? calculateCorrectBreakfastTotal(order).toLocaleString('es-CO') 
+                                  : (order.total?.toLocaleString('es-CO') || '0')}
+                              </td>
+                              <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">
+                                {editingDeliveryId === order.id ? (
+                                  <>
+                                    <input
+                                      list={`delivery-list-${order.id}`}
+                                      value={deliveryDraft}
+                                      onChange={(e) => setDeliveryDraft(e.target.value)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                          const valueToSave = (deliveryDraft || '').trim() || 'Sin asignar';
+                                          handleDeliveryChange(order.id, valueToSave)
+                                            .then(() => {
+                                              showToast('success', valueToSave === 'Sin asignar' ? 'Domiciliario desasignado.' : 'Domiciliario asignado.');
+                                            })
+                                            .catch(() => showToast('error', 'No se pudo asignar domiciliario.'));
+                                          if (valueToSave !== 'Sin asignar') lastAssignedRef.current = valueToSave;
+                                          setEditingDeliveryId(null);
+                                        } else if (e.key === 'Escape') {
+                                          setEditingDeliveryId(null);
+                                        }
+                                      }}
+                                      onBlur={() => {
                                         const valueToSave = (deliveryDraft || '').trim() || 'Sin asignar';
                                         handleDeliveryChange(order.id, valueToSave)
                                           .then(() => {
@@ -1901,159 +1934,269 @@ const TablaPedidos = ({
                                           .catch(() => showToast('error', 'No se pudo asignar domiciliario.'));
                                         if (valueToSave !== 'Sin asignar') lastAssignedRef.current = valueToSave;
                                         setEditingDeliveryId(null);
-                                      } else if (e.key === 'Escape') {
-                                        setEditingDeliveryId(null);
+                                      }}
+                                      placeholder="Escribe y Enter…"
+                                      className={classNames(
+                                        'w-40 p-1 rounded-md border text-sm',
+                                        theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                                        'focus:outline-none focus:ring-1 focus:ring-blue-500'
+                                      )}
+                                      autoFocus
+                                    />
+                                    <datalist id={`delivery-list-${order.id}`}>
+                                      <option value="Sin asignar" />
+                                      {uniqueDeliveryPersons.map((person) => (
+                                        <option key={person} value={person} />
+                                      ))}
+                                    </datalist>
+                                  </>
+                                ) : (
+                                  <span
+                                    onClick={() => {
+                                      const currentDeliveryPerson = order.deliveryPerson?.trim();
+                                      const isUnassigned = !currentDeliveryPerson || currentDeliveryPerson === 'Sin asignar';
+                                      
+                                      if (isUnassigned && lastAssignedRef.current) {
+                                        setDeliveryDraft(lastAssignedRef.current);
+                                        setEditingDeliveryId(order.id);
+                                        setTimeout(() => {
+                                          const valueToSave = lastAssignedRef.current.trim();
+                                          handleDeliveryChange(order.id, valueToSave)
+                                            .then(() => showToast('success', 'Domiciliario asignado.'))
+                                            .catch(() => showToast('error', 'No se pudo asignar domiciliario.'));
+                                          setEditingDeliveryId(null);
+                                          setDeliveryDraft('');
+                                        }, 100);
+                                      } else {
+                                        const initial = currentDeliveryPerson || lastAssignedRef.current || '';
+                                        setDeliveryDraft(initial);
+                                        setEditingDeliveryId(order.id);
                                       }
                                     }}
-                                    onBlur={() => {
-                                      const valueToSave = (deliveryDraft || '').trim() || 'Sin asignar';
-                                      handleDeliveryChange(order.id, valueToSave)
-                                        .then(() => {
-                                          showToast('success', valueToSave === 'Sin asignar' ? 'Domiciliario desasignado.' : 'Domiciliario asignado.');
-                                        })
-                                        .catch(() => showToast('error', 'No se pudo asignar domiciliario.'));
-                                      if (valueToSave !== 'Sin asignar') lastAssignedRef.current = valueToSave;
-                                      setEditingDeliveryId(null);
-                                    }}
-                                    placeholder="Escribe y Enter…"
-                                    className={classNames(
-                                      'w-40 p-1 rounded-md border text-sm',
-                                      theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
-                                      'focus:outline-none focus:ring-1 focus:ring-blue-500'
-                                    )}
-                                    autoFocus
-                                  />
-                                  <datalist id={`delivery-list-${order.id}`}>
-                                    <option value="Sin asignar" />
-                                    {uniqueDeliveryPersons.map((person) => (
-                                      <option key={person} value={person} />
-                                    ))}
-                                  </datalist>
-                                </>
-                              ) : (
-                                <span
-                                  onClick={() => {
-                                    // Si no hay domiciliario asignado (Sin asignar), usar automáticamente el último
-                                    const currentDeliveryPerson = order.deliveryPerson?.trim();
-                                    const isUnassigned = !currentDeliveryPerson || currentDeliveryPerson === 'Sin asignar';
-                                    
-                                    if (isUnassigned && lastAssignedRef.current) {
-                                      // Auto-asignar el último domiciliario directamente
-                                      setDeliveryDraft(lastAssignedRef.current);
-                                      setEditingDeliveryId(order.id);
-                                      
-                                      // Guardar automáticamente con el último domiciliario
-                                      setTimeout(() => {
-                                        const valueToSave = lastAssignedRef.current.trim();
-                                        handleDeliveryChange(order.id, valueToSave)
-                                          .then(() => showToast('success', 'Domiciliario asignado.'))
-                                          .catch(() => showToast('error', 'No se pudo asignar domiciliario.'));
-                                        setEditingDeliveryId(null);
-                                        setDeliveryDraft('');
-                                      }, 100);
-                                    } else {
-                                      // Comportamiento normal para editar
-                                      const initial = currentDeliveryPerson || lastAssignedRef.current || '';
-                                      setDeliveryDraft(initial);
-                                      setEditingDeliveryId(order.id);
+                                    className="cursor-pointer hover:text-blue-400"
+                                    title={
+                                      (!order.deliveryPerson?.trim() || order.deliveryPerson === 'Sin asignar') && lastAssignedRef.current
+                                        ? `Click para auto-asignar: ${lastAssignedRef.current}`
+                                        : "Click para editar; Enter para guardar"
+                                    }
+                                  >
+                                    {order.deliveryPerson || 'Sin asignar'}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="p-2 sm:p-3 whitespace-nowrap">
+                                <select
+                                  value={order.status || 'Pendiente'}
+                                  onChange={async (e) => {
+                                    const value = e.target.value;
+                                    try {
+                                      const maybePromise = handleStatusChange(order.id, value);
+                                      if (maybePromise && typeof maybePromise.then === 'function') {
+                                        await maybePromise;
+                                      }
+                                      showToast('success', 'Estado actualizado correctamente.');
+                                    } catch (err) {
+                                      console.error('[Estado] error al actualizar', err);
+                                      showToast('error', 'No se pudo actualizar el estado.');
                                     }
                                   }}
-                                  className="cursor-pointer hover:text-blue-400"
-                                  title={
-                                    (!order.deliveryPerson?.trim() || order.deliveryPerson === 'Sin asignar') && lastAssignedRef.current
-                                      ? `Click para auto-asignar: ${lastAssignedRef.current}`
-                                      : "Click para editar; Enter para guardar"
-                                  }
+                                  className={classNames(
+                                    'px-2 py-1 rounded-full text-xs font-semibold appearance-none cursor-pointer',
+                                    statusClass,
+                                    theme === 'dark' ? 'bg-opacity-70' : 'bg-opacity-90',
+                                    'focus:outline-none focus:ring-2 focus:ring-blue-500'
+                                  )}
                                 >
-                                  {order.deliveryPerson || 'Sin asignar'}
-                                </span>
+                                  <option value="Pendiente">Pendiente</option>
+                                  <option value="En Preparación">En Preparación</option>
+                                  <option value="En Camino">En Camino</option>
+                                  <option value="Entregado">Entregado</option>
+                                  <option value="Cancelado">Cancelado</option>
+                                </select>
+                              </td>
+                              <td className="p-2 sm:p-3 whitespace-nowrap">
+                                <div className="flex gap-2">
+                                  {perms.canEditOrder && (
+                                    <button
+                                      onClick={() => handleEditOrder(order)}
+                                      className="text-blue-500 hover:text-blue-400 transition-colors duration-150 p-1 rounded-md"
+                                      title="Editar pedido"
+                                      aria-label={`Editar pedido ${displayNumber}`}
+                                    >
+                                      <PencilIcon className="w-5 h-5" />
+                                    </button>
+                                  )}
+                                  {perms.canEditPayments && (
+                                    <button
+                                      onClick={() => setEditingPaymentsOrder(order)}
+                                      className="text-indigo-500 hover:text-indigo-400 transition-colors duration-150 p-1 rounded-md border border-indigo-500"
+                                      title="Editar pagos (split)"
+                                      aria-label={`Editar pagos del pedido ${displayNumber}`}
+                                    >
+                                      <CreditCardIcon className="w-5 h-5" />
+                                    </button>
+                                  )}
+                                  {perms.canPrint && (
+                                    <button
+                                      onClick={() => handlePrintDeliveryReceipt(order, allSides)}
+                                      className="text-green-600 hover:text-green-500 transition-colors duration-150 p-1 rounded-md border border-green-600"
+                                      title="Imprimir recibo domicilio"
+                                      aria-label={`Imprimir recibo domicilio ${displayNumber}`}
+                                    >
+                                      <PrinterIcon className="w-5 h-5" />
+                                    </button>
+                                  )}
+                                  {perms.canDeleteOrder && (
+                                    <button
+                                      onClick={() => {
+                                        setOrderToDelete(order);
+                                        setShowConfirmDeleteSingle(true);
+                                        setConfirmDeleteText('');
+                                      }}
+                                      className="text-red-500 hover:text-red-400 transition-colors duration-150 p-1 rounded-md"
+                                      title="Eliminar pedido"
+                                      aria-label={`Eliminar pedido ${displayNumber}`}
+                                    >
+                                      <TrashIcon className="w-5 h-5" />
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-2">
+                  {orders.length === 0 ? (
+                    <div className="p-6 text-center text-gray-500 dark:text-gray-400 col-span-full">No se encontraron pedidos. Intenta ajustar tu búsqueda o filtros.</div>
+                  ) : (
+                    orders.map((order, index) => {
+                      const displayNumber = sortOrder === 'asc' ? (currentPage - 1) * itemsPerPage + index + 1 : totalOrders - ((currentPage - 1) * itemsPerPage + index);
+                      const paymentDisplay = paymentMethodsOnly(order);
+                      const totalValue = order.type === 'breakfast' ? calculateCorrectBreakfastTotal(order) : (order.total || 0);
+
+                      // Clase para colorear la tarjeta completa según el estado
+                      const statusCardClass = (() => {
+                        if (theme === 'dark') {
+                          return order.status === 'Pendiente' ? 'bg-yellow-800 text-yellow-100' :
+                                 order.status === 'En Preparación' ? 'bg-purple-800 text-purple-100' :
+                                 order.status === 'En Camino' ? 'bg-blue-800 text-blue-100' :
+                                 order.status === 'Entregado' ? 'bg-green-800 text-green-100' :
+                                 order.status === 'Cancelado' ? 'bg-red-800 text-red-100' : '';
+                        }
+                        return order.status === 'Pendiente' ? 'bg-yellow-50 text-yellow-800' :
+                               order.status === 'En Preparación' ? 'bg-purple-50 text-purple-800' :
+                               order.status === 'En Camino' ? 'bg-blue-50 text-blue-800' :
+                               order.status === 'Entregado' ? 'bg-green-50 text-green-800' :
+                               order.status === 'Cancelado' ? 'bg-red-50 text-red-800' : '';
+                      })();
+                      const timeValue = order.meals?.[0]?.time || order.breakfasts?.[0]?.time || order.time || null;
+                      let displayTime = 'N/A';
+                      if (typeof timeValue === 'string' && timeValue.trim()) displayTime = timeValue;
+                      else if (timeValue instanceof Date) displayTime = timeValue.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+                      else if (timeValue && typeof timeValue === 'object') { if (typeof timeValue.toDate === 'function') { try { displayTime = timeValue.toDate().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }); } catch (e) { displayTime = timeValue.name || 'N/A'; } } else if (timeValue.name) displayTime = timeValue.name; }
+
+                      return (
+                        <div key={order.id} className={classNames('p-4 rounded-lg shadow transition-colors duration-150', statusCardClass)}>
+                          <div className="flex justify-between items-start gap-2">
+                            <div>
+                              <div className="text-sm text-gray-400">#{displayNumber}</div>
+                              <button onClick={() => setShowMealDetails(order)} className="text-blue-400 hover:text-blue-300 font-semibold mt-1 flex items-center gap-2"><InformationCircleIcon className="w-4 h-4" />Ver</button>
+                            </div>
+                            <div className="text-sm text-right">
+                              <div className="font-semibold">${totalValue.toLocaleString('es-CO')}</div>
+                              <div className="text-xs text-gray-400">{paymentDisplay}</div>
+                            </div>
+                          </div>
+                          <div className="mt-3 text-sm">
+                            <div className="whitespace-nowrap overflow-hidden text-ellipsis"><DireccionConCronometro order={order} /></div>
+                            <div className="text-xs text-gray-400 mt-1">Tel: {order.meals?.[0]?.address?.phoneNumber || order.breakfasts?.[0]?.address?.phoneNumber || 'N/A'}</div>
+                            <div className="text-xs text-gray-400 mt-1">Hora: {displayTime}</div>
+                            <div className="mt-2 flex items-center justify-between gap-2">
+                              <div className="text-xs">Domiciliario: <span className="font-medium">{order.deliveryPerson || 'Sin asignar'}</span></div>
+                              {/* estado movido a la barra de acciones (al final) */}
+                            </div>
+                            <div className="mt-3 flex flex-wrap items-center gap-2">
+                              {perms.canEditOrder && (
+                                <button
+                                  onClick={() => handleEditOrder(order)}
+                                  className="text-blue-500 hover:text-blue-400 transition-colors duration-150 p-1 rounded-md"
+                                  title="Editar pedido"
+                                  aria-label={`Editar pedido ${displayNumber}`}
+                                >
+                                  <PencilIcon className="w-5 h-5" />
+                                </button>
                               )}
-                            </td>
-                            <td className="p-2 sm:p-3 whitespace-nowrap">
-                              <select
-                                value={order.status || 'Pendiente'}
-                                onChange={async (e) => {
-                                  const value = e.target.value;
-                                  try {
-                                    const maybePromise = handleStatusChange(order.id, value);
-                                    if (maybePromise && typeof maybePromise.then === 'function') {
-                                      await maybePromise;
+                              {perms.canEditPayments && (
+                                <button
+                                  onClick={() => setEditingPaymentsOrder(order)}
+                                  className="text-indigo-500 hover:text-indigo-400 transition-colors duration-150 p-1 rounded-md border border-indigo-500"
+                                  title="Editar pagos (split)"
+                                  aria-label={`Editar pagos del pedido ${displayNumber}`}
+                                >
+                                  <CreditCardIcon className="w-5 h-5" />
+                                </button>
+                              )}
+                              {perms.canPrint && (
+                                <button
+                                  onClick={() => handlePrintDeliveryReceipt(order, allSides)}
+                                  className="text-green-600 hover:text-green-500 transition-colors duration-150 p-1 rounded-md border border-green-600"
+                                  title="Imprimir recibo domicilio"
+                                  aria-label={`Imprimir recibo domicilio ${displayNumber}`}
+                                >
+                                  <PrinterIcon className="w-5 h-5" />
+                                </button>
+                              )}
+                              {perms.canDeleteOrder && (
+                                <button
+                                  onClick={() => { setOrderToDelete(order); setShowConfirmDeleteSingle(true); setConfirmDeleteText(''); }}
+                                  className="text-red-500 hover:text-red-400 transition-colors duration-150 p-1 rounded-md"
+                                  title="Eliminar pedido"
+                                  aria-label={`Eliminar pedido ${displayNumber}`}
+                                >
+                                  <TrashIcon className="w-5 h-5" />
+                                </button>
+                              )}
+                              {/* Estado: select junto a acciones - en móviles ocupa línea completa */}
+                              <div className="ml-2 w-full sm:w-auto mt-2 sm:mt-0">
+                                <select
+                                  value={order.status || 'Pendiente'}
+                                  onChange={async (e) => {
+                                    const value = e.target.value;
+                                    try {
+                                      const maybePromise = handleStatusChange(order.id, value);
+                                      if (maybePromise && typeof maybePromise.then === 'function') await maybePromise;
+                                      showToast('success', 'Estado actualizado correctamente.');
+                                    } catch (err) {
+                                      console.error('[Estado] error al actualizar', err);
+                                      showToast('error', 'No se pudo actualizar el estado.');
                                     }
-                                    showToast('success', 'Estado actualizado correctamente.');
-                                  } catch (err) {
-                                    console.error('[Estado] error al actualizar', err);
-                                    showToast('error', 'No se pudo actualizar el estado.');
-                                  }
-                                }}
-                                className={classNames(
-                                  'px-2 py-1 rounded-full text-xs font-semibold appearance-none cursor-pointer',
-                                  statusClass,
-                                  theme === 'dark' ? 'bg-opacity-70' : 'bg-opacity-90',
-                                  'focus:outline-none focus:ring-2 focus:ring-blue-500'
-                                )}
-                              >
-                                <option value="Pendiente">Pendiente</option>
-                                <option value="En Preparación">En Preparación</option>
-                                <option value="En Camino">En Camino</option>
-                                <option value="Entregado">Entregado</option>
-                                <option value="Cancelado">Cancelado</option>
-                              </select>
-                            </td>
-                            <td className="p-2 sm:p-3 whitespace-nowrap">
-                              <div className="flex gap-2">
-                                {perms.canEditOrder && (
-                                  <button
-                                    onClick={() => handleEditOrder(order)}
-                                    className="text-blue-500 hover:text-blue-400 transition-colors duration-150 p-1 rounded-md"
-                                    title="Editar pedido"
-                                    aria-label={`Editar pedido ${displayNumber}`}
-                                  >
-                                    <PencilIcon className="w-5 h-5" />
-                                  </button>
-                                )}
-                                {perms.canEditPayments && (
-                                  <button
-                                    onClick={() => setEditingPaymentsOrder(order)}
-                                    className="text-indigo-500 hover:text-indigo-400 transition-colors duration-150 p-1 rounded-md border border-indigo-500"
-                                    title="Editar pagos (split)"
-                                    aria-label={`Editar pagos del pedido ${displayNumber}`}
-                                  >
-                                    <CreditCardIcon className="w-5 h-5" />
-                                  </button>
-                                )}
-                                {perms.canPrint && (
-                                  <button
-                                    onClick={() => handlePrintDeliveryReceipt(order, allSides)}
-                                    className="text-green-600 hover:text-green-500 transition-colors duration-150 p-1 rounded-md border border-green-600"
-                                    title="Imprimir recibo domicilio"
-                                    aria-label={`Imprimir recibo domicilio ${displayNumber}`}
-                                  >
-                                    <PrinterIcon className="w-5 h-5" />
-                                  </button>
-                                )}
-                                {perms.canDeleteOrder && (
-                                  <button
-                                    onClick={() => {
-                                      setOrderToDelete(order);
-                                      setShowConfirmDeleteSingle(true);
-                                      setConfirmDeleteText('');
-                                    }}
-                                    className="text-red-500 hover:text-red-400 transition-colors duration-150 p-1 rounded-md"
-                                    title="Eliminar pedido"
-                                    aria-label={`Eliminar pedido ${displayNumber}`}
-                                  >
-                                    <TrashIcon className="w-5 h-5" />
-                                  </button>
-                                )}
+                                  }}
+                                  className={classNames(
+                                    'block w-full sm:inline-block px-2 py-1 rounded-full text-xs font-semibold appearance-none cursor-pointer',
+                                    order.status === 'Pendiente' ? 'bg-yellow-500 text-black' : order.status === 'En Preparación' ? 'bg-purple-500 text-white' : order.status === 'En Camino' ? 'bg-blue-500 text-white' : order.status === 'Entregado' ? 'bg-green-500 text-white' : order.status === 'Cancelado' ? 'bg-red-500 text-white' : '',
+                                    theme === 'dark' ? 'bg-opacity-70' : 'bg-opacity-90'
+                                  )}
+                                >
+                                  <option value="Pendiente">Pendiente</option>
+                                  <option value="En Preparación">En Preparación</option>
+                                  <option value="En Camino">En Camino</option>
+                                  <option value="Entregado">Entregado</option>
+                                  <option value="Cancelado">Cancelado</option>
+                                </select>
                               </div>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              )}
 
               {/* Pagination */}
               <div className="flex flex-wrap justify-between items-center mt-6 gap-3">

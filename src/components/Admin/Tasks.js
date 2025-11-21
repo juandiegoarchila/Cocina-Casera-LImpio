@@ -65,16 +65,18 @@ const Tasks = ({ setError, setSuccess, theme, setTheme }) => {
         // Ahora incluye tareas completadas en días anteriores también
         const recurringTasksToReset = tasks.filter(task => {
           if (!task.isRecurringDaily || task.status !== 'completada') return false;
-          
-          // Si fue completada hoy, la reseteamos mañana
-          // Si fue completada antes de hoy, la reseteamos hoy
+
+          // Si la tarea fue marcada para reset (needsReset) o fue completada en días
+          // anteriores, debe ser reiniciada ahora a las 6pm. Además consideramos
+          // el caso donde lastCompletedDate === currentDate pero needsReset === true
+          // (tarea completada hoy y marcada para reinicio al final del día).
           const lastCompleted = task.lastCompletedDate;
-          const completedToday = lastCompleted === currentDate;
           const completedBefore = lastCompleted && lastCompleted < currentDate;
-          
-          console.log(`Tarea: ${task.title}, Completada: ${lastCompleted}, Hoy: ${currentDate}, CompletadaHoy: ${completedToday}, CompletadaAntes: ${completedBefore}`);
-          
-          return completedBefore; // Solo resetear tareas completadas en días anteriores
+          const needsResetFlag = !!task.needsReset;
+
+          console.log(`Tarea: ${task.title}, Completada: ${lastCompleted}, Hoy: ${currentDate}, needsReset: ${needsResetFlag}, CompletadaAntes: ${completedBefore}`);
+
+          return needsResetFlag || completedBefore;
         });
         
         console.log(`📋 Encontradas ${recurringTasksToReset.length} tareas para resetear`);

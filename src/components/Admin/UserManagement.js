@@ -62,7 +62,7 @@ const UserManagement = ({ setError, setSuccess, theme }) => {
   const [showUserDetailsModal, setShowUserDetailsModal] = useState(null);
   const [showCreateUserModal, setShowCreateUserModal] = useState(false);
   const [createUserForm, setCreateUserForm] = useState({ email: '', password: '', role: 1, totalOrders: 0 });
-  const [pagination, setPagination] = useState({ currentPage: 1, itemsPerPage: 10 });
+  const [pagination, setPagination] = useState({ currentPage: 1, itemsPerPage: 50 });
   const [sortColumn, setSortColumn] = useState(null);
   const [sortOrder, setSortOrder] = useState('asc');
 
@@ -131,40 +131,185 @@ const UserManagement = ({ setError, setSuccess, theme }) => {
     const usersCollectionRef = collection(db, 'users');
     const unsubscribe = onSnapshot(usersCollectionRef, async (snapshot) => {
       try {
-        const usersData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          createdAt: doc.data().createdAt || { seconds: 0 },
-        }));
+            const usersData = snapshot.docs.map(doc => ({
+              id: doc.id,
+              ...doc.data(),
+              createdAt: doc.data().createdAt || { seconds: 0 },
+            }));
 
-        usersData.sort((a, b) => {
-          const timeA = a.createdAt?.seconds || 0;
-          const timeB = b.createdAt?.seconds || 0;
-          return timeA - timeB;
-        });
+            usersData.sort((a, b) => {
+              const timeA = a.createdAt?.seconds || 0;
+              const timeB = b.createdAt?.seconds || 0;
+              return timeA - timeB;
+            });
 
-        const usersWithAddresses = await Promise.all(
-          usersData.map(async (user, index) => {
+            // Mostrar inmediatamente la lista de usuarios con dirección provisional mientras resolvemos las direcciones reales
+            const preliminaryUsers = usersData.map((user, index) => ({
+              ...user,
+              number: index + 1,
+              address: 'Cargando...'
+            }));
+            setUsers(preliminaryUsers);
+
+            const usersWithAddresses = await Promise.all(
+              usersData.map(async (user, index) => {
             try {
-              const ordersQuery = query(
-                collection(db, 'orders'),
-                where('userId', '==', user.id),
-                orderBy('createdAt', 'desc'),
-                limit(1)
-              );
-              const orderSnapshot = await getDocs(ordersQuery);
-              let address = 'Sin pedidos';
-              if (!orderSnapshot.empty) {
-                const orderData = orderSnapshot.docs?.[0]?.data();
-                address = getAddressDisplay(orderData?.meals?.[0]?.address);
+              // Si el documento de usuario ya tiene lastAddress, usarlo directamente (evita consultas extra)
+              if (user.lastAddress && Object.keys(user.lastAddress).length > 0) {
+                return {
+                  ...user,
+                  number: index + 1,
+                  address: getAddressDisplay(user.lastAddress),
+                };
               }
+              // Helper: intenta obtener la dirección más reciente del usuario
+              const tryCollections = ['orders', 'clientOrders', 'deliveryBreakfastOrders', 'breakfastOrders', 'tableOrders'];
+
+              const findLatestOrder = async () => {
+                // Primero intentar por userId en la colección 'orders' (mejor performance si existe)
+                if (user.id) {
+                  try {
+                    const ordersQuery = query(
+                      collection(db, 'orders'),
+                      where('userId', '==', user.id),
+                      orderBy('createdAt', 'desc'),
+                      limit(1)
+                    );
+                    const orderSnapshot = await getDocs(ordersQuery);
+                    if (!orderSnapshot.empty) return orderSnapshot.docs[0].data();
+                  } catch (e) {
+                    // Silenciar y continuar con otras colecciones
+                  }
+                }
+
+                // Si no hay resultado por userId, intentar buscar por teléfono (caso pedido_xxx@cocinacasera.app)
+                const userEmail = (user.email || '').toString();
+                const phoneFromPedido = (userEmail.match(/^pedido_(\d+)@/) || [])[1] || null;
+                const phone = user.phoneNumber || phoneFromPedido || null;
+
+                if (phone) {
+                  for (const col of tryCollections) {
+                    try {
+                      const qPhone = query(
+                        collection(db, col),
+                        where('clientContact.phoneNumber', '==', phone),
+                        orderBy('createdAt', 'desc'),
+                        limit(1)
+                      );
+                      const sPhone = await getDocs(qPhone);
+                      if (!sPhone.empty) return sPhone.docs[0].data();
+                    } catch (e) {
+                      console.warn(`Consulta por teléfono ordenada en ${col} falló: ${e?.message || e}`);
+                      try {
+                        const qPhone2 = query(collection(db, col), where('clientContact.phoneNumber', '==', phone), limit(10));
+                        const sPhone2 = await getDocs(qPhone2);
+                        if (!sPhone2.empty) {
+                          const docs = sPhone2.docs.map(d => ({ id: d.id, data: d.data() }));
+                          docs.sort((a, b) => {
+                            const ta = a.data?.createdAt?.seconds || 0;
+                            const tb = b.data?.createdAt?.seconds || 0;
+                            return tb - ta;
+                          });
+                          return docs[0].data;
+                        }
+                      } catch (e2) {
+                        console.warn(`Fallback por teléfono en ${col} falló: ${e2?.message || e2}`);
+                      }
+                    }
+                  }
+                }
+
+                // Si no hay resultado por userId/phone, buscar por userEmail en varias colecciones usadas por la app
+                if (!userEmail) return null;
+
+                for (const col of tryCollections) {
+                  try {
+                    // Intentar consulta ordenada (puede requerir índice). Si falla, cae al catch y se intentará sin orderBy.
+                    const q = query(
+                      collection(db, col),
+                      where('userEmail', '==', userEmail),
+                      orderBy('createdAt', 'desc'),
+                      limit(1)
+                    );
+                    const snap = await getDocs(q);
+                    if (!snap.empty) return snap.docs[0].data();
+                  } catch (e) {
+                    console.warn(`Consulta ordenada en colección ${col} falló (posible índice): ${e?.message || e}`);
+                    try {
+                      // Fallback: obtener algunos documentos y elegir el más reciente localmente
+                      const q2 = query(collection(db, col), where('userEmail', '==', userEmail), limit(10));
+                      const s2 = await getDocs(q2);
+                      if (!s2.empty) {
+                        // Elegir el doc con createdAt más reciente
+                        const docs = s2.docs.map(d => ({ id: d.id, data: d.data() }));
+                        docs.sort((a, b) => {
+                          const ta = a.data?.createdAt?.seconds || 0;
+                          const tb = b.data?.createdAt?.seconds || 0;
+                          return tb - ta;
+                        });
+                        return docs[0].data;
+                      }
+                    } catch (e2) {
+                      console.warn(`Fallback sin orderBy en ${col} también falló: ${e2?.message || e2}`);
+                    }
+                  }
+                }
+
+                // Como último recurso, buscar por userId en otras colecciones
+                if (user.id) {
+                  for (const col of tryCollections) {
+                    try {
+                      const q2 = query(
+                        collection(db, col),
+                        where('userId', '==', user.id),
+                        orderBy('createdAt', 'desc'),
+                        limit(1)
+                      );
+                      const s2 = await getDocs(q2);
+                      if (!s2.empty) return s2.docs[0].data();
+                    } catch (e) {
+                      console.warn(`Consulta por userId ordenada en ${col} falló: ${e?.message || e}`);
+                      try {
+                        const q3 = query(collection(db, col), where('userId', '==', user.id), limit(10));
+                        const s3 = await getDocs(q3);
+                        if (!s3.empty) {
+                          const docs = s3.docs.map(d => ({ id: d.id, data: d.data() }));
+                          docs.sort((a, b) => {
+                            const ta = a.data?.createdAt?.seconds || 0;
+                            const tb = b.data?.createdAt?.seconds || 0;
+                            return tb - ta;
+                          });
+                          return docs[0].data;
+                        }
+                      } catch (e2) {
+                        console.warn(`Fallback por userId en ${col} falló: ${e2?.message || e2}`);
+                      }
+                    }
+                  }
+                }
+
+                console.debug(`UserManagement: no se encontró pedido para userId=${user.id} email=${userEmail}`);
+                return null;
+              };
+
+              const latestOrder = await findLatestOrder();
+              let address = 'Sin pedidos';
+              if (latestOrder) {
+                // intentamos extraer address de lugares posibles: meals[0].address | breakfasts[0].address | clientContact
+                const addrFromMeals = latestOrder?.meals?.[0]?.address;
+                const addrFromBreakfasts = latestOrder?.breakfasts?.[0]?.address;
+                const addrFromClientContact = latestOrder?.clientContact;
+                const candidate = addrFromMeals || addrFromBreakfasts || addrFromClientContact || null;
+                address = candidate ? getAddressDisplay(candidate) : 'Sin dirección';
+              }
+
               return {
                 ...user,
                 number: index + 1,
                 address,
               };
             } catch (error) {
-              console.error(`Error fetching address for user ${user.id}:`, error.message);
+              console.error(`Error fetching address for user ${user.id}:`, error?.message || error);
               return {
                 ...user,
                 number: index + 1,
@@ -596,7 +741,7 @@ const UserManagement = ({ setError, setSuccess, theme }) => {
               </tr>
             </thead>
             <tbody>
-              {isLoading ? (
+              {(isLoading && users.length === 0) ? (
                 <tr>
                   <td colSpan="6" className="p-6 text-center text-gray-500 dark:text-gray-400">
                     <div className="flex justify-center items-center">
@@ -685,10 +830,11 @@ const UserManagement = ({ setError, setSuccess, theme }) => {
                 )}
                 aria-label="Seleccionar número de usuarios por página"
               >
-                <option value={5}>5</option>
-                <option value={10}>10</option>
-                <option value={20}>20</option>
-                <option value={30}>30</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={300}>300</option>
+                <option value={500}>500</option>
+                <option value={1000}>1000</option>
               </select>
             </div>
             <div className="flex items-center gap-2">

@@ -444,6 +444,7 @@ const App = () => {
             role: currentRole,
             lastOrder: new Date(),
             totalOrders: totalOrdersCount,
+            lastAddress: clientContact || null,
             ...(userDocData ? {} : { createdAt: new Date() }),
           };
 
@@ -605,6 +606,20 @@ const App = () => {
       console.log('🔍 [registerClientAndSaveOrder] Guardando pedido:', { collectionName, order });
       const docRef = await addDoc(collection(db, collectionName), order);
       console.log('✅ [registerClientAndSaveOrder] Pedido guardado exitosamente:', { collectionName, docId: docRef.id });
+
+      // Actualizar el documento de usuario con la última dirección y el id del último pedido
+      try {
+        if (resolvedUserId) {
+          const userRefAfter = doc(db, 'users', resolvedUserId);
+          await setDoc(userRefAfter, {
+            lastOrderId: docRef.id,
+            lastAddress: clientContact || null,
+            updatedAt: serverTimestamp(),
+          }, { merge: true });
+        }
+      } catch (e) {
+        console.warn('No se pudo actualizar lastAddress en users:', e?.message || e);
+      }
     } catch (error) {
       if (process.env.NODE_ENV === 'development') console.error('Error al registrar cliente o guardar pedido:', error);
       setErrorMessage('Error al procesar el pedido. Intenta de nuevo.');
