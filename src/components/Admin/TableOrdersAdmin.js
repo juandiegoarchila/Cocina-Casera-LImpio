@@ -123,10 +123,53 @@ const paymentMethodsOnly = (order) => {
   return displayPaymentLabel(getOrderPaymentRaw(order)) || 'Sin pago';
 };
 
+// Componente local para mostrar dirección y cronómetro (versión simplificada)
+function DireccionConCronometroLocal({ order }) {
+  const rawAddress = order.meals?.[0]?.address || order.breakfasts?.[0]?.address || {};
+  // Para órdenes de mesa no queremos repetir "Mesa X" aquí (se muestra en otro lugar),
+  // así que solo mostramos la dirección si existe en rawAddress.address.
+  const addressText = rawAddress?.address || 'Sin dirección';
+  const getMinutesElapsed = () => {
+    if (!order.createdAt) return 0;
+    const created = typeof order.createdAt.toDate === 'function' ? order.createdAt.toDate() : (order.createdAt instanceof Date ? order.createdAt : new Date(order.createdAt));
+    const isFinal = ["Completada", "Cancelada"].includes(order.status);
+    let endTime;
+    if (isFinal && order.updatedAt) {
+      endTime = typeof order.updatedAt.toDate === 'function' ? order.updatedAt.toDate() : (order.updatedAt instanceof Date ? order.updatedAt : new Date(order.updatedAt));
+    } else {
+      endTime = new Date();
+    }
+    return Math.floor((endTime - created) / 60000);
+  };
+  const minutesElapsed = getMinutesElapsed();
+  return (
+    <div>
+      <div className="whitespace-nowrap overflow-hidden text-ellipsis">{addressText}</div>
+      <div className="text-xs text-gray-400 mt-1">{minutesElapsed}min</div>
+      {rawAddress?.details && <div className="whitespace-nowrap overflow-hidden text-ellipsis text-gray-400 text-xs">({rawAddress.details})</div>}
+    </div>
+  );
+}
+
 
 const TableOrdersAdmin = ({ theme = 'light' }) => {
   const { user, role, loading } = useAuth();
   const navigate = useNavigate();
+
+  // Permisos (por defecto: vista admin completa) — evita ReferenceError si no vienen permisos externos
+  const perms = useMemo(() => ({
+    canEditOrder: true,
+    canDeleteOrder: true,
+    canEditPayments: true,
+    canPrint: true,
+    canLiquidate: true,
+    showProteinModalButton: true,
+    showMenuGenerateOrder: true,
+    showPreviews: true,
+    showExport: true,
+    showDeleteAll: true,
+    showResumen: true,
+  }), []);
 
   const [orders, setOrders] = useState([]);
   const [allSides, setAllSides] = useState([]);
@@ -169,6 +212,7 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
   const [sortField, setSortField] = useState('createdAt');
   const [sortOrder, setSortOrder] = useState('desc');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [viewMode, setViewMode] = useState(() => localStorage.getItem('tableOrdersViewMode') || 'list');
   const [showMealDetails, setShowMealDetails] = useState(null);
   const [editingOrder, setEditingOrder] = useState(null);
   const [orderTypeFilter, setOrderTypeFilter] = useState('all'); // 'all', 'breakfast', 'lunch'
@@ -176,6 +220,12 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
   const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const menuRef = useRef(null);
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem('tableOrdersViewMode', viewMode);
+    } catch (e) {}
+  }, [viewMode]);
 
     // Función para imprimir recibo detallado
     const handlePrintReceipt = (order) => {
@@ -1360,37 +1410,47 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
               )}
             >
               <div className="py-1">
-                <button onClick={() => { setOrderTypeFilter('breakfast'); setIsMenuOpen(false); }}
-                  className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">
-                  Ver Desayunos
+                <button onClick={() => { setOrderTypeFilter('breakfast'); setIsMenuOpen(false); }} className="block w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">
+                  <div className="flex items-center justify-between">
+                    <span>Ver Desayunos</span>
+                    {orderTypeFilter === 'breakfast' && <span className="text-green-500 font-semibold">✓</span>}
+                  </div>
                 </button>
-                <button onClick={() => { setOrderTypeFilter('lunch'); setIsMenuOpen(false); }}
-                  className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">
-                  Ver Almuerzos
+                <button onClick={() => { setOrderTypeFilter('lunch'); setIsMenuOpen(false); }} className="block w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">
+                  <div className="flex items-center justify-between">
+                    <span>Ver Almuerzos</span>
+                    {orderTypeFilter === 'lunch' && <span className="text-green-500 font-semibold">✓</span>}
+                  </div>
                 </button>
-                <button onClick={() => { setOrderTypeFilter('all'); setIsMenuOpen(false); }}
-                  className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">
-                  Ver Todos
+                <button onClick={() => { setOrderTypeFilter('all'); setIsMenuOpen(false); }} className="block w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">
+                  <div className="flex items-center justify-between">
+                    <span>Ver Todos</span>
+                    {orderTypeFilter === 'all' && <span className="text-green-500 font-semibold">✓</span>}
+                  </div>
                 </button>
-                <button onClick={() => { handleExport(exportToExcel); setIsMenuOpen(false); }}
-                  className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 flex items-center">
-                  <ArrowDownTrayIcon className="w-4 h-4 mr-2" />
-                  Exportar Excel
+                <button onClick={() => { setViewMode('list'); setIsMenuOpen(false); }} className="block w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">
+                  <div className="flex items-center justify-between">
+                    <span>Lista</span>
+                    {viewMode === 'list' && <span className="text-green-500 font-semibold">✓</span>}
+                  </div>
                 </button>
-                <button onClick={() => { handleExport(exportToPDF); setIsMenuOpen(false); }}
-                  className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 flex items-center">
-                  <ArrowDownTrayIcon className="w-4 h-4 mr-2" />
-                  Exportar PDF
+                <button onClick={() => { setViewMode('cards'); setIsMenuOpen(false); }} className="block w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">
+                  <div className="flex items-center justify-between">
+                    <span>Tarjetas</span>
+                    {viewMode === 'cards' && <span className="text-green-500 font-semibold">✓</span>}
+                  </div>
                 </button>
-                <button onClick={() => { handleExport(exportToCSV); setIsMenuOpen(false); }}
-                  className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 flex items-center">
-                  <ArrowDownTrayIcon className="w-4 h-4 mr-2" />
-                  Exportar CSV
+                <button onClick={() => { handleExport(exportToExcel); setIsMenuOpen(false); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 flex items-center justify-between">
+                  <div className="flex items-center"><ArrowDownTrayIcon className="w-4 h-4 mr-2" /> <span>Exportar Excel</span></div>
                 </button>
-                <button onClick={() => { handleDeleteAllOrders(); setIsMenuOpen(false); }}
-                  className="block w-full text-left px-4 py-2 text-sm hover:bg-red-100 dark:hover:bg-red-600 transition-all duration-200 flex items-center text-red-600 dark:text-red-400">
-                  <TrashIcon className="w-4 h-4 mr-2" />
-                  Eliminar Todos
+                <button onClick={() => { handleExport(exportToPDF); setIsMenuOpen(false); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 flex items-center justify-between">
+                  <div className="flex items-center"><ArrowDownTrayIcon className="w-4 h-4 mr-2" /> <span>Exportar PDF</span></div>
+                </button>
+                <button onClick={() => { handleExport(exportToCSV); setIsMenuOpen(false); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 flex items-center justify-between">
+                  <div className="flex items-center"><ArrowDownTrayIcon className="w-4 h-4 mr-2" /> <span>Exportar CSV</span></div>
+                </button>
+                <button onClick={() => { handleDeleteAllOrders(); setIsMenuOpen(false); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-red-100 dark:hover:bg-red-600 transition-all duration-200 flex items-center text-red-600 dark:text-red-400">
+                  <div className="flex items-center justify-between w-full"><div className="flex items-center"><TrashIcon className="w-4 h-4 mr-2" /> <span>Eliminar Todos</span></div></div>
                 </button>
               </div>
             </div>
@@ -1409,230 +1469,251 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
           </div>
         ) : (
           <>
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-left border-collapse text-sm">
-                <thead>
-                  <tr className={classNames(
-                    "font-semibold sticky top-0 z-10 shadow-sm",
-                    theme === 'dark' ? 'bg-gray-700 text-gray-200' : 'bg-gray-100 text-gray-700'
-                  )}>
-                    <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('orderNumber')}>
-                      Nº {getSortIcon('orderNumber')}
-                    </th>
-                    <th className="p-2 sm:p-3 border-b whitespace-nowrap">Detalles</th>
-                    <th className="p-2 sm:p-3 border-b whitespace-nowrap">Tipo</th>
-                    {/* Columnas Dirección y Teléfono ocultas por requerimiento */}
-                    <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('meals.0.tableNumber')}>
-                      Mesa {getSortIcon('meals.0.tableNumber')}
-                    </th>
-                    <th className="p-2 sm:p-3 border-b whitespace-nowrap">Origen</th>
-                    <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('meals.0.paymentMethod.name')}>
-                      Pago {getSortIcon('meals.0.paymentMethod.name')}
-                    </th>
-                    <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('total')}>
-                      Total {getSortIcon('total')}
-                    </th>
-                    <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('status')}>
-                      Estado {getSortIcon('status')}
-                    </th>
-                    <th className="p-2 sm:p-3 border-b whitespace-nowrap">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {paginatedOrders.length === 0 ? (
-                    <tr>
-                      <td colSpan="9" className="p-6 text-center text-gray-500 dark:text-gray-400">
-                        No se encontraron órdenes de mesas. Intenta ajustar tu búsqueda.
-                      </td>
+            {viewMode === 'list' ? (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-left border-collapse text-sm">
+                  <thead>
+                    <tr className={classNames(
+                      "font-semibold sticky top-0 z-10 shadow-sm",
+                      theme === 'dark' ? 'bg-gray-700 text-gray-200' : 'bg-gray-100 text-gray-700'
+                    )}>
+                      <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('orderNumber')}>
+                        Nº {getSortIcon('orderNumber')}
+                      </th>
+                      <th className="p-2 sm:p-3 border-b whitespace-nowrap">Detalles</th>
+                      <th className="p-2 sm:p-3 border-b whitespace-nowrap">Tipo</th>
+                      <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('meals.0.tableNumber')}>
+                        Mesa {getSortIcon('meals.0.tableNumber')}
+                      </th>
+                      <th className="p-2 sm:p-3 border-b whitespace-nowrap">Origen</th>
+                      <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('meals.0.paymentMethod.name')}>
+                        Pago {getSortIcon('meals.0.paymentMethod.name')}
+                      </th>
+                      <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('total')}>
+                        Total {getSortIcon('total')}
+                      </th>
+                      <th className="p-2 sm:p-3 border-b cursor-pointer whitespace-nowrap" onClick={() => handleSort('status')}>
+                        Estado {getSortIcon('status')}
+                      </th>
+                      <th className="p-2 sm:p-3 border-b whitespace-nowrap">Acciones</th>
                     </tr>
-                  ) : (
-                    paginatedOrders.map((order, index) => {
-                      const displayNumber =
-                        sortOrder === 'asc'
-                          ? (currentPage - 1) * itemsPerPage + index + 1
-                          : paginatedOrders.length - ((currentPage - 1) * itemsPerPage + index);
+                  </thead>
+                  <tbody>
+                    {paginatedOrders.length === 0 ? (
+                      <tr>
+                        <td colSpan="9" className="p-6 text-center text-gray-500 dark:text-gray-400">
+                          No se encontraron órdenes de mesas. Intenta ajustar tu búsqueda.
+                        </td>
+                      </tr>
+                    ) : (
+                      paginatedOrders.map((order, index) => {
+                        const displayNumber =
+                          sortOrder === 'asc'
+                            ? (currentPage - 1) * itemsPerPage + index + 1
+                            : paginatedOrders.length - ((currentPage - 1) * itemsPerPage + index);
 
-                  const paymentDisplay = paymentMethodsOnly(order);
+                        const paymentDisplay = paymentMethodsOnly(order);
 
-                      const statusClass =
-                        order.status === 'Pendiente'
-                          ? 'bg-yellow-500 text-black'
-                          : order.status === 'Preparando'
-                          ? 'bg-blue-500 text-white'
-                          : order.status === 'Completada'
-                          ? 'bg-green-500 text-white'
-                          : order.status === 'Cancelada'
-                          ? 'bg-red-500 text-white'
-                          : '';
+                        const statusText = (order.status || '').toString().toLowerCase();
+                        const isPending = statusText.includes('pend');
+                        const isPreparing = statusText.includes('prepar');
+                        const isOnTheWay = statusText.includes('camino') || statusText.includes('en camino');
+                        const isCompleted = statusText.includes('entreg') || statusText.includes('complet');
+                        const isCancelled = statusText.includes('cancel');
 
-                      return (
-                        <tr
-                          key={order.id}
-                          className={classNames(
+                        const statusClass = (() => {
+                          if (isPending) return 'bg-yellow-500 text-black';
+                          if (isPreparing) return 'bg-purple-500 text-white';
+                          if (isOnTheWay) return 'bg-blue-500 text-white';
+                          if (isCompleted) return 'bg-green-500 text-white';
+                          if (isCancelled) return 'bg-red-500 text-white';
+                          return '';
+                        })();
+
+                        return (
+                          <tr key={order.id} className={classNames(
                             "border-b transition-colors.duration-150",
                             theme === 'dark' ? 'border-gray-700 hover:bg-gray-700' : 'border-gray-200 hover:bg-gray-50',
                             index % 2 === 0 ? (theme === 'dark' ? 'bg-gray-750' : 'bg-gray-50') : ''
-                          )}
-                        >
-                          <td className="p-2 sm:p-3 text-gray-300">{displayNumber}</td>
-                          <td className="p-2 sm:p-3 text-gray-300">
-                            <button
-                              onClick={() => {
-                                // Hidratar la orden para mostrar en el modal
-                                const hydratedOrder = { ...order };
-                                
-                                if (Array.isArray(order.breakfasts)) {
-                                  // Determinar método principal del split de pagos
-                                  let mainMethod = '';
-                                  if (Array.isArray(order.payments) && order.payments.length) {
-                                    const max = order.payments.reduce((a, b) => (b.amount > a.amount ? b : a), order.payments[0]);
-                                    mainMethod = max.method;
+                          )}>
+                            <td className="p-2 sm:p-3 text-gray-300">{displayNumber}</td>
+                            <td className="p-2 sm:p-3 text-gray-300">
+                              <button
+                                onClick={() => {
+                                  const hydratedOrder = { ...order };
+                                  if (Array.isArray(order.breakfasts)) {
+                                    hydratedOrder.breakfasts = order.breakfasts.map((b) => ({ ...b }));
+                                    hydratedOrder.type = 'breakfast';
+                                  } else if (Array.isArray(order.meals)) {
+                                    hydratedOrder.meals = order.meals.map((m) => ({ ...m }));
+                                    hydratedOrder.type = 'meal';
                                   }
-                                  hydratedOrder.breakfasts = order.breakfasts.map((b) => ({
-                                    ...b,
-                                    orderType: 'table', // Forzar orderType='table' para el cálculo correcto de precio
-                                    type: byName(breakfastTypes, b.type),
-                                    broth: byName(breakfastBroths, b.broth),
-                                    eggs: byName(breakfastEggs, b.eggs),
-                                    riceBread: byName(breakfastRiceBread, b.riceBread),
-                                    drink: byName(breakfastDrinks, b.drink),
-                                    protein: byName(breakfastProteins, b.protein),
-                                    additions: Array.isArray(b.additions)
-                                      ? b.additions
-                                          .map((a) => {
-                                            const full = byName(breakfastAdditions, a);
-                                            const result = full ? { ...full, quantity: a.quantity || 1, price: full.price ?? a.price ?? 0 } : null;
-                                            console.log('Modal Addition mapping:', { original: a, found: full, result });
-                                            return result;
-                                          })
-                                          .filter(Boolean)
-                                      : [],
-                                    time: typeof b.time === 'string' ? b.time : b.time?.name || '',
-                                    paymentMethod: mainMethod ? { name: mainMethod } : byName(paymentMethods, b.payment || b.paymentMethod),
-                                    payment: mainMethod ? { name: mainMethod } : byName(paymentMethods, b.payment || b.paymentMethod),
-                                  }));
-                                  hydratedOrder.type = 'breakfast';
-                                } else if (Array.isArray(order.meals)) {
-                                  // Determinar método principal del split de pagos
-                                  let mainMethod = '';
-                                  if (Array.isArray(order.payments) && order.payments.length) {
-                                    const max = order.payments.reduce((a, b) => (b.amount > a.amount ? b : a), order.payments[0]);
-                                    mainMethod = max.method;
-                                  }
-                                  hydratedOrder.meals = order.meals.map((m) => ({
-                                    ...m,
-                                    soup: byName(soups, m.soup),
-                                    soupReplacement: byName(soupReplacements, m.soupReplacement),
-                                    principle: manyByName(principles, m.principle),
-                                    protein: byName(menuProteins, m.protein),
-                                    drink: byName(drinks, m.drink),
-                                    sides: manyByName(sides, m.sides),
-                                    additions: Array.isArray(m.additions)
-                                      ? m.additions
-                                          .map((a) => {
-                                            const full = byName(additions, a);
-                                            return full ? { ...full, quantity: a.quantity || 1, price: a.price ?? full.price ?? 0 } : null;
-                                          })
-                                          .filter(Boolean)
-                                      : [],
-                                    time: typeof m.time === 'string' ? m.time : m.time?.name || '',
-                                    paymentMethod: mainMethod ? { name: mainMethod } : byName(paymentMethods, m.payment || m.paymentMethod),
-                                  }));
-                                  hydratedOrder.type = 'meal';
-                                }
-                                
-                                console.log('Showing hydrated order in modal:', hydratedOrder);
-                                setShowMealDetails(hydratedOrder);
-                              }}
-                              className="text-blue-400 hover:text-blue-300 text-xs sm:text-sm flex items-center"
-                              title="Ver detalles de la orden"
-                            >
-                              <InformationCircleIcon className="w-4 h-4 mr-1" />
-                              Ver
-                            </button>
-                          </td>
-                          <td className="p-2 sm:p-3 text-gray-300 font-medium">
-                            {order.type === 'breakfast' ? 'Desayuno' : 'Almuerzo'}
-                          </td>
-                          <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">
-                            {(() => {
-                              // Para pedidos del POS (con items), verificar si es takeaway
-                              if (Array.isArray(order.items) && order.takeaway) {
-                                return 'llevar';
-                              }
-                              // Para otros pedidos, usar la lógica normal
-                              return formatValue(order.tableNumber || order.meals?.[0]?.tableNumber || order.breakfasts?.[0]?.tableNumber);
-                            })()}
-                          </td>
-                          <td className="p-2 sm:p-3 whitespace-nowrap">
-                            {(() => {
-                              const origin = getOrderOrigin(order);
-                              const isCajaPOS = origin === 'Caja POS';
-                              return (
-                                <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                                  isCajaPOS 
-                                    ? 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200' 
-                                    : 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
-                                }`}>
-                                  {origin}
-                                </span>
-                              );
-                            })()}
-                          </td>
-                          <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">{paymentDisplay}</td>
-                          <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">
-                            ${order.total?.toLocaleString('es-CO') || 'N/A'}
-                          </td>
-                          <td className="p-2 sm:p-3 whitespace-nowrap">
-                            <select
-                              value={order.status || 'Pendiente'}
-                              onChange={(e) => handleStatusChange(order.id, e.target.value)}
-                              className={classNames(
-                                "px-2 py-1 rounded-full text-xs font-semibold appearance-none cursor-pointer",
-                                statusClass,
-                                theme === 'dark' ? 'bg-opacity-70' : 'bg-opacity-90',
-                                "focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              )}
-                            >
-                              <option value="Pendiente">Pendiente</option>
-                              <option value="Preparando">Preparando</option>
-                              <option value="Completada">Completada</option>
-                              <option value="Cancelada">Cancelada</option>
-                            </select>
-                          </td>
-                          <td className="p-2 sm:p-3 whitespace-nowrap flex gap-1">
-                            <button
-                              onClick={() => handleEditOrder(order)}
-                              className="text-blue-500 hover:text-blue-400 transition-colors duration-150 p-1 rounded-md mr-2"
-                              title="Editar orden"
-                              aria-label={`Editar orden ${displayNumber}`}
-                            >
-                              <PencilIcon className="w-5 h-5" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteOrder(order.id)}
-                              className="text-red-500 hover:text-red-400 transition-colors duration-150 p-1 rounded-md mr-2"
-                              title="Eliminar orden"
-                              aria-label={`Eliminar orden ${displayNumber}`}
-                            >
-                              <TrashIcon className="w-5 h-5" />
-                            </button>
-                            <button
-                              onClick={() => handlePrintReceipt(order)}
-                              className="text-green-600 hover:text-green-500 transition-colors duration-150 p-1 rounded-md border border-green-600"
-                              title="Imprimir recibo"
-                              aria-label={`Imprimir recibo orden ${displayNumber}`}
-                            >
-                              <PrinterIcon className="w-5 h-5" />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
+                                  setShowMealDetails(hydratedOrder);
+                                }}
+                                className="text-blue-400 hover:text-blue-300 text-xs sm:text-sm flex items-center"
+                                title="Ver detalles de la orden"
+                              >
+                                <InformationCircleIcon className="w-4 h-4 mr-1" />
+                                Ver
+                              </button>
+                            </td>
+                            <td className="p-2 sm:p-3 text-gray-300 font-medium">{order.type === 'breakfast' ? 'Desayuno' : 'Almuerzo'}</td>
+                            <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">{formatValue(order.tableNumber || order.meals?.[0]?.tableNumber || order.breakfasts?.[0]?.tableNumber)}</td>
+                            <td className="p-2 sm:p-3 whitespace-nowrap">{getOrderOrigin(order)}</td>
+                            <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">{paymentDisplay}</td>
+                            <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">${order.total?.toLocaleString('es-CO') || 'N/A'}</td>
+                            <td className="p-2 sm:p-3 whitespace-nowrap">
+                              <select
+                                value={order.status || 'Pendiente'}
+                                onChange={(e) => handleStatusChange(order.id, e.target.value)}
+                                className={classNames(
+                                    "block w-full sm:inline-block px-2 py-1 rounded-full text-xs font-semibold appearance-none cursor-pointer",
+                                    statusClass,
+                                    theme === 'dark' ? 'bg-opacity-70' : 'bg-opacity-90',
+                                    "focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  )}
+                              >
+                                <option value="Pendiente">Pendiente</option>
+                                <option value="Preparando">Preparando</option>
+                                <option value="Completada">Completada</option>
+                                <option value="Cancelada">Cancelada</option>
+                              </select>
+                            </td>
+                            <td className="p-2 sm:p-3 whitespace-nowrap flex gap-1">
+                              <button onClick={() => handleEditOrder(order)} className="text-blue-500 hover:text-blue-400 transition-colors duration-150 p-1 rounded-md mr-2" title="Editar orden"><PencilIcon className="w-5 h-5" /></button>
+                              <button onClick={() => handleDeleteOrder(order.id)} className="text-red-500 hover:text-red-400 transition-colors duration-150 p-1 rounded-md mr-2" title="Eliminar orden"><TrashIcon className="w-5 h-5" /></button>
+                              <button onClick={() => handlePrintReceipt(order)} className="text-green-600 hover:text-green-500 transition-colors duration-150 p-1 rounded-md border border-green-600" title="Imprimir recibo"><PrinterIcon className="w-5 h-5" /></button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {paginatedOrders.length === 0 ? (
+                  <div className="p-6 text-center text-gray-500 dark:text-gray-400">No se encontraron órdenes de mesas.</div>
+                ) : (
+                  paginatedOrders.map((order, index) => {
+                    const displayNumber =
+                      sortOrder === 'asc'
+                        ? (currentPage - 1) * itemsPerPage + index + 1
+                        : paginatedOrders.length - ((currentPage - 1) * itemsPerPage + index);
+
+                    const paymentDisplay = paymentMethodsOnly(order);
+                    const totalValue = order.type === 'breakfast' ? calculateTotalBreakfastPrice(order.breakfasts || [], role, breakfastTypes) : (order.total || 0);
+
+                    // Clase para colorear la tarjeta completa según el estado (usa las mismas clases que TablaPedidos)
+                    const statusText = (order.status || '').toString().toLowerCase();
+                    const isPending = statusText.includes('pend');
+                    const isPreparing = statusText.includes('prepar'); // 'Preparando' / 'En Preparación'
+                    const isOnTheWay = statusText.includes('camino') || statusText.includes('en camino');
+                    const isCompleted = statusText.includes('entreg') || statusText.includes('complet'); // 'Entregado' / 'Completada'
+                    const isCancelled = statusText.includes('cancel');
+
+                    const statusCardClass = (() => {
+                      if (theme === 'dark') {
+                        if (isPending) return 'bg-yellow-800 text-yellow-100';
+                        if (isPreparing) return 'bg-purple-800 text-purple-100';
+                        if (isOnTheWay) return 'bg-blue-800 text-blue-100';
+                        if (isCompleted) return 'bg-green-800 text-green-100';
+                        if (isCancelled) return 'bg-red-800 text-red-100';
+                        return '';
+                      }
+                      if (isPending) return 'bg-yellow-50 text-yellow-800';
+                      if (isPreparing) return 'bg-purple-50 text-purple-800';
+                      if (isOnTheWay) return 'bg-blue-50 text-blue-800';
+                      if (isCompleted) return 'bg-green-50 text-green-800';
+                      if (isCancelled) return 'bg-red-50 text-red-800';
+                      return '';
+                    })();
+
+                    const timeValue = order.meals?.[0]?.time || order.breakfasts?.[0]?.time || order.time || null;
+                    let displayTime = 'N/A';
+                    if (typeof timeValue === 'string' && timeValue.trim()) displayTime = timeValue;
+                    else if (timeValue instanceof Date) displayTime = timeValue.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+                    else if (timeValue && typeof timeValue === 'object') { if (typeof timeValue.toDate === 'function') { try { displayTime = timeValue.toDate().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }); } catch (e) { displayTime = timeValue.name || 'N/A'; } } else if (timeValue.name) displayTime = timeValue.name; }
+
+                    return (
+                      <div key={order.id} className={classNames('p-4 rounded-lg shadow transition-colors duration-150', statusCardClass)}>
+                        <div className="flex justify-between items-start gap-2">
+                          <div>
+                            <div className="text-sm text-gray-400">#{displayNumber}</div>
+                            <button onClick={() => setShowMealDetails(order)} className="text-blue-400 hover:text-blue-300 font-semibold mt-1 flex items-center gap-2"><InformationCircleIcon className="w-4 h-4" />Ver</button>
+                          </div>
+                          <div className="text-sm text-right">
+                            <div className="font-semibold">${totalValue.toLocaleString('es-CO')}</div>
+                            <div className="text-xs text-gray-400">{paymentDisplay}</div>
+                          </div>
+                        </div>
+                        <div className="mt-3 text-sm">
+                          <div className="whitespace-nowrap overflow-hidden text-ellipsis"><DireccionConCronometroLocal order={order} /></div>
+                          <div className="text-xs text-gray-400 mt-1">Tipo: {order.type === 'breakfast' ? 'Desayuno' : 'Almuerzo'}</div>
+                          <div className="text-xs text-gray-400 mt-1">Mesa: {formatValue(order.tableNumber || order.meals?.[0]?.tableNumber || order.breakfasts?.[0]?.tableNumber)}</div>
+                          <div className="mt-2 flex items-center justify-between gap-2">
+                            <div className="text-xs">Mesero/Origen: <span className="font-medium">{getOrderOrigin(order)}</span></div>
+                          </div>
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            {perms.canEditOrder && (
+                              <button
+                                onClick={() => handleEditOrder(order)}
+                                className="text-blue-500 hover:text-blue-400 transition-colors duration-150 p-1 rounded-md"
+                                title="Editar orden"
+                                aria-label={`Editar orden ${displayNumber}`}
+                              >
+                                <PencilIcon className="w-5 h-5" />
+                              </button>
+                            )}
+                            {/* Botón 'Editar pagos' eliminado de la vista en tarjetas de Mesas para simplificar UI */}
+                            {perms.canPrint && (
+                              <button
+                                onClick={() => handlePrintReceipt(order)}
+                                className="text-green-600 hover:text-green-500 transition-colors duration-150 p-1 rounded-md border border-green-600"
+                                title="Imprimir recibo"
+                                aria-label={`Imprimir recibo ${displayNumber}`}
+                              >
+                                <PrinterIcon className="w-5 h-5" />
+                              </button>
+                            )}
+                            {perms.canDeleteOrder && (
+                              <button
+                                onClick={() => handleDeleteOrder(order.id)}
+                                className="text-red-500 hover:text-red-400 transition-colors duration-150 p-1 rounded-md"
+                                title="Eliminar orden"
+                                aria-label={`Eliminar orden ${displayNumber}`}
+                              >
+                                <TrashIcon className="w-5 h-5" />
+                              </button>
+                            )}
+                            <div className="ml-2 w-full sm:w-auto mt-2 sm:mt-0">
+                              <select
+                                value={order.status || 'Pendiente'}
+                                onChange={(e) => handleStatusChange(order.id, e.target.value)}
+                                className={classNames('block w-full sm:inline-block px-2 py-1 rounded-full text-xs font-semibold appearance-none cursor-pointer', (() => {
+                                  if (isPending) return 'bg-yellow-500 text-black';
+                                  if (isPreparing) return 'bg-purple-500 text-white';
+                                  if (isOnTheWay) return 'bg-blue-500 text-white';
+                                  if (isCompleted) return 'bg-green-500 text-white';
+                                  if (isCancelled) return 'bg-red-500 text-white';
+                                  return '';
+                                })())}
+                              >
+                                <option value="Pendiente">Pendiente</option>
+                                <option value="Preparando">Preparando</option>
+                                <option value="Completada">Completada</option>
+                                <option value="Cancelada">Cancelada</option>
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
 
             {/* Pagination */}
             <div className="flex flex-wrap justify-between items-center mt-6 gap-3">
