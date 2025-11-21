@@ -148,12 +148,12 @@ const MealItem = ({
 
   const displayMainItem = isCompleteRice ? selectedRiceName : cleanProteinName(meal?.protein?.name) || 'Selecciona';
 
-  const totalSteps = isTableOrder ? (isWaitress ? 5 : 6) : 9; // Mesero: 5 pasos (sopa, principio, proteína, mesa, acompañamientos)
+  const totalSteps = isTableOrder ? (isWaitress ? 6 : 7) : 9; // Incluir bebida también para mesero
   const completedSteps = [
     isSoupComplete,
     isPrincipleComplete,
     isCompleteRice || !!meal?.protein,
-    ...(isWaitress ? [] : [!!meal?.drink]), // Bebida solo para no-mesero
+    !!meal?.drink,
     isTableOrder ? !!meal?.tableNumber : meal?.cutlery !== null,
     ...(isTableOrder && !isWaitress ? [!!meal?.paymentMethod] : []), // Pago solo para no-mesero en mesa
     ...(isTableOrder ? [] : [!!meal?.time, !!meal?.address?.address, !!meal?.payment]),
@@ -164,7 +164,7 @@ const MealItem = ({
 
   const isComplete = isTableOrder
     ? isWaitress
-      ? isSoupComplete && isPrincipleComplete && (isCompleteRice || !!meal?.protein) && !!meal?.tableNumber && isSidesComplete
+      ? isSoupComplete && isPrincipleComplete && (isCompleteRice || !!meal?.protein) && !!meal?.drink && !!meal?.tableNumber && isSidesComplete
       : isSoupComplete && isPrincipleComplete && (isCompleteRice || !!meal?.protein) && !!meal?.drink && !!meal?.tableNumber && !!meal?.paymentMethod && isSidesComplete
     : isSoupComplete && isPrincipleComplete && (isCompleteRice || !!meal?.protein) && !!meal?.drink && !!meal?.time && !!meal?.address?.address && !!meal?.payment && meal?.cutlery !== null && isSidesComplete;
 
@@ -430,8 +430,8 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
       label: 'Proteína',
       associatedField: 'protein'
     },
-    // Ocultar Bebida para mesero (userRole === 3)
-    ...(userRole === 3 ? [] : [{
+    // Mostrar Bebida para todos los roles
+    ...([{
       component: (
         <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
           <OptionSelector

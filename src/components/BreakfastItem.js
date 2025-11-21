@@ -417,7 +417,7 @@ const BreakfastItem = ({
         ]
       : []),
   // Ocultar Bebida para mesero (userRole === 3)
-  ...((currentSteps.includes('drink') && userRole !== 3)
+  ...(currentSteps.includes('drink')
       ? [
           {
             component: (
