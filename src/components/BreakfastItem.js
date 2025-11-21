@@ -683,6 +683,30 @@ const BreakfastItem = ({
     return () => clearTimeout(timer);
   }, [isComplete, currentSlide, slides.length]);
 
+  // Cuando cambia el slide, desenfocar cualquier input activo y notificar a hijos
+  useEffect(() => {
+    try {
+      if (document && document.activeElement && typeof document.activeElement.blur === 'function') {
+        document.activeElement.blur();
+      }
+    } catch (_) {}
+    try {
+      try { window.__lastSlideChange = Date.now(); } catch(_) {}
+      window.dispatchEvent(new CustomEvent('slideChanged', { detail: { slideIndex: currentSlide } }));
+    } catch (_) {}
+  }, [currentSlide]);
+
+  // Escuchar evento global slideChanged (por si otro componente lo dispara)
+  useEffect(() => {
+    const handler = (e) => {
+      try { if (typeof document !== 'undefined' && document.activeElement && typeof document.activeElement.blur === 'function') document.activeElement.blur(); } catch(_){}
+      setPendingTime(breakfast?.time || null);
+      setPendingAddress(breakfast?.address || {});
+    };
+    window.addEventListener('slideChanged', handler, { capture: true });
+    return () => window.removeEventListener('slideChanged', handler, { capture: true });
+  }, [breakfast]);
+
   useEffect(() => {
     const handleUpdateSlide = (event) => {
       if (event.detail && event.detail.slideIndex !== undefined) setCurrentSlide(event.detail.slideIndex);

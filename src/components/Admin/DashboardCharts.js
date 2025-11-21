@@ -1970,7 +1970,7 @@ const DashboardCharts = React.memo(({
               });
               // Almuerzo
               const ln = counts.lunch || {};
-              const lunchCategories = { soups: 'Sopas', soupReplacements: 'Reemplazos de Sopa', principles: 'Principios', proteins: 'Proteínas', sides: 'Acompañamientos', additions: 'Adiciones', lunchTimes: 'Horarios (almuerzo)' };
+              const lunchCategories = { soups: 'Sopas', soupReplacements: 'Reemplazos de Sopa', principles: 'Principios', proteins: 'Proteínas', sides: 'Acompañamientos', drinks: 'Bebidas', additions: 'Adiciones', lunchTimes: 'Horarios (almuerzo)' };
               Object.entries(lunchCategories).forEach(([key,label])=>{
                 const obj = ln[key] || {};
                 Object.entries(obj).forEach(([k,v])=> rows.push({section:'Almuerzo', category:label, option:canonicalDisplay(k), count:v}));

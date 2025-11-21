@@ -2723,6 +2723,7 @@ export const useDashboardData = (
       lunch: {
         soups: {},
         soupReplacements: {},
+        drinks: {},
         principles: {},
         proteins: {},
         sides: {},
@@ -2775,6 +2776,8 @@ export const useDashboardData = (
     };
 
     const processMealItem = (m) => {
+      const drink = safeName(m?.drink?.name || m?.drink || m?.bebida || m?.drinkName || m?.beverage);
+      if (drink) addMap(counts.lunch.drinks, drink);
       const soup = safeName(m?.soup?.name || m?.soup);
       if (soup) addMap(counts.lunch.soups, soup);
       // reemplazo de sopa
