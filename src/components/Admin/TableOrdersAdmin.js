@@ -129,19 +129,40 @@ function DireccionConCronometroLocal({ order }) {
   // Para órdenes de mesa no queremos repetir "Mesa X" aquí (se muestra en otro lugar),
   // así que solo mostramos la dirección si existe en rawAddress.address.
   const addressText = rawAddress?.address || 'Sin dirección';
+
   const getMinutesElapsed = () => {
     if (!order.createdAt) return 0;
     const created = typeof order.createdAt.toDate === 'function' ? order.createdAt.toDate() : (order.createdAt instanceof Date ? order.createdAt : new Date(order.createdAt));
-    const isFinal = ["Completada", "Cancelada"].includes(order.status);
+    const statusText = (order.status || '').toString().toLowerCase();
+    const isDriverPending = statusText.includes('porcob') || statusText.includes('por cobr') || statusText.includes('por_cobrar');
+    const isFinal = ["Completada", "Cancelada"].includes(order.status) || isDriverPending;
     let endTime;
     if (isFinal && order.updatedAt) {
       endTime = typeof order.updatedAt.toDate === 'function' ? order.updatedAt.toDate() : (order.updatedAt instanceof Date ? order.updatedAt : new Date(order.updatedAt));
+    } else if (isFinal && !order.updatedAt) {
+      endTime = new Date();
     } else {
       endTime = new Date();
     }
     return Math.floor((endTime - created) / 60000);
   };
-  const minutesElapsed = getMinutesElapsed();
+
+  const [minutesElapsed, setMinutesElapsed] = useState(getMinutesElapsed());
+  const statusTextGlobal = (order.status || '').toString().toLowerCase();
+  const isDriverPendingGlobal = statusTextGlobal.includes('porcob') || statusTextGlobal.includes('por cobr') || statusTextGlobal.includes('por_cobrar');
+  const isFinalGlobal = ["Completada", "Cancelada"].includes(order.status) || isDriverPendingGlobal;
+
+  useEffect(() => {
+    if (!order.createdAt) return;
+    if (isFinalGlobal) {
+      setMinutesElapsed(getMinutesElapsed());
+      return;
+    }
+    setMinutesElapsed(getMinutesElapsed());
+    const iv = setInterval(() => setMinutesElapsed(getMinutesElapsed()), 60000);
+    return () => clearInterval(iv);
+  }, [order.createdAt, order.status, order.updatedAt]);
+
   return (
     <div>
       <div className="whitespace-nowrap overflow-hidden text-ellipsis">{addressText}</div>

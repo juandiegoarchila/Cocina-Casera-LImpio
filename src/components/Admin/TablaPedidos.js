@@ -1,6 +1,6 @@
 // src/components/Admin/TablaPedidos.js
 // Componente para mostrar dirección con cronómetro
-function DireccionConCronometro({ order }) {
+function DireccionConCronometro({ order, variant = 'card' }) {
   const rawAddress = order.meals?.[0]?.address || order.breakfasts?.[0]?.address;
   const migratedAddress = migrateOldAddressForDisplay(rawAddress);
   // Construir URL de Google Maps (solo usar la dirección principal, no las instrucciones)
@@ -8,9 +8,10 @@ function DireccionConCronometro({ order }) {
   const getMinutesElapsed = () => {
     if (!order.createdAt) return 0;
     const created = typeof order.createdAt.toDate === 'function' ? order.createdAt.toDate() : (order.createdAt instanceof Date ? order.createdAt : new Date(order.createdAt));
-    
-    // Si el pedido está finalizado, usar updatedAt (momento de finalización) en lugar de la fecha actual
-    const isFinal = ["Entregado", "Cancelado"].includes(order.status);
+    // Detectar si el estado es final (Entregado, Cancelado o variantes de Por Cobrar)
+    const statusText = (order.status || '').toString().toLowerCase();
+    const isDriverPending = statusText.includes('porcob') || statusText.includes('por cobr') || statusText.includes('por_cobrar');
+    const isFinal = ["Entregado", "Cancelado"].includes(order.status) || isDriverPending;
     let endTime;
     
     if (isFinal && order.updatedAt) {
@@ -24,7 +25,10 @@ function DireccionConCronometro({ order }) {
     return Math.floor((endTime - created) / 60000);
   };
   
-  const isFinal = ["Entregado", "Cancelado"].includes(order.status);
+  // Estado final cuando sea Entregado, Cancelado o Por Cobrar
+  const statusTextGlobal = (order.status || '').toString().toLowerCase();
+  const isDriverPendingGlobal = statusTextGlobal.includes('porcob') || statusTextGlobal.includes('por cobr') || statusTextGlobal.includes('por_cobrar');
+  const isFinalGlobal = ["Entregado", "Cancelado"].includes(order.status) || isDriverPendingGlobal;
   const [minutesElapsed, setMinutesElapsed] = React.useState(getMinutesElapsed());
   
   React.useEffect(() => {
@@ -34,7 +38,7 @@ function DireccionConCronometro({ order }) {
     let interval = null;
     
     // Si está finalizado, calcular una vez y no crear intervalo
-    if (isFinal) {
+    if (isFinalGlobal) {
       const finalMinutes = getMinutesElapsed();
       setMinutesElapsed(finalMinutes);
       console.log(`🕒 [Cronómetro] Pedido ${order.id} finalizado (${order.status}): ${finalMinutes}min`);
@@ -54,27 +58,50 @@ function DireccionConCronometro({ order }) {
         clearInterval(interval);
       }
     };
-  }, [order.createdAt, order.status, order.updatedAt, isFinal]);
+  }, [order.createdAt, order.status, order.updatedAt, isFinalGlobal]);
+  // Render según variante: 'list' = compact (minutero en la misma línea), 'card' = minutero debajo
+  if (variant === 'list') {
+    return (
+      <div>
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="min-w-0 truncate text-sm">
+            {mapsUrl ? (
+              <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline decoration-dotted">
+                {migratedAddress?.address || 'Sin dirección'}
+              </a>
+            ) : (
+              <span>{migratedAddress?.address || 'Sin dirección'}</span>
+            )}
+          </div>
+          <div className={`flex-shrink-0 text-xs font-semibold ${isFinalGlobal ? 'text-gray-500' : 'text-green-500'}`}>{minutesElapsed}min</div>
+        </div>
+        {migratedAddress?.details && (
+          <div className="text-gray-400 text-xs mt-1 truncate">({migratedAddress.details})</div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div>
-      <div className="whitespace-nowrap overflow-hidden text-ellipsis flex items-center gap-2">
+      <div className="min-w-0">
         {mapsUrl ? (
           <a
             href={mapsUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-blue-400 hover:text-blue-300 underline decoration-dotted"
+            className="block break-words text-blue-400 hover:text-blue-300 underline decoration-dotted"
             title="Abrir en Google Maps"
           >
             {migratedAddress?.address || 'Sin dirección'}
           </a>
         ) : (
-          migratedAddress?.address || 'Sin dirección'
+          <span className="block break-words">{migratedAddress?.address || 'Sin dirección'}</span>
         )}
-        <span className={`ml-2 font-bold ${isFinal ? 'text-gray-500' : 'text-green-500'}`}>{minutesElapsed}min</span>
       </div>
+      <div className={`mt-1 font-bold ${isFinalGlobal ? 'text-gray-500' : 'text-green-500'}`}>{minutesElapsed}min</div>
       {migratedAddress?.details && (
-        <div className="whitespace-nowrap overflow-hidden text-ellipsis text-gray-400 text-xs">
+        <div className="text-gray-400 text-xs mt-1">
           ({migratedAddress.details})
         </div>
       )}
@@ -1893,7 +1920,7 @@ const TablaPedidos = ({
                                 </button>
                               </td>
                               <td className="p-2 sm:p-3 text-gray-300 max-w-[250px] sm:max-w-xs">
-                                <DireccionConCronometro order={order} />
+                                <DireccionConCronometro order={order} variant="list" />
                               </td>
                               <td className="p-2 sm:p-3 text-gray-300 whitespace-nowrap">
                                 {order.meals?.[0]?.address?.phoneNumber ||
@@ -2120,8 +2147,8 @@ const TablaPedidos = ({
                               <div className="text-xs text-gray-400">{paymentDisplay}</div>
                             </div>
                           </div>
-                          <div className="mt-3 text-sm">
-                            <div className="whitespace-nowrap overflow-hidden text-ellipsis"><DireccionConCronometro order={order} /></div>
+                            <div className="mt-3 text-sm">
+                            <div className="whitespace-nowrap overflow-hidden text-ellipsis"><DireccionConCronometro order={order} variant="card" /></div>
                             <div className="text-xs text-gray-400 mt-1">Tel: {order.meals?.[0]?.address?.phoneNumber || order.breakfasts?.[0]?.address?.phoneNumber || 'N/A'}</div>
                             <div className="text-xs text-gray-400 mt-1">Hora: {displayTime}</div>
                             <div className="mt-2 flex items-center justify-between gap-2">
