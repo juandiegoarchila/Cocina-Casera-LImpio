@@ -1677,8 +1677,8 @@ const TablaPedidos = ({
         </div>
 
         {/* Search, Date Filter, and Menu */}
-        <div className="flex flex-wrap justify-center sm:justify-between items-center mb-6 gap-3 sm:gap-4">
-          <div className="flex flex-wrap gap-4 items-center flex-1 max-w-3xl">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 gap-3 sm:gap-4 overflow-visible">
+          <div className="w-full sm:flex-1 sm:max-w-3xl">
             <div className="relative w-full">
               <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
@@ -1693,7 +1693,7 @@ const TablaPedidos = ({
               />
             </div>
           </div>
-          <div className="flex flex-wrap items-center justify-center sm:justify-end gap-2">
+          <div className="flex items-center gap-2 mt-3 sm:mt-0">
             {perms.showProteinModalButton && (
               <button
                 onClick={() => setShowProteinModal(true)}
@@ -1708,7 +1708,7 @@ const TablaPedidos = ({
             )}
             <label
               className={classNames(
-                'relative flex items-center justify-center gap-2 px-2 py-1 sm:px-5 sm:py-3 rounded-md text-xs sm:text-sm font-semibold shadow-sm border transition-colors duration-200 flex-shrink min-w-0 max-w-[160px] sm:max-w-none cursor-pointer',
+                'relative flex items-center justify-center gap-2 px-2 py-1 sm:px-5 sm:py-3 rounded-md text-xs sm:text-sm font-semibold shadow-sm border transition-colors duration-200 flex-shrink-0 whitespace-nowrap cursor-pointer',
                 theme === 'dark' ? 'bg-gray-700 text-white border-gray-500' : 'bg-gray-200 text-gray-900 border-gray-400'
               )}
               onClick={(e) => {
@@ -1716,7 +1716,7 @@ const TablaPedidos = ({
                 if (input) input.showPicker();
               }}
             >
-              <span className="truncate">{displayDate}</span>
+              <span className="whitespace-nowrap">{displayDate}</span>
               <input
                 type="date"
                 value={selectedDate}
@@ -1733,7 +1733,7 @@ const TablaPedidos = ({
                 <EllipsisVerticalIcon className={classNames('w-6 h-6', theme === 'dark' ? 'text-gray-200 hover:text-white' : 'text-gray-700 hover:text-gray-900')} />
               </button>
               {isMenuOpen && (
-                <div className={classNames('absolute right-0 mt-2 w-48 rounded-lg shadow-xl z-50', theme === 'dark' ? 'bg-gray-700 text-gray-200' : 'bg-white text-gray-900')}>
+                <div className={classNames('absolute mt-2 rounded-lg shadow-xl z-50 min-w-[10rem] max-w-[95vw] w-auto right-2 sm:right-0', theme === 'dark' ? 'bg-gray-700 text-gray-200' : 'bg-white text-gray-900')}>
                   <div className="py-1">
                     <button onClick={() => { setOrderTypeFilter('breakfast'); setIsMenuOpen(false); }} className="block w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200">
                       <div className="flex items-center justify-between">
@@ -1846,8 +1846,11 @@ const TablaPedidos = ({
 
                           const paymentDisplay = paymentMethodsOnly(order);
 
+                          const statusText = (order.status || '').toString().toLowerCase();
+                          const isDriverPending = statusText.includes('porcob') || statusText.includes('por cobr') || statusText.includes('por_cobrar');
                           const statusClass =
-                            order.status === 'Pendiente' ? 'bg-yellow-500 text-black'
+                            isDriverPending ? 'bg-pink-200 text-pink-800'
+                              : order.status === 'Pendiente' ? 'bg-yellow-500 text-black'
                               : order.status === 'En Preparación' ? 'bg-purple-500 text-white'
                               : order.status === 'En Camino' ? 'bg-blue-500 text-white'
                               : order.status === 'Entregado' ? 'bg-green-500 text-white'
@@ -2008,6 +2011,7 @@ const TablaPedidos = ({
                                   )}
                                 >
                                   <option value="Pendiente">Pendiente</option>
+                                    <option value="Por Cobrar">Por Cobrar</option>
                                   <option value="En Preparación">En Preparación</option>
                                   <option value="En Camino">En Camino</option>
                                   <option value="Entregado">Entregado</option>
@@ -2080,14 +2084,18 @@ const TablaPedidos = ({
                       const totalValue = order.type === 'breakfast' ? calculateCorrectBreakfastTotal(order) : (order.total || 0);
 
                       // Clase para colorear la tarjeta completa según el estado
+                      const statusTextCard = (order.status || '').toString().toLowerCase();
+                      const isDriverPendingCard = statusTextCard.includes('porcob') || statusTextCard.includes('por cobr') || statusTextCard.includes('por_cobrar');
                       const statusCardClass = (() => {
                         if (theme === 'dark') {
+                          if (isDriverPendingCard) return 'bg-pink-800 text-pink-100';
                           return order.status === 'Pendiente' ? 'bg-yellow-800 text-yellow-100' :
                                  order.status === 'En Preparación' ? 'bg-purple-800 text-purple-100' :
                                  order.status === 'En Camino' ? 'bg-blue-800 text-blue-100' :
                                  order.status === 'Entregado' ? 'bg-green-800 text-green-100' :
                                  order.status === 'Cancelado' ? 'bg-red-800 text-red-100' : '';
                         }
+                        if (isDriverPendingCard) return 'bg-pink-50 text-pink-800';
                         return order.status === 'Pendiente' ? 'bg-yellow-50 text-yellow-800' :
                                order.status === 'En Preparación' ? 'bg-purple-50 text-purple-800' :
                                order.status === 'En Camino' ? 'bg-blue-50 text-blue-800' :
@@ -2117,7 +2125,73 @@ const TablaPedidos = ({
                             <div className="text-xs text-gray-400 mt-1">Tel: {order.meals?.[0]?.address?.phoneNumber || order.breakfasts?.[0]?.address?.phoneNumber || 'N/A'}</div>
                             <div className="text-xs text-gray-400 mt-1">Hora: {displayTime}</div>
                             <div className="mt-2 flex items-center justify-between gap-2">
-                              <div className="text-xs">Domiciliario: <span className="font-medium">{order.deliveryPerson || 'Sin asignar'}</span></div>
+                              <div className="text-xs">
+                                Domiciliario: {
+                                  editingDeliveryId === order.id ? (
+                                    <>
+                                      <input
+                                        list={`delivery-list-card-${order.id}`}
+                                        value={deliveryDraft}
+                                        onChange={(e) => setDeliveryDraft(e.target.value)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') {
+                                            const valueToSave = (deliveryDraft || '').trim() || 'Sin asignar';
+                                            handleDeliveryChange(order.id, valueToSave)
+                                              .then(() => {
+                                                showToast('success', valueToSave === 'Sin asignar' ? 'Domiciliario desasignado.' : 'Domiciliario asignado.');
+                                              })
+                                              .catch(() => showToast('error', 'No se pudo asignar domiciliario.'));
+                                            if (valueToSave !== 'Sin asignar') lastAssignedRef.current = valueToSave;
+                                            setEditingDeliveryId(null);
+                                          } else if (e.key === 'Escape') {
+                                            setEditingDeliveryId(null);
+                                          }
+                                        }}
+                                        onBlur={() => {
+                                          const valueToSave = (deliveryDraft || '').trim() || 'Sin asignar';
+                                          handleDeliveryChange(order.id, valueToSave)
+                                            .then(() => {
+                                              showToast('success', valueToSave === 'Sin asignar' ? 'Domiciliario desasignado.' : 'Domiciliario asignado.');
+                                            })
+                                            .catch(() => showToast('error', 'No se pudo asignar domiciliario.'));
+                                          if (valueToSave !== 'Sin asignar') lastAssignedRef.current = valueToSave;
+                                          setEditingDeliveryId(null);
+                                        }}
+                                        placeholder="Escribe y Enter…"
+                                        className={classNames(
+                                          'w-40 p-1 rounded-md border text-sm',
+                                          theme === 'dark' ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-200 bg-white text-gray-900',
+                                          'focus:outline-none focus:ring-1 focus:ring-blue-500'
+                                        )}
+                                        autoFocus
+                                      />
+                                      <datalist id={`delivery-list-card-${order.id}`}>
+                                        <option value="Sin asignar" />
+                                        {uniqueDeliveryPersons.map((person) => (
+                                          <option key={person} value={person} />
+                                        ))}
+                                      </datalist>
+                                    </>
+                                  ) : (
+                                    <span
+                                      onClick={() => {
+                                        const currentDeliveryPerson = order.deliveryPerson?.trim();
+                                        const isUnassigned = !currentDeliveryPerson || currentDeliveryPerson === 'Sin asignar';
+                                        const initial = isUnassigned ? (lastAssignedRef.current || '') : (currentDeliveryPerson || lastAssignedRef.current || '');
+                                        setDeliveryDraft(initial);
+                                        setEditingDeliveryId(order.id);
+                                      }}
+                                      className="cursor-pointer hover:text-blue-400 font-medium"
+                                      title={(!order.deliveryPerson?.trim() || order.deliveryPerson === 'Sin asignar') && lastAssignedRef.current
+                                        ? `Click para auto-sugerir: ${lastAssignedRef.current}`
+                                        : "Click para editar; Enter para guardar"
+                                      }
+                                    >
+                                      {order.deliveryPerson || 'Sin asignar'}
+                                    </span>
+                                  )
+                                }
+                              </div>
                               {/* estado movido a la barra de acciones (al final) */}
                             </div>
                             <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -2162,7 +2236,7 @@ const TablaPedidos = ({
                                 </button>
                               )}
                               {/* Estado: select junto a acciones - en móviles ocupa línea completa */}
-                              <div className="ml-2 w-full sm:w-auto mt-2 sm:mt-0">
+                              <div className="ml-2 w-auto sm:w-auto mt-2 sm:mt-0">
                                 <select
                                   value={order.status || 'Pendiente'}
                                   onChange={async (e) => {
@@ -2177,12 +2251,22 @@ const TablaPedidos = ({
                                     }
                                   }}
                                   className={classNames(
-                                    'block w-full sm:inline-block px-2 py-1 rounded-full text-xs font-semibold appearance-none cursor-pointer',
-                                    order.status === 'Pendiente' ? 'bg-yellow-500 text-black' : order.status === 'En Preparación' ? 'bg-purple-500 text-white' : order.status === 'En Camino' ? 'bg-blue-500 text-white' : order.status === 'Entregado' ? 'bg-green-500 text-white' : order.status === 'Cancelado' ? 'bg-red-500 text-white' : '',
+                                    'inline-block w-auto sm:inline-block px-2 py-1 rounded-full text-xs font-semibold appearance-none cursor-pointer flex-shrink-0',
+                                    (() => {
+                                      const st = (order.status || '').toString().toLowerCase();
+                                      if (st.includes('porcob') || st.includes('por cobr') || st.includes('por_cobrar')) return 'bg-pink-200 text-pink-800';
+                                      if (order.status === 'Pendiente') return 'bg-yellow-500 text-black';
+                                      if (order.status === 'En Preparación') return 'bg-purple-500 text-white';
+                                      if (order.status === 'En Camino') return 'bg-blue-500 text-white';
+                                      if (order.status === 'Entregado') return 'bg-green-500 text-white';
+                                      if (order.status === 'Cancelado') return 'bg-red-500 text-white';
+                                      return '';
+                                    })(),
                                     theme === 'dark' ? 'bg-opacity-70' : 'bg-opacity-90'
                                   )}
                                 >
                                   <option value="Pendiente">Pendiente</option>
+                                  <option value="Por Cobrar">Por Cobrar</option>
                                   <option value="En Preparación">En Preparación</option>
                                   <option value="En Camino">En Camino</option>
                                   <option value="Entregado">Entregado</option>

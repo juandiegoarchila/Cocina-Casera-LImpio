@@ -81,6 +81,15 @@ const DeliveryOrdersPage = () => {
         ...clientBreakfasts
       ];
 
+      // Normalizar estados para mostrar coherentemente 'Por Cobrar' en el panel de domiciliario
+      const normalizeStatus = (s) => {
+        const st = (s || '').toString().toLowerCase();
+        if (st.includes('por') && st.includes('cob')) return 'Por Cobrar';
+        return s;
+      };
+
+      const normalized = merged.map((o) => ({ ...o, status: normalizeStatus(o.status) }));
+
       console.log('🔍 [DeliveryOrdersPage] Merge final:', {
         lunchCount: latestLunch.length,
         breakfastCount: latestBreakfast.length,
@@ -89,7 +98,7 @@ const DeliveryOrdersPage = () => {
         totalCount: merged.length
       });
 
-      setOrders(merged);
+      setOrders(normalized);
       setIsLoading(false);
     };
 

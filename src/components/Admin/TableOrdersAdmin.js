@@ -1515,6 +1515,7 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
                         const paymentDisplay = paymentMethodsOnly(order);
 
                         const statusText = (order.status || '').toString().toLowerCase();
+                        const isDriverPending = statusText.includes('porcob') || statusText.includes('por cobr') || statusText.includes('por_cobrar');
                         const isPending = statusText.includes('pend');
                         const isPreparing = statusText.includes('prepar');
                         const isOnTheWay = statusText.includes('camino') || statusText.includes('en camino');
@@ -1522,6 +1523,7 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
                         const isCancelled = statusText.includes('cancel');
 
                         const statusClass = (() => {
+                          if (isDriverPending) return 'bg-pink-200 text-pink-800';
                           if (isPending) return 'bg-yellow-500 text-black';
                           if (isPreparing) return 'bg-purple-500 text-white';
                           if (isOnTheWay) return 'bg-blue-500 text-white';
@@ -1574,6 +1576,7 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
                                   )}
                               >
                                 <option value="Pendiente">Pendiente</option>
+                                <option value="Por Cobrar">Por Cobrar</option>
                                 <option value="Preparando">Preparando</option>
                                 <option value="Completada">Completada</option>
                                 <option value="Cancelada">Cancelada</option>
@@ -1692,6 +1695,8 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
                                 value={order.status || 'Pendiente'}
                                 onChange={(e) => handleStatusChange(order.id, e.target.value)}
                                 className={classNames('block w-full sm:inline-block px-2 py-1 rounded-full text-xs font-semibold appearance-none cursor-pointer', (() => {
+                                  const st = (order.status || '').toString().toLowerCase();
+                                  if (st.includes('porcob') || st.includes('por cobr') || st.includes('por_cobrar')) return 'bg-pink-200 text-pink-800';
                                   if (isPending) return 'bg-yellow-500 text-black';
                                   if (isPreparing) return 'bg-purple-500 text-white';
                                   if (isOnTheWay) return 'bg-blue-500 text-white';
@@ -1701,6 +1706,7 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
                                 })())}
                               >
                                 <option value="Pendiente">Pendiente</option>
+                                <option value="Por Cobrar">Por Cobrar</option>
                                 <option value="Preparando">Preparando</option>
                                 <option value="Completada">Completada</option>
                                 <option value="Cancelada">Cancelada</option>
