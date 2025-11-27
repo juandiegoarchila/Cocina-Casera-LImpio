@@ -2,13 +2,14 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import QRCode from 'qrcode';
 import { db } from '../../config/firebase';
-import { collection, onSnapshot, addDoc, serverTimestamp, updateDoc, doc } from 'firebase/firestore';
-import { CurrencyDollarIcon, PlusCircleIcon, PencilIcon, XCircleIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
+import { collection, onSnapshot, addDoc, serverTimestamp, updateDoc, doc, query, where, orderBy } from 'firebase/firestore';
+import { CurrencyDollarIcon, PlusCircleIcon, PencilIcon, XCircleIcon, InformationCircleIcon, HomeIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '../Auth/AuthProvider';
 import { calculateMealPrice } from '../../utils/MealCalculations';
 import { calculateBreakfastPrice } from '../../utils/BreakfastLogic';
 import OrderSummary from '../OrderSummary';
 import BreakfastOrderSummary from '../BreakfastOrderSummary';
+import PaymentSplitEditor from '../common/PaymentSplitEditor';
 
 const formatPrice = (v) => new Intl.NumberFormat('es-CO',{ style:'currency', currency:'COP', maximumFractionDigits:0 }).format(v||0);
 
@@ -22,6 +23,8 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
   const [posTableNumber, setPosTableNumber] = useState('');
   const [posPaymentMethod, setPosPaymentMethod] = useState('efectivo');
   const [posCashAmount, setPosCashAmount] = useState('');
+  const [payments, setPayments] = useState([]); // Nuevo estado para pagos múltiples
+  const [isSplitPaymentMode, setIsSplitPaymentMode] = useState(false); // Nuevo estado para alternar modos
   const [posCalculatedChange, setPosCalculatedChange] = useState(0);
   const [posNote, setPosNote] = useState('');
   const [posStage, setPosStage] = useState('select'); // 'select' | 'pay' | 'completed'
@@ -53,6 +56,10 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [showOrderDetailModal, setShowOrderDetailModal] = useState(false);
   const [selectedOrderDetail, setSelectedOrderDetail] = useState(null);
+
+  // Mesas de la DB
+  const [tables, setTables] = useState([]);
+  const [showTableSelector, setShowTableSelector] = useState(false);
 
   // Helper para obtener nombre del mesero desde email
   const getMeseroName = (email) => {
@@ -89,14 +96,27 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
     });
     return () => unsub && unsub();
   },[]);
+
+  // Suscripción a mesas
+  useEffect(() => {
+    const q = query(collection(db, 'tables'), orderBy('name', 'asc'));
+    const unsub = onSnapshot(q, snap => {
+      setTables(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    return () => unsub();
+  }, []);
   
   // Cargar órdenes pendientes
   useEffect(() => {
-    const unsubTable = onSnapshot(collection(db, 'tableOrders'), (snapshot) => {
+    // Filtrar solo órdenes pendientes para mejorar rendimiento y reactividad
+    const qTable = query(collection(db, 'tableOrders'), where('status', '==', 'Pendiente'));
+    const unsubTable = onSnapshot(qTable, (snapshot) => {
       const orders = snapshot.docs.map(d => ({ id: d.id, ...d.data(), orderType: 'mesa' }));
       setTableOrders(orders);
     });
-    const unsubBreakfast = onSnapshot(collection(db, 'breakfastOrders'), (snapshot) => {
+    
+    const qBreakfast = query(collection(db, 'breakfastOrders'), where('status', '==', 'Pendiente'));
+    const unsubBreakfast = onSnapshot(qBreakfast, (snapshot) => {
       const orders = snapshot.docs.map(d => ({ id: d.id, ...d.data(), orderType: 'desayuno' }));
       setBreakfastOrders(orders);
     });
@@ -164,6 +184,7 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
   const resetCart = () => { 
     setCartItems([]); 
     setPosCashAmount(''); 
+    setPayments([]); // Resetear pagos
     setPosCalculatedChange(0); 
     setPosNote(''); 
     setPosStage('select'); 
@@ -249,6 +270,22 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
             });
           });
         }
+      });
+    }
+    
+    // Soporte para pedidos rápidos: solo usar quickItems si NO se han expandido a breakfasts/meals estructurados
+    const hasStructured = Array.isArray(order.breakfasts) && order.breakfasts.length > 0 || Array.isArray(order.meals) && order.meals.length > 0;
+    if (!hasStructured && order.quickMode && !order.expanded && Array.isArray(order.quickItems) && order.quickItems.length) {
+      order.quickItems.forEach((qi, qIdx) => {
+        items.push({
+          id: `quick-${order.id}-${qIdx}`,
+          refId: qi.refId || qi.id || `qi-${qIdx}`,
+          name: qi.name,
+          price: Number(qi.price || qi.unitPrice || 0),
+          quantity: Number(qi.quantity || 1),
+          type: qi.type || null,
+          category: qi.category || null,
+        });
       });
     }
     
@@ -372,7 +409,85 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
       return setError('Ingrese un número de mesa válido o escriba "llevar"');
     }
     
-    if (posStage==='select'){ setPosStage('pay'); return; }
+    if (posStage==='select'){ 
+        setIsSplitPaymentMode(false);
+        setPosPaymentMethod('efectivo');
+        setPosCashAmount('');
+        setPayments([]);
+        setPosStage('pay'); 
+        return; 
+    }
+
+    // Calcular totales y validar pagos
+    let currentPayments = [];
+    if (isSplitPaymentMode) {
+        currentPayments = payments.length > 0 ? payments : [{ method: 'Efectivo', amount: cartTotal }];
+    } else {
+        // Modo simple
+        const amount = (posPaymentMethod === 'efectivo' && posCashAmount) 
+            ? parseFloat(posCashAmount) 
+            : cartTotal;
+        
+        currentPayments = [{ 
+            method: posPaymentMethod.charAt(0).toUpperCase() + posPaymentMethod.slice(1), 
+            amount: amount || 0
+        }];
+    }
+
+    const totalTendered = currentPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+    const change = totalTendered - cartTotal;
+    
+    if (change < 0) {
+        return setError(`Faltan ${formatPrice(Math.abs(change))} por pagar`);
+    }
+
+    // Normalizar pagos para DB (la suma debe ser igual al total)
+    let dbPayments = currentPayments.map(p => ({ ...p, amount: Number(p.amount) || 0 }));
+    let remainingChange = change;
+    
+    if (remainingChange > 0) {
+        // Intentar deducir cambio de Efectivo primero
+        const cashIdx = dbPayments.findIndex(p => p.method.toLowerCase() === 'efectivo');
+        if (cashIdx >= 0) {
+            if (dbPayments[cashIdx].amount >= remainingChange) {
+                dbPayments[cashIdx].amount -= remainingChange;
+                remainingChange = 0;
+            } else {
+                remainingChange -= dbPayments[cashIdx].amount;
+                dbPayments[cashIdx].amount = 0; 
+            }
+        }
+        
+        // Si aún hay cambio por deducir, hacerlo de otros métodos (último a primero)
+        if (remainingChange > 0) {
+            for (let i = dbPayments.length - 1; i >= 0; i--) {
+                if (dbPayments[i].amount >= remainingChange) {
+                    dbPayments[i].amount -= remainingChange;
+                    remainingChange = 0;
+                    break;
+                } else {
+                    remainingChange -= dbPayments[i].amount;
+                    dbPayments[i].amount = 0;
+                }
+            }
+        }
+    }
+    
+    // Filtrar montos cero
+    dbPayments = dbPayments.filter(p => p.amount > 0);
+
+    // Determinar método principal
+    const sorted = [...dbPayments].sort((a,b) => b.amount - a.amount);
+    const primaryMethod = sorted[0]?.method?.toLowerCase() || 'efectivo';
+    const isMixed = dbPayments.length > 1;
+    const finalMethodName = isMixed ? 'mixto' : primaryMethod;
+
+    // Efectivo Recibido (Suma de pagos en efectivo originales)
+    const cashReceived = currentPayments
+        .filter(p => p.method.toLowerCase() === 'efectivo')
+        .reduce((sum, p) => sum + (Number(p.amount)||0), 0);
+    const changeGiven = change;
+
     try {
       // Si hay una orden cargada, actualizarla en lugar de crear una nueva
       if (loadedOrder) {
@@ -381,11 +496,11 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
         // Actualizar paymentMethod en meals o breakfasts
         const updatedMeals = (loadedOrder.meals || []).map(meal => ({
           ...meal,
-          payment: { name: posPaymentMethod.charAt(0).toUpperCase() + posPaymentMethod.slice(1) }
+          payment: { name: finalMethodName.charAt(0).toUpperCase() + finalMethodName.slice(1) }
         }));
         const updatedBreakfasts = (loadedOrder.breakfasts || []).map(breakfast => ({
           ...breakfast,
-          payment: { name: posPaymentMethod.charAt(0).toUpperCase() + posPaymentMethod.slice(1) }
+          payment: { name: finalMethodName.charAt(0).toUpperCase() + finalMethodName.slice(1) }
         }));
         
         const updateData = {
@@ -393,13 +508,23 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
           status: 'Completada',
           updatedAt: serverTimestamp(),
           paymentDate: serverTimestamp(),
-          paymentMethod: posPaymentMethod,
-          payment: posPaymentMethod.charAt(0).toUpperCase() + posPaymentMethod.slice(1), // Agregar campo payment también
+          paymentMethod: finalMethodName,
+          payment: finalMethodName.charAt(0).toUpperCase() + finalMethodName.slice(1),
+          payments: dbPayments, // Guardar array de pagos
           paymentAmount: cartTotal,
           total: cartTotal,
           paymentNote: posNote || '',
-          cashReceived: posPaymentMethod === 'efectivo' && posCashAmount ? (parseFloat(posCashAmount)||0) : null,
-          changeGiven: posPaymentMethod === 'efectivo' ? posCalculatedChange : null,
+          cashReceived: cashReceived > 0 ? cashReceived : null,
+          changeGiven: changeGiven > 0 ? changeGiven : null,
+          // Asegurar que los items se guarden también al actualizar una orden cargada
+          items: cartItems.map(ci=>({
+            id: ci.refId,
+            name: ci.name,
+            unitPrice: ci.price,
+            quantity: ci.quantity,
+            type: ci.type || (posItems.find(p=>p.id===ci.refId)?.type) || null,
+            category: ci.category || (posItems.find(p=>p.id===ci.refId)?.category) || null,
+          }))
         };
         
         // Agregar meals o breakfasts actualizados según el tipo de orden
@@ -414,11 +539,11 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
         // Guardar datos de venta completada antes de mostrar confirmación
         setCompletedSaleData({
           total: cartTotal,
-          paymentMethod: posPaymentMethod,
-          // Si es efectivo y no se ingresó monto, asumimos exacto => recibido = total
-          cashReceived: posPaymentMethod === 'efectivo' ? (posCashAmount ? (parseFloat(posCashAmount)||0) : cartTotal) : null,
-          changeGiven: posPaymentMethod === 'efectivo' ? posCalculatedChange : null,
-          changeBreakdown: posPaymentMethod === 'efectivo' ? changeBreakdown : [],
+          paymentMethod: finalMethodName,
+          payments: dbPayments,
+          cashReceived: cashReceived > 0 ? cashReceived : null,
+          changeGiven: changeGiven > 0 ? changeGiven : null,
+          changeBreakdown: changeGiven > 0 ? changeBreakdown : [], // Usar changeBreakdown existente si aplica
           orderId: loadedOrder.id,
           items: cartItems,
           note: posNote,
@@ -429,18 +554,6 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
       }
       
       // Crear nueva venta si no hay orden cargada
-      // Determinar efectivo recibido y cambio antes de construir payload
-      let cashReceived = null;
-      let changeGiven = 0;
-      if (posPaymentMethod==='efectivo'){
-        if (posCashAmount){
-          cashReceived = parseFloat(posCashAmount)||0;
-          changeGiven = posCalculatedChange;
-        } else {
-          cashReceived = cartTotal; // exacto implícito
-          changeGiven = 0;
-        }
-      }
       // Inferir servicio (mesa/llevar) y tipo de comida (almuerzo/desayuno)
       const tableNum = (posTableNumber||'').trim();
       const isLlevarCheck = tableNum.toLowerCase() === 'llevar';
@@ -461,7 +574,8 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         paymentDate: serverTimestamp(),
-        paymentMethod: posPaymentMethod,
+        paymentMethod: finalMethodName,
+        payments: dbPayments, // Guardar array de pagos
         paymentAmount: cartTotal,
         total: cartTotal,
         paymentNote: posNote || '',
@@ -479,10 +593,10 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
       } else {
         payload.tableNumber = tableNum;
       }
-      if (posPaymentMethod==='efectivo'){
-        payload.cashReceived = cashReceived;
-        payload.changeGiven = changeGiven;
-      }
+      
+      if (cashReceived > 0) payload.cashReceived = cashReceived;
+      if (changeGiven > 0) payload.changeGiven = changeGiven;
+
       const collectionName = (inferredMeal==='desayuno') ? 'breakfastOrders' : 'tableOrders';
       payload.__collection = collectionName; // pista para normalizadores
       const docRef = await addDoc(collection(db, collectionName), payload);
@@ -494,10 +608,11 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
           items: cartItems,
             // Totales
           total: cartTotal,
-          paymentMethod: posPaymentMethod,
-          cashReceived,
-          changeGiven,
-          changeBreakdown,
+          paymentMethod: finalMethodName,
+          payments: dbPayments,
+          cashReceived: cashReceived > 0 ? cashReceived : null,
+          changeGiven: changeGiven > 0 ? changeGiven : null,
+          changeBreakdown: changeGiven > 0 ? changeBreakdown : [],
           note: posNote,
           orderType: payload.orderType,
           orderTypeNormalized: payload.orderTypeNormalized,
@@ -509,10 +624,11 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
       // Guardar datos de venta completada antes de mostrar confirmación
       setCompletedSaleData({
         total: cartTotal,
-        paymentMethod: posPaymentMethod,
-        cashReceived,
-        changeGiven,
-        changeBreakdown: posPaymentMethod === 'efectivo' ? changeBreakdown : [],
+        paymentMethod: finalMethodName,
+        payments: dbPayments,
+        cashReceived: cashReceived > 0 ? cashReceived : null,
+        changeGiven: changeGiven > 0 ? changeGiven : null,
+        changeBreakdown: changeGiven > 0 ? changeBreakdown : [],
         orderId: docRef.id,
         items: cartItems,
         note: posNote,
@@ -687,7 +803,7 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
   );
 
   return (
-  <div className="w-full mx-auto px-3 sm:px-6 py-4 lg:py-3 lg:h-[calc(100vh-5rem)] lg:overflow-hidden">
+  <div className="w-full mx-auto px-3 sm:px-6 pb-4 pt-1 lg:pb-3 lg:pt-1 lg:h-[calc(100vh-5rem)] lg:overflow-hidden">
 
   <div className={`grid grid-cols-1 ${posStage==='completed' ? '' : posStage==='pay' ? 'lg:grid-cols-[440px_1fr]' : 'lg:grid-cols-3'} gap-4 items-start h-full`}>
         {/* Catálogo (columna izquierda 2/3) */}
@@ -860,25 +976,25 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
             <div className="flex flex-col h-full">
               <div className="flex-1 overflow-y-auto overflow-x-auto pr-1 custom-scrollbar">
                 {cartItems.length===0 ? (
-                  <div className="text-sm text-gray-400">Vacío</div>
+                  <div className="text-xs text-gray-400 italic p-2">Vacío</div>
                 ) : (
-                  <div className="bg-gray-800/70 rounded-xl border border-gray-700/70 shadow-inner flex flex-col overflow-x-auto">
-                    <div className="sticky top-0 z-10 bg-gray-800/80 backdrop-blur px-2 py-1 flex items-center justify-between border-b border-gray-700/60 min-w-[440px]">
-                      <h2 className="text-lg sm:text-xl font-bold text-white">Detalle del Pedido</h2>
-                      <button onClick={()=>setPosStage('select')} className="text-xs px-2 py-1 rounded bg-emerald-500 hover:bg-emerald-600 text-white font-medium shadow">← Seguir agregando</button>
+                  <div className="bg-gray-800/70 rounded-lg border border-gray-700/70 shadow-inner flex flex-col overflow-x-auto">
+                    <div className="sticky top-0 z-10 bg-gray-800/90 backdrop-blur px-2 py-1.5 flex items-center justify-between border-b border-gray-700/60 min-w-[300px]">
+                      <h2 className="text-sm font-bold text-white uppercase tracking-wide">Detalle del Pedido</h2>
+                      <button onClick={()=>setPosStage('select')} className="text-[10px] px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-medium shadow transition">← Seguir agregando</button>
                     </div>
-                    <div className="divide-y divide-gray-700/60 min-w-[440px]">
+                    <div className="divide-y divide-gray-700/60 min-w-[300px]">
                       {cartItems.map(ci => (
-                        <div key={ci.id} className="flex items-center justify-between p-1.5 text-sm hover:bg-gray-700/40 transition">
-                          <div className="flex-1 mr-2">
-                            <div className="font-semibold text-gray-100 leading-tight truncate">{ci.name}</div>
-                            <div className="text-[11px] text-gray-400">{formatPrice(ci.price)} c/u</div>
+                        <div key={ci.id} className="flex items-center justify-between p-1.5 hover:bg-gray-700/40 transition group">
+                          <div className="flex-1 mr-2 min-w-0">
+                            <div className="font-medium text-gray-100 text-xs leading-tight truncate" title={ci.name}>{ci.name}</div>
+                            <div className="text-[10px] text-gray-400">{formatPrice(ci.price)} c/u</div>
                           </div>
                           <div className="flex items-center gap-0.5">
-                            <button onClick={()=>updateCartItemQuantity(ci.id, ci.quantity-1)} className="w-6 h-6 bg-red-600 hover:bg-red-700 text-white rounded text-[11px] font-bold">-</button>
-                            <input type="number" value={ci.quantity} onChange={(e)=>updateCartItemQuantity(ci.id, Number(e.target.value||0))} className="w-9 px-1 py-0.5 text-center rounded bg-gray-800 text-white text-xs" />
-                            <button onClick={()=>updateCartItemQuantity(ci.id, ci.quantity+1)} className="w-6 h-6 bg-green-600 hover:bg-green-700 text-white rounded text-[11px] font-bold">+</button>
-                            <button onClick={()=>removeCartItem(ci.id)} className="w-6 h-6 bg-red-700 hover:bg-red-800 text-white rounded text-[11px] font-bold">x</button>
+                            <button onClick={()=>updateCartItemQuantity(ci.id, ci.quantity-1)} className="w-5 h-5 flex items-center justify-center bg-red-600/80 hover:bg-red-600 text-white rounded text-[10px] transition">-</button>
+                            <input type="number" value={ci.quantity} onChange={(e)=>updateCartItemQuantity(ci.id, Number(e.target.value||0))} className="w-7 px-0.5 py-0.5 text-center rounded bg-gray-800 text-white text-xs font-medium border border-gray-600" />
+                            <button onClick={()=>updateCartItemQuantity(ci.id, ci.quantity+1)} className="w-5 h-5 flex items-center justify-center bg-green-600/80 hover:bg-green-600 text-white rounded text-[10px] transition">+</button>
+                            <button onClick={()=>removeCartItem(ci.id)} className="w-5 h-5 flex items-center justify-center bg-gray-600 hover:bg-red-500 text-white rounded text-[10px] ml-1 transition opacity-60 group-hover:opacity-100">x</button>
                           </div>
                         </div>
                       ))}
@@ -895,45 +1011,47 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
         <div className={`${theme==='dark' ? 'bg-gray-800':'bg-white'} rounded-xl shadow-lg flex flex-col ${posStage==='completed' ? 'w-full max-w-2xl mx-auto p-6 lg:p-8 h-full min-h-0' : 'p-3 lg:sticky lg:top-0 self-start h-full lg:h-full min-h-0'} ${posStage==='pay' ? 'min-w-0' : ''}`}>
           {posStage==='select' ? (
             <>
-              <h3 className="text-lg font-semibold text-gray-100 mb-3">Resumen</h3>
-              <div className="flex-1 min-h-0 overflow-y-auto space-y-2 mb-3 pr-1 custom-scrollbar">
-                {cartItems.length===0 && <div className="text-sm text-gray-400">Añade artículos con un click.</div>}
+              <h3 className="text-sm font-bold text-gray-100 mb-2 uppercase tracking-wide">Resumen</h3>
+              <div className="flex-1 min-h-0 overflow-y-auto space-y-1 mb-2 pr-1 custom-scrollbar">
+                {cartItems.length===0 && <div className="text-xs text-gray-400 italic">Carrito vacío</div>}
                 {cartItems.map(ci => (
-                  <div key={ci.id} className="flex items-center justify-between text-sm bg-gray-700 rounded p-2">
-                    <div className="flex-1 mr-2">
-                      <div className="font-medium text-gray-100 truncate">{ci.name}</div>
-                      <div className="text-[11px] text-gray-400">{formatPrice(ci.price)} c/u</div>
+                  <div key={ci.id} className="flex items-center justify-between bg-gray-700/50 rounded-lg p-1.5 border border-gray-600/30">
+                    <div className="flex-1 mr-2 min-w-0">
+                      <div className="font-medium text-gray-100 text-xs truncate" title={ci.name}>{ci.name}</div>
+                      <div className="text-[10px] text-gray-400">{formatPrice(ci.price)} c/u</div>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <button onClick={()=>updateCartItemQuantity(ci.id, ci.quantity-1)} className="w-6 h-6 bg-red-600 text-white rounded text-xs">-</button>
-                      <input type="number" value={ci.quantity} onChange={(e)=>updateCartItemQuantity(ci.id, Number(e.target.value||0))} className="w-10 px-1 py-0.5 text-center rounded bg-gray-800 text-white text-xs" />
-                      <button onClick={()=>updateCartItemQuantity(ci.id, ci.quantity+1)} className="w-6 h-6 bg-green-600 text-white rounded text-xs">+</button>
-                      <button onClick={()=>removeCartItem(ci.id)} className="w-6 h-6 bg-red-700 text-white rounded text-xs">x</button>
+                    <div className="flex items-center gap-0.5">
+                      <button onClick={()=>updateCartItemQuantity(ci.id, ci.quantity-1)} className="w-5 h-5 flex items-center justify-center bg-red-600/80 hover:bg-red-600 text-white rounded text-[10px] transition">-</button>
+                      <input type="number" value={ci.quantity} onChange={(e)=>updateCartItemQuantity(ci.id, Number(e.target.value||0))} className="w-7 px-0.5 py-0.5 text-center rounded bg-gray-800 text-white text-xs font-medium border border-gray-600" />
+                      <button onClick={()=>updateCartItemQuantity(ci.id, ci.quantity+1)} className="w-5 h-5 flex items-center justify-center bg-green-600/80 hover:bg-green-600 text-white rounded text-[10px] transition">+</button>
+                      <button onClick={()=>removeCartItem(ci.id)} className="w-5 h-5 flex items-center justify-center bg-gray-600 hover:bg-red-500 text-white rounded text-[10px] ml-1 transition">x</button>
                     </div>
                   </div>
                 ))}
               </div>
               <div className="mb-3">
-                <label className="block text-gray-400 mb-1 text-xs">
+                <label className="block text-gray-400 mb-2 text-xs font-medium">
                   Mesa o llevar <span className="text-red-400">*</span>
-                  {!isTableNumberValid && posTableNumber && (
-                    <span className="text-red-400 text-[10px] ml-1">
-                      (Ingrese número de mesa o "llevar")
-                    </span>
-                  )}
                 </label>
-                <input
-                  value={posTableNumber}
-                  onChange={(e)=>setPosTableNumber(e.target.value)}
-                  placeholder='Número de mesa o "llevar"'
-                  className={`w-full px-2 py-2 rounded text-xs transition-colors ${
-                    isTableNumberValid 
-                      ? 'bg-gray-700 text-white border-2 border-green-500/50' 
-                      : posTableNumber 
-                        ? 'bg-red-900/30 text-white border-2 border-red-500/70' 
-                        : 'bg-gray-700 text-white border-2 border-gray-600'
+                {/* Botón para abrir selector visual */}
+                <button
+                  onClick={() => setShowTableSelector(true)}
+                  className={`w-full px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 border-2 flex items-center justify-between ${
+                    posTableNumber
+                      ? 'bg-green-600/20 border-green-500/60 text-green-300'
+                      : 'bg-gray-700/50 border-gray-600 text-gray-300 hover:border-gray-500'
                   }`}
-                />
+                >
+                  <span className="flex items-center gap-2">
+                    {posTableNumber === 'llevar' ? (
+                      <HomeIcon className="w-4 h-4" />
+                    ) : (
+                      <span className="text-xs">🪑</span>
+                    )}
+                    {posTableNumber || 'Seleccionar mesa o llevar'}
+                  </span>
+                  <span className="text-xs opacity-60">▼</span>
+                </button>
               </div>
               <div className="flex items-center justify-between mb-4 border-t border-gray-700 pt-4">
                 <div className="text-base text-gray-300 font-semibold tracking-wide">TOTAL</div>
@@ -948,70 +1066,166 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
             // Panel de Pago
             <>
               <div className="flex-1 min-h-0 overflow-y-auto pr-1 custom-scrollbar">
-                <div className="mb-4 text-center">
-                  <div className="text-[11px] uppercase tracking-wide text-gray-400 font-medium">Total a pagar</div>
-                  <div className="text-3xl font-extrabold text-green-400 leading-tight">{formatPrice(cartTotal)}</div>
-                  {posPaymentMethod==='efectivo' && !posCashAmount && (
-                    <div className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-600/15 border border-emerald-500/30 text-[10px] font-medium text-emerald-300">
-                      Exacto
-                    </div>
-                  )}
-                </div>
-                <div className="mb-4">
-                  <label className="block text-gray-400 mb-2 text-xs font-medium">Método de Pago</label>
-                  <div className="grid grid-cols-3 gap-2 mb-3">
-                    {['efectivo','nequi','daviplata'].map(m => (
-                      <button key={m} onClick={()=>setPosPaymentMethod(m)} className={`py-2 text-xs rounded border-2 transition ${posPaymentMethod===m ? 'border-blue-500 bg-blue-600/30 text-blue-300 shadow':'border-gray-600 text-gray-300 hover:bg-gray-700'}`}>{m}</button>
-                    ))}
+                <div className="mb-3 bg-gray-700/50 p-3 rounded-xl border border-gray-600 relative">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-gray-400 text-xs">Total a pagar</span>
+                    <button 
+                        onClick={() => setIsSplitPaymentMode(!isSplitPaymentMode)}
+                        className="text-[10px] bg-blue-600/30 hover:bg-blue-600/50 text-blue-200 px-2 py-0.5 rounded border border-blue-500/30 transition"
+                    >
+                        {isSplitPaymentMode ? 'Modo Simple' : 'Dividir pago'}
+                    </button>
                   </div>
-                  {posPaymentMethod==='efectivo' && (
-                    <div className="mb-4">
-                      {quickCashSuggestions.length>0 && (
-                        <>
-                          <label className="block text-gray-400 mb-1 text-xs">Sugerencias</label>
-                          <div className={`grid ${quickCashSuggestions.length>4 ? 'grid-cols-3' : 'grid-cols-2'} gap-2 mb-2`}>
-                            {quickCashSuggestions.map((b,idx) => (
-                              <button
-                                key={b}
-                                onClick={()=>setPosCashAmount(String(b))}
-                                className={`py-1.5 rounded font-medium text-[11px] transition border whitespace-nowrap
-                                  ${idx===0
-                                    ? 'bg-green-500/90 hover:bg-green-500 text-white shadow border-green-400'
-                                    : 'bg-green-600 hover:bg-green-700 text-white border-green-500/40'}`}
-                              >{formatPrice(b)}</button>
-                            ))}
+                  <div className="text-2xl font-extrabold text-green-400 leading-tight text-center mb-1">{formatPrice(cartTotal)}</div>
+                  
+                  {/* Resumen de pago (Change/Restante) */}
+                  {(() => {
+                    let totalPaid = 0;
+                    if (isSplitPaymentMode) {
+                        totalPaid = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+                    } else {
+                        totalPaid = (posPaymentMethod === 'efectivo' && posCashAmount) ? parseFloat(posCashAmount) : (posPaymentMethod !== 'efectivo' ? cartTotal : 0);
+                    }
+                    
+                    const remaining = cartTotal - totalPaid;
+                    const isOverpaid = remaining < 0;
+                    
+                    if (totalPaid > 0) {
+                        return (
+                          <>
+                            <div className="border-t border-gray-600 my-1"></div>
+                            <div className="flex justify-between items-center">
+                              <span className={isOverpaid ? "text-green-400 text-xs" : "text-red-400 text-xs"}>
+                                {isOverpaid ? "Vueltos" : "Restante"}
+                              </span>
+                              <span className={`text-xl font-bold ${isOverpaid ? "text-green-400" : "text-red-400"}`}>
+                                {formatPrice(Math.abs(remaining))}
+                              </span>
+                            </div>
+                          </>
+                        );
+                    }
+                    return null;
+                  })()}
+                </div>
+                
+                <div className="mb-3">
+                  {isSplitPaymentMode ? (
+                      <PaymentSplitEditor
+                        theme={theme}
+                        total={cartTotal}
+                        value={payments}
+                        onChange={setPayments}
+                        catalogMethods={['Efectivo', 'Nequi', 'Daviplata']}
+                      />
+                  ) : (
+                      // Modo Simple
+                      <div className="space-y-2">
+                          {/* Selector de Método */}
+                          <div className="grid grid-cols-3 gap-2">
+                              {['efectivo', 'nequi', 'daviplata'].map(m => (
+                                  <button
+                                      key={m}
+                                      onClick={() => { setPosPaymentMethod(m); setPosCashAmount(''); }}
+                                      className={`py-2 rounded-lg border flex flex-col items-center justify-center transition ${
+                                          posPaymentMethod === m 
+                                          ? 'bg-blue-600 border-blue-500 text-white shadow-md scale-105' 
+                                          : 'bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600'
+                                      }`}
+                                  >
+                                      <span className="capitalize font-bold text-xs">{m}</span>
+                                  </button>
+                              ))}
                           </div>
-                        </>
-                      )}
-                      <input type="number" placeholder="Monto recibido" value={posCashAmount} onChange={(e)=>setPosCashAmount(e.target.value)} className="w-full px-2 py-2 rounded bg-gray-700 text-white text-xs"/>
-                      {posCashAmount && (
-                        <div className={`mt-1 text-xs ${posCalculatedChange>=0?'text-green-400':'text-red-400'}`}>
-                          Vueltos: {formatPrice(posCalculatedChange)}
-                        </div>
-                      )}
-                      {changeBreakdown.length>0 && (
-                        <div className="mt-2 text-[10px] text-gray-400 flex flex-wrap items-center gap-1">
-                          <span className="text-gray-500">Cambio sugerido:</span>
-                          {changeBreakdown.map(p => (
-                            <span key={p.d} className="px-1.5 py-0.5 rounded bg-gray-700/60 text-gray-200 border border-gray-600/60 flex items-center gap-0.5">
-                              <span className="text-[10px]">{p.isCoin ? '🪙' : '💵'}</span>
-                              {p.q}x {formatPrice(p.d)}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+
+                          {/* Opciones de Efectivo */}
+                          {posPaymentMethod === 'efectivo' && (
+                              <div className="bg-gray-800/50 rounded-lg p-2 border border-gray-700 animate-fadeIn">
+                                  <div className="text-[10px] text-gray-400 mb-1">Sugerencias</div>
+                                  <div className="grid grid-cols-3 gap-1.5 mb-2">
+                                      <button 
+                                          onClick={() => setPosCashAmount(cartTotal.toString())}
+                                          className="py-1.5 px-1 bg-gray-700 hover:bg-gray-600 rounded text-[10px] font-medium text-green-300 border border-green-500/30"
+                                      >
+                                          Exacto
+                                      </button>
+                                      {quickCashSuggestions.map(amt => (
+                                          <button
+                                              key={amt}
+                                              onClick={() => setPosCashAmount(amt.toString())}
+                                              className="py-1.5 px-1 bg-gray-700 hover:bg-gray-600 rounded text-[10px] font-medium text-white border border-gray-600"
+                                          >
+                                              {formatPrice(amt)}
+                                          </button>
+                                      ))}
+                                  </div>
+                                  
+                                  <div>
+                                      <label className="block text-[10px] text-gray-400 mb-1">Monto recibido</label>
+                                      <div className="relative">
+                                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
+                                          <input 
+                                              type="number" 
+                                              value={posCashAmount} 
+                                              onChange={e => setPosCashAmount(e.target.value)}
+                                              placeholder="0"
+                                              className="w-full pl-5 pr-2 py-1.5 rounded-lg bg-gray-900 border border-gray-600 text-white text-sm font-bold focus:ring-1 focus:ring-blue-500 focus:border-transparent outline-none"
+                                          />
+                                      </div>
+                                  </div>
+                              </div>
+                          )}
+                      </div>
                   )}
-                  <div className="mb-4">
-                    <label className="block text-gray-400 mb-1 text-xs">Nota</label>
-                    <input value={posNote} onChange={e=>setPosNote(e.target.value)} className="w-full px-2 py-2 rounded bg-gray-700 text-white text-xs"/>
+
+                  <div className="mt-3">
+                    <label className="block text-gray-400 mb-1 text-[10px]">Nota (opcional)</label>
+                    <input value={posNote} onChange={e=>setPosNote(e.target.value)} className="w-full px-2 py-1.5 rounded-lg bg-gray-700 border border-gray-600 text-white text-xs focus:border-blue-500 outline-none"/>
                   </div>
                 </div>
               </div>
               <div className="mt-auto pt-2 border-t border-gray-700">
-                <div className="flex gap-2 pt-4">
-                  <button onClick={()=>setPosStage('select')} className="flex-1 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded text-sm">Volver</button>
-                  <button onClick={handleProcessPosSale} className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-semibold disabled:bg-gray-500 disabled:cursor-not-allowed" disabled={cartItems.length===0 || !isTableNumberValid}>Cobrar</button>
+                <div className="flex gap-2 pt-2">
+                  <button onClick={()=>setPosStage('select')} className="flex-1 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg text-xs font-medium transition">Volver</button>
+                  
+                  {(() => {
+                      let totalPaid = 0;
+                      if (isSplitPaymentMode) {
+                          totalPaid = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+                      } else {
+                          totalPaid = (posPaymentMethod === 'efectivo' && posCashAmount) ? parseFloat(posCashAmount) : (posPaymentMethod !== 'efectivo' ? cartTotal : 0);
+                      }
+                      
+                      const remaining = cartTotal - totalPaid;
+                      
+                      // En modo simple, si es Nequi/Daviplata, asumimos pago completo al dar click
+                      // Si es efectivo, validamos monto
+                      const canPay = isSplitPaymentMode 
+                          ? totalPaid > 0 
+                          : (posPaymentMethod !== 'efectivo' || (posCashAmount && parseFloat(posCashAmount) > 0));
+
+                      if (remaining > 0 && canPay) {
+                          return (
+                              <button 
+                                onClick={() => handleProcessPosSale(true)} 
+                                className="flex-1 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg text-xs font-bold shadow hover:shadow-md transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                disabled={!canPay}
+                              >
+                                Abonar {formatPrice(totalPaid)}
+                              </button>
+                          );
+                      } else {
+                          return (
+                              <button 
+                                onClick={() => handleProcessPosSale(false)} 
+                                className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow hover:shadow-md transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                disabled={!canPay && posPaymentMethod === 'efectivo'}
+                              >
+                                Cobrar Total
+                              </button>
+                          );
+                      }
+                  })()}
                 </div>
               </div>
             </>
@@ -1020,26 +1234,26 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
             <>
               <div className="flex-1 overflow-y-auto custom-scrollbar">
                 {/* Badge de confirmación */}
-                <div className="text-center mb-4">
-                  <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-600/20 border-2 border-green-500/50 rounded-full mb-2">
-                    <svg className="w-4 h-4 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <div className="text-center mb-2">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-green-600/20 border border-green-500/50 rounded-full mb-1">
+                    <svg className="w-3 h-3 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
-                    <span className="text-sm font-bold text-green-400">¡Venta Completada!</span>
+                    <span className="text-xs font-bold text-green-400">¡Venta Completada!</span>
                   </div>
                 </div>
                   
                 {/* Total cobrado */}
-                <div className="text-center mb-4">
-                  <div className="text-sm uppercase tracking-wider text-gray-400 mb-2 font-medium">TOTAL COBRADO</div>
-                  <div className="text-3xl lg:text-4xl font-extrabold text-green-400 mb-2 leading-tight">{formatPrice(completedSaleData?.total || 0)}</div>
-                  <div className="text-xs text-gray-300 mb-2">
+                <div className="text-center mb-3">
+                  <div className="text-[10px] uppercase tracking-wider text-gray-400 mb-1 font-medium">TOTAL COBRADO</div>
+                  <div className="text-2xl font-extrabold text-green-400 mb-1 leading-tight">{formatPrice(completedSaleData?.total || 0)}</div>
+                  <div className="text-[10px] text-gray-300 mb-1">
                     Pagado Con {completedSaleData?.paymentMethod === 'efectivo' ? 'Efectivo' : completedSaleData?.paymentMethod === 'nequi' ? 'Nequi' : 'Daviplata'}
                   </div>
                   {completedSaleData?.paymentMethod === 'efectivo' && completedSaleData?.cashReceived != null && (
-                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-blue-700/30 border border-blue-500/50">
-                      <span className="text-base">💵</span>
-                      <span className="text-xs font-semibold text-blue-200">
+                    <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-700/30 border border-blue-500/50">
+                      <span className="text-sm">💵</span>
+                      <span className="text-[10px] font-semibold text-blue-200">
                         Recibido: {formatPrice(completedSaleData.cashReceived)}
                       </span>
                     </div>
@@ -1050,30 +1264,30 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
                 {completedSaleData?.paymentMethod === 'efectivo' && (
                   completedSaleData?.changeGiven > 0 ? (
                     <>
-                    <div className="mb-3 bg-amber-900/30 border border-amber-500/40 rounded-xl p-2">
-                      <div className="flex items-center justify-center gap-1 mb-1">
-                        <span className="text-base">🪙</span>
-                        <span className="text-xs font-semibold text-amber-300">Vueltas a entregar</span>
+                    <div className="mb-2 bg-amber-900/30 border border-amber-500/40 rounded-lg p-2">
+                      <div className="flex items-center justify-center gap-1 mb-0.5">
+                        <span className="text-sm">🪙</span>
+                        <span className="text-[10px] font-semibold text-amber-300">Vueltas a entregar</span>
                       </div>
-                      <div className="text-xl lg:text-2xl font-bold text-amber-300 text-center">
+                      <div className="text-xl font-bold text-amber-300 text-center">
                         {formatPrice(completedSaleData.changeGiven)}
                       </div>
                     </div>
                     {/* Desglose sugerido en tarjeta aparte (tono diferente) */}
                     {completedSaleData?.changeBreakdown?.length > 0 && (
-                      <div className="mb-4 bg-slate-900/50 border border-slate-700 rounded-2xl p-3">
-                        <div className="flex items-center justify-center gap-1.5 mb-2">
-                          <span className="text-base">💵</span>
-                          <span className="text-xs font-medium text-gray-200">Desglose sugerido:</span>
+                      <div className="mb-2 bg-slate-900/50 border border-slate-700 rounded-xl p-2">
+                        <div className="flex items-center justify-center gap-1 mb-1.5">
+                          <span className="text-sm">💵</span>
+                          <span className="text-[10px] font-medium text-gray-200">Desglose sugerido:</span>
                         </div>
-                        <div className="space-y-2">
+                        <div className="space-y-1">
                           {completedSaleData.changeBreakdown.map(p => (
-                            <div key={p.d} className="flex items-center justify-between bg-slate-800 rounded-xl px-2.5 py-1.5 border border-slate-700">
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm">{p.isCoin ? '🪙' : '💵'}</span>
-                                <span className="text-xs sm:text-sm font-medium text-gray-200">{p.q}x {formatPrice(p.d)}</span>
+                            <div key={p.d} className="flex items-center justify-between bg-slate-800 rounded-lg px-2 py-1 border border-slate-700">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs">{p.isCoin ? '🪙' : '💵'}</span>
+                                <span className="text-[10px] sm:text-xs font-medium text-gray-200">{p.q}x {formatPrice(p.d)}</span>
                               </div>
-                              <span className="text-xs sm:text-sm font-semibold text-white">{formatPrice(p.q * p.d)}</span>
+                              <span className="text-[10px] sm:text-xs font-semibold text-white">{formatPrice(p.q * p.d)}</span>
                             </div>
                           ))}
                         </div>
@@ -1081,10 +1295,10 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
                     )}
                     </>
                   ) : (
-                    <div className="mb-4 bg-emerald-900/30 border-2 border-emerald-600/50 rounded-2xl p-3">
-                      <div className="flex items-center justify-center gap-2">
-                        <span className="text-lg">✅</span>
-                        <span className="text-sm font-semibold text-emerald-300">Efectivo exacto - Sin vueltas</span>
+                    <div className="mb-3 bg-emerald-900/30 border border-emerald-600/50 rounded-xl p-2">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <span className="text-base">✅</span>
+                        <span className="text-xs font-semibold text-emerald-300">Efectivo exacto - Sin vueltas</span>
                       </div>
                     </div>
                   )
@@ -1092,7 +1306,7 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
               </div>
               
               {/* Botones de acción */}
-              <div className="mt-5 pt-5 border-t border-gray-700">
+              <div className="mt-3 pt-3 border-t border-gray-700">
                 <div className="grid grid-cols-2 gap-2">
                   <button 
                     onClick={() => {
@@ -1112,16 +1326,16 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
                         });
                       }
                     }}
-                    className="py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition shadow-md hover:shadow-lg"
+                    className="py-2 px-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition shadow hover:shadow-md"
                   >
-                    <span className="text-sm">🧾</span>
-                    <span className="leading-none">Reimprimir Recibo</span>
+                    <span className="text-xs">🧾</span>
+                    <span className="leading-none">Reimprimir</span>
                   </button>
                   <button 
                     onClick={resetCart}
-                    className="py-2 px-3 bg-green-600 hover:bg-green-700 text-white rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition shadow-md hover:shadow-lg"
+                    className="py-2 px-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition shadow hover:shadow-md"
                   >
-                    <span className="text-[9px] px-1 py-0.5 rounded bg-blue-500 text-white font-semibold tracking-wide">NEW</span>
+                    <span className="text-[8px] px-1 py-0.5 rounded bg-blue-500 text-white font-semibold tracking-wide">NEW</span>
                     <span className="leading-none">Nueva Venta</span>
                   </button>
                 </div>
@@ -1130,6 +1344,90 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
           )}
         </div>
       </div>
+
+      {/* Modal Selector de Mesas */}
+      {showTableSelector && (
+        <div 
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowTableSelector(false)}
+        >
+          <div 
+            className="bg-gray-800 rounded-2xl shadow-2xl max-w-sm w-full max-h-[75vh] overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-4 py-3 border-b border-gray-700">
+              <div className="flex justify-between items-center">
+                <h3 className="text-base font-bold text-white">Seleccionar Mesa</h3>
+                <button
+                  onClick={() => setShowTableSelector(false)}
+                  className="text-gray-400 hover:text-white transition"
+                >
+                  <XCircleIcon className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            
+            <div className="p-4">
+              {/* Opción Llevar */}
+              <button
+                onClick={() => {
+                  setPosTableNumber('llevar');
+                  setShowTableSelector(false);
+                }}
+                className={`w-full mb-3 px-3 py-2 rounded-lg font-medium transition-all duration-200 flex items-center gap-2 text-sm ${
+                  posTableNumber === 'llevar'
+                    ? 'bg-orange-600/20 border-2 border-orange-500 text-orange-300'
+                    : 'bg-gray-700/50 border-2 border-gray-600 text-gray-300 hover:border-orange-400 hover:bg-orange-600/10'
+                }`}
+              >
+                <HomeIcon className="w-4 h-4" />
+                <span>Para Llevar</span>
+                {posTableNumber === 'llevar' && <span className="ml-auto text-orange-400">✓</span>}
+              </button>
+              
+              {/* Grid de Mesas */}
+              <div className="max-h-52 overflow-y-auto overflow-x-hidden custom-scrollbar">
+                <div className="text-xs text-gray-400 mb-2 uppercase tracking-wide">Mesas Disponibles</div>
+                <div className="grid grid-cols-4 gap-2 pr-2">
+                  {tables.map(table => (
+                    <button
+                      key={table.id}
+                      onClick={() => {
+                        setPosTableNumber(table.name);
+                        setShowTableSelector(false);
+                      }}
+                      className={`aspect-square rounded-lg font-medium transition-all duration-200 flex flex-col items-center justify-center gap-0.5 text-xs ${
+                        posTableNumber === table.name
+                          ? 'bg-blue-600/20 border-2 border-blue-500 text-blue-300 scale-105'
+                          : 'bg-gray-700/50 border-2 border-gray-600 text-gray-300 hover:border-blue-400 hover:bg-blue-600/10 hover:scale-105'
+                      }`}
+                    >
+                      <span className="text-sm">🪑</span>
+                      <span className="text-[10px] leading-tight">{table.name}</span>
+                      {posTableNumber === table.name && <span className="text-blue-400 text-[10px]">✓</span>}
+                    </button>
+                  ))}
+                </div>
+                {tables.length === 0 && (
+                  <div className="text-center text-gray-500 py-4">
+                    <span className="block text-sm">No hay mesas configuradas</span>
+                    <span className="text-xs opacity-70">Contacte al administrador</span>
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            <div className="px-4 py-3 border-t border-gray-700 flex gap-2">
+              <button
+                onClick={() => setShowTableSelector(false)}
+                className="flex-1 py-2 px-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition text-sm"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal Editor */}
       {showItemEditor && (
@@ -1178,7 +1476,7 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
                 {itemImageData && (
                   <div className="space-y-2">
                     <label className="block text-xs text-gray-300">Preview:</label>
-                    <div className="relative w-32 h-32 border-2 border-gray-600 bg-gray-100 overflow-hidden" 
+                    <div 
                          style={itemShape==='hex'?{clipPath:'polygon(25% 5%,75% 5%,95% 50%,75% 95%,25% 95%,5% 50%)'}:{}} 
                          className={`relative w-32 h-32 border-2 border-gray-600 bg-gray-100 overflow-hidden ${itemShape==='circle'?'rounded-full': itemShape==='square'?'rounded-lg': itemShape==='outline'?'rounded-full ring-4 ring-blue-500':''}`}>
                       <img src={itemImageData} alt="preview" className="w-full h-full object-contain" />
@@ -1205,6 +1503,7 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
                     <option value="almuerzo_llevar">📦 Almuerzo llevar</option>
                     <option value="desayuno_mesa">🪑 Desayuno Mesa</option>
                     <option value="desayuno_llevar">📦 Desayuno llevar</option>
+                    <option value="adiccion">➕ Adición/Bebida</option>
                   </select>
                 </div>
                 <div>

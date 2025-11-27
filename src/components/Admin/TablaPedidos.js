@@ -1725,17 +1725,18 @@ const TablaPedidos = ({
               <button
                 onClick={() => setShowProteinModal(true)}
                 className={classNames(
-                  'flex items-center justify-center gap-2 px-2 py-1.5 sm:px-5 sm:py-3 rounded-md text-xs sm:text-sm font-semibold transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 flex-shrink-0',
+                  'flex items-center justify-center gap-1 px-2 py-3 md:px-5 md:py-3 rounded-md text-xs md:text-sm font-semibold transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 flex-shrink-0',
                   theme === 'dark' ? 'bg-gray-600 hover:bg-gray-500 text-white border border-gray-500' : 'bg-gray-200 hover:bg-gray-300 text-gray-900 border border-gray-400'
                 )}
+                aria-label="Agregar proteína del día"
               >
-                <PlusIcon className="w-4 h-4" />
+                <PlusIcon className="w-5 h-5 md:w-4 md:h-4" />
                 <span className="hidden md:inline">Proteínas del Día</span>
               </button>
             )}
             <label
               className={classNames(
-                'relative flex items-center justify-center gap-2 px-2 py-1 sm:px-5 sm:py-3 rounded-md text-xs sm:text-sm font-semibold shadow-sm border transition-colors duration-200 flex-shrink-0 whitespace-nowrap cursor-pointer',
+                'relative flex items-center justify-center gap-2 px-5 py-3 rounded-md text-sm font-semibold shadow-sm border transition-colors duration-200 flex-shrink-0 whitespace-nowrap cursor-pointer min-w-[190px]',
                 theme === 'dark' ? 'bg-gray-700 text-white border-gray-500' : 'bg-gray-200 text-gray-900 border-gray-400'
               )}
               onClick={(e) => {

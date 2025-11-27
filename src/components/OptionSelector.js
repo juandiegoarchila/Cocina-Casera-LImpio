@@ -532,15 +532,74 @@ const OptionSelector = ({
   const isOptionSelected = useCallback(
     (option) => {
       const currentCheckSelection = showConfirmButton ? pendingSelection : selected;
+      
+      // Debug temporal para mesa en almuerzos
+      if (title === 'Mesa') {
+        console.log('[DEBUG Mesa] Comparando:', {
+          optionName: option.name,
+          optionId: option.id,
+          currentCheckSelection: currentCheckSelection,
+          currentCheckSelectionType: typeof currentCheckSelection,
+          isObject: typeof currentCheckSelection === 'object' && currentCheckSelection !== null,
+          objectName: currentCheckSelection?.name,
+          objectId: currentCheckSelection?.id,
+          multiple
+        });
+      }
+      
       if (multiple) {
         return (
           Array.isArray(currentCheckSelection) &&
           currentCheckSelection.some((opt) => opt.id === option.id)
         );
       }
+      
+      // Para el caso especial de mesas donde el valor puede ser un string
+      if (typeof currentCheckSelection === 'string' && option.name) {
+        // Comparar el string directamente con el nombre de la opción
+        if (currentCheckSelection === option.name) {
+          return true;
+        }
+        
+        // Manejar el caso donde el valor guardado es solo el número (ej: "7") 
+        // y la opción es "Mesa 7"
+        if (option.name.toLowerCase().startsWith('mesa ')) {
+          const mesaNumber = option.name.replace(/^mesa\s+/i, '');
+          if (currentCheckSelection === mesaNumber) {
+            return true;
+          }
+        }
+        
+        // Manejar el caso donde el valor guardado es "llevar" 
+        // y la opción es "LLevar"
+        if (currentCheckSelection.toLowerCase() === 'llevar' && 
+            option.name.toLowerCase().includes('llevar')) {
+          return true;
+        }
+      }
+      
+      // Para el caso donde currentCheckSelection es un objeto {id, name}
+      if (typeof currentCheckSelection === 'object' && currentCheckSelection !== null) {
+        // Comparar por ID
+        if (currentCheckSelection.id === option.id) {
+          return true;
+        }
+        // Comparar por nombre
+        if (currentCheckSelection.name === option.name) {
+          return true;
+        }
+        // Comparar número de mesa extraído del nombre
+        if (option.name.toLowerCase().startsWith('mesa ') && currentCheckSelection.name) {
+          const mesaNumber = option.name.replace(/^mesa\s+/i, '');
+          if (currentCheckSelection.name === mesaNumber) {
+            return true;
+          }
+        }
+      }
+      
       return currentCheckSelection?.id === option.id;
     },
-    [pendingSelection, selected, showConfirmButton, multiple]
+    [pendingSelection, selected, showConfirmButton, multiple, title]
   );
 
   // Obtiene la cantidad de una opción

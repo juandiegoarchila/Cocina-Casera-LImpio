@@ -169,7 +169,10 @@ export const calculateBreakfastPrice = (breakfast, userRole, breakfastTypes = []
 
   console.log('🔍 [BreakfastLogic] Precio total adiciones:', additionsPrice);
 
-  const totalPrice = basePrice + additionsPrice;
+  // Precio de bebida (si tiene precio explícito, ej: QuickPOS)
+  const drinkPrice = Number(breakfast?.drink?.price || 0);
+
+  const totalPrice = basePrice + additionsPrice + drinkPrice;
 
   console.log('🔍 [BreakfastLogic] Cálculo final:', {
     type: typeName,
@@ -177,6 +180,7 @@ export const calculateBreakfastPrice = (breakfast, userRole, breakfastTypes = []
     orderType,
     basePrice,
     additionsPrice,
+    drinkPrice,
     totalPrice,
     additions: breakfast.additions,
     source: 'BreakfastLogic.js'

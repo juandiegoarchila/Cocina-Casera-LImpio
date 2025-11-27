@@ -1402,6 +1402,13 @@ const InteraccionesPedidos = ({
                         />
                       );
                     })()}
+                    <div className="mt-4 border-t pt-4">
+                      <div className="text-sm">Fecha: {(() => { try { return (showMealDetails.createdAt?.toDate ? showMealDetails.createdAt.toDate() : new Date(showMealDetails.createdAt)).toLocaleString('es-CO'); } catch(_) { return 'N/A'; } })()}</div>
+                      <div className="text-sm font-bold mt-2">Total: ${Number(showMealDetails.total || 0).toLocaleString('es-CO')}</div>
+                      <div className="text-sm">Pago: {typeof showMealDetails.paymentMethod === 'object' ? showMealDetails.paymentMethod.name : (showMealDetails.paymentMethod || showMealDetails.payment || 'Pendiente')}</div>
+                      {typeof showMealDetails.cashReceived !== 'undefined' && <div className="text-sm">Recibido: ${Number(showMealDetails.cashReceived).toLocaleString('es-CO')}</div>}
+                      {typeof showMealDetails.changeGiven !== 'undefined' && <div className="text-sm">Vueltos: ${Number(showMealDetails.changeGiven).toLocaleString('es-CO')}</div>}
+                    </div>
                     <div className="mt-3 text-xs sm:text-sm">
                       <p className="font-medium">Estado: {showMealDetails.status || 'Pendiente'}</p>
                       <p className="font-medium">Domiciliario: {showMealDetails.deliveryPerson || 'Sin asignar'}</p>

@@ -55,7 +55,10 @@ const useBreakfastOrderSummary = (items, isWaiterView, selectedPaymentNameFallba
         })).sort((a, b) => a.name.localeCompare(b.name)) || []
       );
     }
-    if (field === 'Mesa') return breakfast.tableNumber || 'No especificada';
+    if (field === 'Mesa') {
+      if (!breakfast.tableNumber) return 'No especificada';
+      return typeof breakfast.tableNumber === 'object' ? (breakfast.tableNumber.name || 'No especificada') : breakfast.tableNumber;
+    }
     if (field === 'Dirección') {
       return JSON.stringify(addressFields.map(f => breakfast.address?.[f] || ''));
     }
@@ -350,7 +353,8 @@ const BreakfastFields = ({
   }
   
   if ((commonFields.has('Mesa') || commonFields.has('all')) && isWaiterView && breakfast.tableNumber) {
-    fields.push(<p key="table" className="text-xs sm:text-sm text-gray-600">Mesa: {breakfast.tableNumber}</p>);
+    const mesaVal = typeof breakfast.tableNumber === 'object' ? breakfast.tableNumber.name : breakfast.tableNumber;
+    fields.push(<p key="table" className="text-xs sm:text-sm text-gray-600">Mesa: {mesaVal}</p>);
   }
   
   if ((commonFields.has('all') || commonFields.has('TipoPedido')) && isWaiterView && breakfast.orderType && !isAdminView) {

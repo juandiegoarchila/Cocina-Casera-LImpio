@@ -23,11 +23,15 @@ const PRICE_MAP = {
 // - Si tableNumber tiene valor (Mesa 1, Mesa 2, etc.) => 'table'
 const normalizeOrderType = (val, meal) => {
   // PRIORIDAD 1: Verificar tableNumber primero
-  const tableNumber = String(meal?.tableNumber || '').toLowerCase().trim();
+  let tableNumber = meal?.tableNumber;
+  if (typeof tableNumber === 'object' && tableNumber !== null) {
+    tableNumber = tableNumber.name || '';
+  }
+  tableNumber = String(tableNumber || '').toLowerCase().trim();
   
   if (tableNumber) {
     // Si es llevar
-    if (tableNumber === 'llevar' || tableNumber === 'lllevar' || tableNumber === 'para llevar') {
+    if (tableNumber.includes('llevar') || tableNumber === 'lllevar' || tableNumber === 'para llevar') {
       return 'takeaway';
     }
     // Si tiene número de mesa (Mesa 1, Mesa 2, etc.)
@@ -97,6 +101,18 @@ export const calculateMealPrice = (meal) => {
 
   // Verificar si la proteína tiene un precio especial configurado
   let proteinPrice = meal?.protein?.price ? Number(meal.protein.price) : 0;
+
+  // Lógica especial para Pechuga Gratinada: $13.000 en mesa, $14.000 para llevar
+  if (meal?.protein?.name?.toLowerCase().includes('pechuga gratinada')) {
+    const type = normalizeOrderType(meal?.orderType, meal);
+    proteinPrice = type === 'table' ? 13000 : 14000;
+    console.log('🍗 Pechuga Gratinada detectada:', { type, price: proteinPrice });
+    
+    // Retornar directamente aquí para evitar sumar adiciones dos veces si entrara al bloque siguiente
+    const additions = additionsTotal(meal);
+    const drinkPrice = Number(meal?.drink?.price || 0);
+    return proteinPrice + additions + drinkPrice;
+  }
   
   // Fallback: Si la proteína es Mojarra pero no tiene precio, usar 16000
   if (!proteinPrice && meal?.protein?.name?.toLowerCase().includes('mojarra')) {
@@ -104,13 +120,17 @@ export const calculateMealPrice = (meal) => {
     console.log('⚠️ Mojarra detectada sin precio, usando fallback de 16000');
   }
   
+  // Precio de bebida (si tiene precio explícito, ej: QuickPOS)
+  const drinkPrice = Number(meal?.drink?.price || 0);
+
   if (proteinPrice > 0) {
     const additions = additionsTotal(meal);
-    const total = proteinPrice + additions;
+    const total = proteinPrice + additions + drinkPrice;
     console.log('✅ Proteína con precio especial:', {
       name: meal?.protein?.name,
       price: proteinPrice,
       additions,
+      drinkPrice,
       total
     });
     return total;
@@ -120,7 +140,7 @@ export const calculateMealPrice = (meal) => {
   const kind = isSoloBandeja(meal) ? 'bandeja' : 'normal';
   const base = PRICE_MAP[orderType]?.[kind] ?? PRICE_MAP.table.normal;
   const additions = additionsTotal(meal);
-  const total = base + additions;
+  const total = base + additions + drinkPrice;
 
   return total;
 };

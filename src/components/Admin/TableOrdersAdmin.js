@@ -126,9 +126,8 @@ const paymentMethodsOnly = (order) => {
 // Componente local para mostrar dirección y cronómetro (versión simplificada)
 function DireccionConCronometroLocal({ order }) {
   const rawAddress = order.meals?.[0]?.address || order.breakfasts?.[0]?.address || {};
-  // Para órdenes de mesa no queremos repetir "Mesa X" aquí (se muestra en otro lugar),
-  // así que solo mostramos la dirección si existe en rawAddress.address.
-  const addressText = rawAddress?.address || 'Sin dirección';
+  // Para órdenes de mesa no mostrar "Sin dirección" ya que no es relevante
+  const addressText = rawAddress?.address || '';
 
   const getMinutesElapsed = () => {
     if (!order.createdAt) return 0;
@@ -165,7 +164,7 @@ function DireccionConCronometroLocal({ order }) {
 
   return (
     <div>
-      <div className="whitespace-nowrap overflow-hidden text-ellipsis">{addressText}</div>
+      {addressText && <div className="whitespace-nowrap overflow-hidden text-ellipsis">{addressText}</div>}
       <div className="text-xs text-gray-400 mt-1">{minutesElapsed}min</div>
       {rawAddress?.details && <div className="whitespace-nowrap overflow-hidden text-ellipsis text-gray-400 text-xs">({rawAddress.details})</div>}
     </div>
@@ -253,7 +252,8 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
       const win = window.open('', 'PRINT', 'height=700,width=400');
       if (!win) return;
       const isBreakfast = order.type === 'breakfast';
-      const isPOS = Array.isArray(order.items) && order.items.length && !Array.isArray(order.breakfasts) && !Array.isArray(order.meals);
+      const hasFlatItems = [order.items, order.cart, order.products, order.quickItems].some(arr => Array.isArray(arr) && arr.length);
+      const isPOS = hasFlatItems && !Array.isArray(order.breakfasts) && !Array.isArray(order.meals);
       const table = formatValue(order.tableNumber || order.meals?.[0]?.tableNumber || order.breakfasts?.[0]?.tableNumber);
       const pago = isPOS ? (() => {
         const raw = (typeof order.paymentMethod === 'string' ? order.paymentMethod : order.paymentMethod?.name || '').toString().toLowerCase();
@@ -337,20 +337,82 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
   } else if (isBreakfast && Array.isArray(order.breakfasts)) {
         resumen += `<div style='font-weight:bold;margin-bottom:4px;'>✅ Resumen del Pedido</div>`;
         resumen += `<div>🍽 ${order.breakfasts.length} desayunos en total</div>`;
-        order.breakfasts.forEach((b, idx) => {
-          resumen += `<div style='margin-top:10px;'><b>🍽 Desayuno ${idx + 1} – $${(b.price || order.total || '').toLocaleString('es-CO')} (${pago})</b></div>`;
-          if (b.type) resumen += `<div>${typeof b.type === 'string' ? b.type : b.type?.name || ''}</div>`;
-          if (b.protein) resumen += `<div>Proteína: ${typeof b.protein === 'string' ? b.protein : b.protein?.name || ''}</div>`;
-          if (b.drink) resumen += `<div>Bebida: ${typeof b.drink === 'string' ? b.drink : b.drink?.name || ''}</div>`;
+        
+        // Helper para obtener nombre limpio
+        const getName = (obj) => (typeof obj === 'string' ? obj : obj?.name || '').replace(' NUEVO', '').trim();
+
+        // Agrupar desayunos idénticos
+        const groups = [];
+        order.breakfasts.forEach(b => {
+            const signature = JSON.stringify({
+                type: getName(b.type),
+                broth: getName(b.broth),
+                eggs: getName(b.eggs),
+                riceBread: getName(b.riceBread),
+                protein: getName(b.protein),
+                drink: getName(b.drink),
+                cutlery: b.cutlery ? 'Sí' : 'No',
+                additions: (b.additions || []).map(a => `${getName(a)}:${a.quantity||1}`).sort().join(','),
+                notes: (b.notes || '').trim(),
+                table: b.tableNumber || table,
+                svc: (b.orderType || order.serviceType || (order.tableNumber ? 'table' : 'takeaway')).toLowerCase()
+            });
+            
+            const existing = groups.find(g => g.signature === signature);
+            if (existing) {
+                existing.count++;
+                existing.totalPrice += (Number(b.price) || 0);
+            } else {
+                groups.push({ 
+                    signature, 
+                    count: 1, 
+                    data: b, 
+                    totalPrice: (Number(b.price) || 0) 
+                });
+            }
+        });
+
+        groups.forEach((group, idx) => {
+          const b = group.data;
+          // Calcular precio a mostrar
+          let displayPrice = group.totalPrice;
+          if (!displayPrice) {
+             // Si solo hay un grupo, el precio es el total de la orden
+             if (groups.length === 1) displayPrice = order.total;
+             else {
+                 // Fallback legacy
+                 displayPrice = order.total; 
+             }
+          }
+
+          const title = group.count > 1 
+            ? `🍽 ${group.count} Desayunos iguales` 
+            : `🍽 Desayuno ${idx + 1}`;
+
+          resumen += `<div style='margin-top:10px;'><b>${title} – $${(Number(displayPrice) || 0).toLocaleString('es-CO')} (${pago})</b></div>`;
+          
+          if (b.type) resumen += `<div>Tipo: ${getName(b.type)}</div>`;
+          if (b.broth) resumen += `<div>Caldo: ${getName(b.broth)}</div>`;
+          if (b.eggs) resumen += `<div>Huevos: ${getName(b.eggs)}</div>`;
+          if (b.riceBread) resumen += `<div>Arroz/Pan: ${getName(b.riceBread)}</div>`;
+          if (b.protein) resumen += `<div>Proteína: ${getName(b.protein)}</div>`;
+          if (b.drink) resumen += `<div>Bebida: ${getName(b.drink)}</div>`;
+          
+          resumen += `<div>Cubiertos: ${b.cutlery ? 'Sí' : 'No'}</div>`;
+
           if (b.additions && b.additions.length > 0) {
             resumen += `<div>Adiciones:</div>`;
             b.additions.forEach(a => {
-              resumen += `<div style='margin-left:10px;'>- ${a.name} (${a.quantity || 1})</div>`;
+              resumen += `<div style='margin-left:10px;'>- ${getName(a)} (${a.quantity || 1})</div>`;
             });
           }
           resumen += `<div>Notas: ${b.notes || 'Ninguna'}</div>`;
           resumen += `<div>Mesa: ${b.tableNumber || table}</div>`;
-          resumen += `<div>Tipo: ${b.orderType === 'table' ? 'Para mesa' : b.orderType === 'takeaway' ? 'Para llevar' : ''}</div>`;
+          
+          // Determinar tipo de servicio (Mesa vs Llevar)
+          const svcType = (b.orderType || order.serviceType || (order.tableNumber ? 'table' : 'takeaway')).toLowerCase();
+          const svcLabel = (svcType.includes('table') || svcType.includes('mesa')) ? 'Para mesa' : 'Para llevar';
+          resumen += `<div>Tipo Servicio: ${svcLabel}</div>`;
         });
       }
       // Comando ESC/POS para abrir la caja registradora SOLO para tickets de mesa
@@ -366,10 +428,10 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
         
         // Plantilla: si es POS, imprimimos en formato de ticket de Caja POS
         if (isPOS) {
-          const items = Array.isArray(order.items) ? order.items : [];
+          const items = Array.isArray(order.items) ? order.items : (Array.isArray(order.cart) ? order.cart : (Array.isArray(order.products) ? order.products : (Array.isArray(order.quickItems) ? order.quickItems : [])));
           const itemsHtml = items.map(it => {
             const qty = Number(it.quantity||0);
-            const unit = Number(it.unitPrice||0);
+            const unit = Number(it.unitPrice||it.price||0);
             const lineTotal = qty * unit;
             return `<div class='it-row'><div class='it-left'><div class='it-name'>${it.name}</div><div class='it-line'>${qty}x ${fmt(unit)}</div></div><div class='it-right'>${fmt(lineTotal)}</div></div>`;
           }).join('');
@@ -423,8 +485,8 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
               <div class='line'></div>
               <div><b>Total:</b> ${fmt(order.total)}</div>
               <div><b>Pago:</b> ${pago}</div>
-              ${efectivo ? `<div><b>Recibido:</b> ${fmt(order.cashReceived||0)}</div>`:''}
-              ${efectivo ? `<div><b>Vueltos:</b> ${fmt(order.changeGiven||0)}</div>`:''}
+              ${efectivo && typeof order.cashReceived !== 'undefined' ? `<div><b>Recibido:</b> ${fmt(order.cashReceived)}</div>`:''}
+              ${efectivo && typeof order.changeGiven !== 'undefined' ? `<div><b>Vueltos:</b> ${fmt(order.changeGiven)}</div>`:''}
               <div class='line'></div>
               <div class='thanks'>¡Gracias por su compra!</div>
               <div class='contact'>Te esperamos mañana con un<br>nuevo menú.<br>Escríbenos al <strong>301 6476916</strong><br><strong>Calle 133#126c-09</strong></div>
@@ -461,6 +523,8 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
             <div><b>Mesa:</b> ${table}</div>
             <div><b>Pago:</b> ${pago}</div>
             <div><b>Total:</b> ${fmt(order.total)}</div>
+            ${(pago || '').toLowerCase().includes('efect') && typeof order.cashReceived !== 'undefined' ? `<div><b>Recibido:</b> ${fmt(order.cashReceived)}</div>` : ''}
+            ${(pago || '').toLowerCase().includes('efect') && typeof order.changeGiven !== 'undefined' ? `<div><b>Vueltos:</b> ${fmt(order.changeGiven)}</div>` : ''}
             <div><b>Fecha:</b> ${fecha}</div>
             <div class='line'></div>
             ${resumen}
@@ -1816,6 +1880,7 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
                   <div className="bg-white rounded-lg p-4">
                     {showMealDetails.type === 'breakfast' ? (
                       Array.isArray(showMealDetails.breakfasts) && showMealDetails.breakfasts.length ? (
+                        <div className="flex flex-col">
                         <BreakfastOrderSummary
                           items={showMealDetails.breakfasts}
                           user={{ role: 3 }}
@@ -1824,6 +1889,14 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
                           statusClass={''}
                           showSaveButton={false}
                         />
+                        <div className="mt-4 border-t pt-4 bg-gray-50 p-3 rounded text-gray-900">
+                          <div className="text-sm">Fecha: {(() => { try { return (showMealDetails.createdAt?.toDate ? showMealDetails.createdAt.toDate() : new Date(showMealDetails.createdAt)).toLocaleString('es-CO'); } catch(_) { return 'N/A'; } })()}</div>
+                          <div className="text-sm font-bold mt-2">Total: ${Number(showMealDetails.total || 0).toLocaleString('es-CO')}</div>
+                          <div className="text-sm">Pago: {typeof showMealDetails.paymentMethod === 'object' ? showMealDetails.paymentMethod.name : (showMealDetails.paymentMethod || showMealDetails.payment || 'Pendiente')}</div>
+                          {typeof showMealDetails.cashReceived !== 'undefined' && <div className="text-sm">Recibido: ${Number(showMealDetails.cashReceived).toLocaleString('es-CO')}</div>}
+                          {typeof showMealDetails.changeGiven !== 'undefined' && <div className="text-sm">Vueltos: ${Number(showMealDetails.changeGiven).toLocaleString('es-CO')}</div>}
+                        </div>
+                        </div>
                       ) : (
                         // Fallback para órdenes de desayuno creadas desde Caja POS (sin estructura breakfasts)
                         (() => {
@@ -1835,7 +1908,7 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
                           const fecha = (() => {
                             try { return order.createdAt?.toDate ? order.createdAt.toDate() : new Date(order.createdAt) } catch(_) { return new Date(); }
                           })();
-                          const items = Array.isArray(order.items) ? order.items : [];
+                          const items = Array.isArray(order.items) ? order.items : (Array.isArray(order.cart) ? order.cart : (Array.isArray(order.products) ? order.products : (Array.isArray(order.quickItems) ? order.quickItems : [])));
                           const fmt = (v) => (Number(v)||0).toLocaleString('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
                           const payName = (() => {
                             const raw = (typeof order.paymentMethod === 'string' ? order.paymentMethod : order.paymentMethod?.name || '').toLowerCase();
@@ -1855,7 +1928,7 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
                               <div className="space-y-1">
                                 {items.map((it, idx) => {
                                   const qty = Number(it.quantity||0);
-                                  const unit = Number(it.unitPrice||0);
+                                  const unit = Number(it.unitPrice||it.price||0);
                                   const lineTotal = qty * unit;
                                   return (
                                     <div key={idx} className="flex items-center justify-between gap-2">
@@ -1867,7 +1940,11 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
                                     </div>
                                   );
                                 })}
-                                {items.length === 0 && <div className="text-sm opacity-70">Sin items</div>}
+                                {items.length === 0 && (
+                                  <div className="text-sm opacity-70">
+                                    Sin items
+                                  </div>
+                                )}
                               </div>
                               <hr className={theme==='dark' ? 'border-gray-700 my-2' : 'border-gray-200 my-2'} />
                               <div className="text-sm">Total: <strong>{fmt(order.total)}</strong></div>
@@ -1881,7 +1958,7 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
                     ) : (
                       (() => {
                         const order = showMealDetails || {};
-                        const isPOS = Array.isArray(order.items) && !Array.isArray(order.meals);
+                        const isPOS = (Array.isArray(order.items) || Array.isArray(order.cart) || Array.isArray(order.products)) && !Array.isArray(order.meals);
                         if (isPOS) {
                           const kind = (order.orderTypeNormalized?.split('_')[0] || order.orderType || 'almuerzo').toLowerCase();
                           const svc = (order.orderTypeNormalized?.split('_')[1] || order.serviceType || (order.tableNumber ? 'mesa' : (order.takeaway ? 'llevar' : ''))).toLowerCase();
@@ -1890,7 +1967,7 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
                           const fecha = (() => {
                             try { return order.createdAt?.toDate ? order.createdAt.toDate() : new Date(order.createdAt) } catch(_) { return new Date(); }
                           })();
-                          const items = Array.isArray(order.items) ? order.items : [];
+                          const items = Array.isArray(order.items) ? order.items : (Array.isArray(order.cart) ? order.cart : (Array.isArray(order.products) ? order.products : (Array.isArray(order.quickItems) ? order.quickItems : [])));
                           const fmt = (v) => (Number(v)||0).toLocaleString('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
                           const payName = (() => {
                             const raw = (typeof order.paymentMethod === 'string' ? order.paymentMethod : order.paymentMethod?.name || '').toLowerCase();
@@ -1911,7 +1988,7 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
                                 {items.map((it, idx) => (
                                   <div key={idx}>
                                     <div className="font-medium">{it.name}</div>
-                                    <div className="text-xs opacity-80">{it.quantity}x {fmt(it.unitPrice)}</div>
+                                    <div className="text-xs opacity-80">{it.quantity}x {fmt(Number(it.unitPrice||it.price||0))}</div>
                                   </div>
                                 ))}
                                 {items.length === 0 && <div className="text-sm opacity-70">Sin items</div>}
@@ -1976,6 +2053,7 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
                           return { ...m, principle: cleanedPrinciple, principleRaw, principleReplacement: finalPrincipleReplacement };
                         });
                         return (
+                          <div className="flex flex-col">
                           <OrderSummary
                             meals={normalizedMeals}
                             isTableOrder={true}
@@ -1985,6 +2063,14 @@ const TableOrdersAdmin = ({ theme = 'light' }) => {
                             userRole={3}
                             allSides={allSides}
                           />
+                          <div className="mt-4 border-t pt-4 bg-gray-50 p-3 rounded text-gray-900">
+                            <div className="text-sm">Fecha: {(() => { try { return (order.createdAt?.toDate ? order.createdAt.toDate() : new Date(order.createdAt)).toLocaleString('es-CO'); } catch(_) { return 'N/A'; } })()}</div>
+                            <div className="text-sm font-bold mt-2">Total: ${Number(order.total || 0).toLocaleString('es-CO')}</div>
+                            <div className="text-sm">Pago: {typeof order.paymentMethod === 'object' ? order.paymentMethod.name : (order.paymentMethod || order.payment || 'Pendiente')}</div>
+                            {typeof order.cashReceived !== 'undefined' && <div className="text-sm">Recibido: ${Number(order.cashReceived).toLocaleString('es-CO')}</div>}
+                            {typeof order.changeGiven !== 'undefined' && <div className="text-sm">Vueltos: ${Number(order.changeGiven).toLocaleString('es-CO')}</div>}
+                          </div>
+                          </div>
                         );
                       })()
                     )}

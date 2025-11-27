@@ -2150,6 +2150,7 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
                           addedItems: manualAddedItems.map(a => ({ id: a.id, name: a.name, amount: Number(a.amount || 0), quantity: 1 })),
                           createdAt: serverTimestamp(),
                           updatedAt: serverTimestamp(),
+                          status: 'Pendiente',
                           paymentNote: manualOrder.note || ''
                         };
                         collectionName = manualOrder.orderType === 'almuerzo' ? 'tableOrders' : 'breakfastOrders';
@@ -2176,6 +2177,7 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
                           addedItems: additions,
                           createdAt: serverTimestamp(),
                           updatedAt: serverTimestamp(),
+                          status: 'Pendiente',
                           paymentNote: quickNote || ''
                         };
                         if (quickTableNumber.trim()) payload.tableNumber = quickTableNumber.trim();

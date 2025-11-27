@@ -232,10 +232,10 @@ const AddressInput = ({ onConfirm, onValidityChange, initialAddress }) => {
       newErrors.phoneNumber = "Formato no válido (Ej: 3001234567).";
     }
     
-    // Validar distancia por número de vía
+    // Validar rango permitido del número de vía (solo 100 a 155)
     if (formData.streetNumber) {
       const streetNum = parseInt(formData.streetNumber.replace(/\D/g, ''), 10);
-      if (!isNaN(streetNum) && streetNum > 155) {
+      if (!isNaN(streetNum) && (streetNum < 100 || streetNum > 155)) {
         newErrors.streetNumber = "⚠️ Dirección supera los 4km del restaurante";
       }
     }

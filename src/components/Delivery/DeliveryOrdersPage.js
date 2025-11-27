@@ -18,6 +18,9 @@ import OrderSummary from '../OrderSummary';
 import BreakfastOrderSummary from '../BreakfastOrderSummary';
 import DeliveryPayments from './DeliveryPayments';
 import DeliveryTasks from './DeliveryTasks';
+import DeliveryTableOrders from './DeliveryTableOrders';
+import QuickPOSOrders from '../Waiter/QuickPOSOrders';
+import { BoltIcon } from '@heroicons/react/24/outline';
 
 const DeliveryOrdersPage = () => {
   const { user, loading, role } = useAuth();
@@ -483,6 +486,56 @@ const DeliveryOrdersPage = () => {
 
   return (
     <div className={`min-h-screen ${theme === 'dark' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-900'} pb-4`}>
+      {/* Menú móvil - FUERA del Disclosure para evitar problemas de z-index */}
+      {isSidebarOpen && (
+        <div className="sm:hidden fixed inset-0 bg-black/50 z-[99999]" onClick={() => setIsSidebarOpen(false)}>
+          <div className={`h-full w-64 ${theme === 'dark' ? 'bg-gray-800' : 'bg-gray-200'} p-4 shadow-lg`} onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className={`text-xl font-bold ${theme === 'dark' ? 'text-gray-100' : 'text-gray-800'}`}>Cocina Casera</h2>
+              <button
+                onClick={() => setIsSidebarOpen(false)}
+                className="p-2 rounded-md text-gray-400 hover:text-white hover:bg-gray-700 focus:outline-none"
+              >
+                <XMarkIcon className="h-6 w-6" aria-hidden="true" />
+              </button>
+            </div>
+            <nav className="space-y-2 flex flex-col h-[calc(100vh-8rem)]">
+              <button
+                onClick={() => { navigate('/delivery'); setIsSidebarOpen(false); }}
+                className={`flex items-center px-4 py-2 rounded-md text-sm font-medium ${theme === 'dark' ? 'text-gray-300 hover:text-white hover:bg-gray-700' : 'text-gray-700 hover:text-black hover:bg-gray-300'} transition-all duration-200`}
+              >
+                <ClipboardDocumentListIcon className={`w-6 h-6 mr-2 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} />
+                <span>Gestión de Pedidos</span>
+              </button>
+
+              <button
+                onClick={() => { navigate('/delivery/create'); setIsSidebarOpen(false); }}
+                className={`flex items-center px-4 py-2 rounded-md text-sm font-medium ${theme === 'dark' ? 'text-gray-300 hover:text-white hover:bg-gray-700' : 'text-gray-700 hover:text-black hover:bg-gray-300'} transition-all duration-200`}
+              >
+                <ClipboardDocumentListIcon className={`w-6 h-6 mr-2 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} />
+                <span>Gestión de Mesas</span>
+              </button>
+
+              <button
+                onClick={() => { navigate('/delivery/quickpos'); setIsSidebarOpen(false); }}
+                className={`flex items-center px-4 py-2 rounded-md text-sm font-medium ${theme === 'dark' ? 'text-gray-300 hover:text-white hover:bg-gray-700' : 'text-gray-700 hover:text-black hover:bg-gray-300'} transition-all duration-200`}
+              >
+                <BoltIcon className={`w-6 h-6 mr-2 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} />
+                <span>Pedido Rápido</span>
+              </button>
+
+              <button
+                onClick={handleLogout}
+                className={`mt-auto flex items-center px-4 py-2 rounded-md text-sm font-medium ${theme === 'dark' ? 'text-red-300 hover:text-white hover:bg-red-700' : 'text-red-600 hover:text-red-800 hover:bg-red-200'} transition-all duration-200`}
+              >
+                <ArrowLeftOnRectangleIcon className={`w-6 h-6 mr-2 ${theme === 'dark' ? 'text-red-300' : 'text-red-600'}`} />
+                <span>Cerrar Sesión</span>
+              </button>
+            </nav>
+          </div>
+        </div>
+      )}
+
       {/* Header con menú hamburguesa estilo Admin */}
       <Disclosure as="nav" className={`${theme === 'dark' ? 'bg-gray-800' : 'bg-gray-200'} shadow-lg fixed top-0 left-0 right-0 z-50`}>
         {({ open }) => (
@@ -518,63 +571,6 @@ const DeliveryOrdersPage = () => {
                 </div>
               </div>
             </div>
-
-            <Transition
-              show={isSidebarOpen}
-              enter="transition-all duration-300 ease-out"
-              enterFrom="-translate-x-full"
-              enterTo="translate-x-0"
-              leave="transition-all duration-300 ease-in"
-              leaveFrom="translate-x-0"
-              leaveTo="-translate-x-full"
-            >
-              <Disclosure.Panel className="sm:hidden fixed top-0 left-0 h-full w-full bg-black/50 z-[60]" onClick={() => setIsSidebarOpen(false)}>
-                <div className={`h-full ${isSidebarOpen ? 'w-64' : 'w-0'} ${theme === 'dark' ? 'bg-gray-800' : 'bg-gray-200'} p-4 transition-all duration-300 shadow-lg`} onClick={(e) => e.stopPropagation()}>
-                  <div className="flex justify-between items-center mb-6">
-                    <h2 className={`text-xl font-bold ${theme === 'dark' ? 'text-gray-100' : 'text-gray-800'}`}>Cocina Casera</h2>
-                    <button
-                      onClick={() => setIsSidebarOpen(false)}
-                      className="p-2 rounded-md text-gray-400 hover:text-white hover:bg-gray-700 focus:outline-none"
-                    >
-                      <XMarkIcon className="h-6 w-6" aria-hidden="true" />
-                    </button>
-                  </div>
-                  <nav className="space-y-2 flex flex-col h-[calc(100vh-8rem)]">
-                    <button
-                      onClick={() => { navigate('/delivery'); setIsSidebarOpen(false); }}
-                      className={`flex items-center px-4 py-2 rounded-md text-sm font-medium ${theme === 'dark' ? 'text-gray-300 hover:text-white hover:bg-gray-700' : 'text-gray-700 hover:text-black hover:bg-gray-300'} transition-all duration-200`}
-                    >
-                      <ClipboardDocumentListIcon className={`w-6 h-6 mr-2 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} />
-                      <span>Gestión de Pedidos</span>
-                    </button>
-
-                    <button
-                      onClick={() => { navigate('/delivery/tasks'); setIsSidebarOpen(false); }}
-                      className={`flex items-center px-4 py-2 rounded-md text-sm font-medium ${theme === 'dark' ? 'text-gray-300 hover:text-white hover:bg-gray-700' : 'text-gray-700 hover:text-black hover:bg-gray-300'} transition-all duration-200`}
-                    >
-                      <ClipboardIcon className={`w-6 h-6 mr-2 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} />
-                      <span>Gestión de Tareas</span>
-                    </button>
-
-                    <button
-                      onClick={() => { navigate('/delivery/payments'); setIsSidebarOpen(false); }}
-                      className={`flex items-center px-4 py-2 rounded-md text-sm font-medium ${theme === 'dark' ? 'text-gray-300 hover:text-white hover:bg-gray-700' : 'text-gray-700 hover:text-black hover:bg-gray-300'} transition-all duration-200`}
-                    >
-                      <CreditCardIcon className={`w-6 h-6 mr-2 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} />
-                      <span>Registro de Pagos</span>
-                    </button>
-
-                    <button
-                      onClick={handleLogout}
-                      className={`mt-auto flex items-center px-4 py-2 rounded-md text-sm font-medium ${theme === 'dark' ? 'text-red-300 hover:text-white hover:bg-red-700' : 'text-red-600 hover:text-red-800 hover:bg-red-200'} transition-all duration-200`}
-                    >
-                      <ArrowLeftOnRectangleIcon className={`w-6 h-6 mr-2 ${theme === 'dark' ? 'text-red-300' : 'text-red-600'}`} />
-                      <span>Cerrar Sesión</span>
-                    </button>
-                  </nav>
-                </div>
-              </Disclosure.Panel>
-            </Transition>
           </>
         )}
       </Disclosure>
@@ -615,7 +611,7 @@ const DeliveryOrdersPage = () => {
           </button>
 
           <button
-            onClick={() => navigate('/delivery/tasks')}
+            onClick={() => navigate('/delivery/create')}
             className={`relative flex items-center px-4 py-2 rounded-md text-sm font-medium min-w-[48px]
               ${
                 isSidebarOpen
@@ -625,18 +621,18 @@ const DeliveryOrdersPage = () => {
                   : 'justify-center'
               } transition-all duration-300`}
           >
-            <ClipboardIcon
+            <ClipboardDocumentListIcon
               className={`w-6 h-6 ${isSidebarOpen ? 'mr-2' : 'mr-0'} ${
                 theme === 'dark' ? 'text-gray-200' : 'text-gray-700'
               }`}
             />
             <span className={`transition-opacity duration-200 ${isSidebarOpen ? 'opacity-100 block' : 'opacity-0 hidden'}`}>
-              Gestión de Tareas
+              Gestión de Mesas
             </span>
           </button>
 
           <button
-            onClick={() => navigate('/delivery/payments')}
+            onClick={() => navigate('/delivery/quickpos')}
             className={`relative flex items-center px-4 py-2 rounded-md text-sm font-medium min-w-[48px]
               ${
                 isSidebarOpen
@@ -646,13 +642,13 @@ const DeliveryOrdersPage = () => {
                   : 'justify-center'
               } transition-all duration-300`}
           >
-            <CreditCardIcon
+            <BoltIcon
               className={`w-6 h-6 ${isSidebarOpen ? 'mr-2' : 'mr-0'} ${
                 theme === 'dark' ? 'text-gray-200' : 'text-gray-700'
               }`}
             />
             <span className={`transition-opacity duration-200 ${isSidebarOpen ? 'opacity-100 block' : 'opacity-0 hidden'}`}>
-              Registro de Pagos
+              Pedido Rápido
             </span>
           </button>
 
@@ -680,7 +676,7 @@ const DeliveryOrdersPage = () => {
       </div>
 
       {/* Contenido principal */}
-      <div className={`flex-1 p-4 pt-20 sm:pt-20 ${isSidebarOpen ? 'sm:ml-64' : 'sm:ml-16'} transition-all duration-300 min-h-screen`}>
+      <div className={`flex-1 p-4 pt-16 sm:pt-16 ${isSidebarOpen ? 'sm:ml-64' : 'sm:ml-16'} transition-all duration-300 min-h-screen`}>
   {/* Ocultar banners en la vista principal de pedidos para no duplicar el toast de TablaPedidos */}
   {/* Se pueden mostrar en otras rutas si se requiere */}
 
@@ -750,6 +746,8 @@ const DeliveryOrdersPage = () => {
               theme={theme}
             />
           } />
+          <Route path="/create" element={<DeliveryTableOrders />} />
+          <Route path="/quickpos" element={<QuickPOSOrders setError={setError} setSuccess={setSuccess} />} />
           <Route path="*" element={<Navigate to="/delivery" replace />} />
         </Routes>
       </div>

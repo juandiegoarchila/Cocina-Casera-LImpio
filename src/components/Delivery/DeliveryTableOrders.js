@@ -1,7 +1,5 @@
-//src/components/Waiter/WaiterDashboard.js
+//src/components/Delivery/DeliveryTableOrders.js
 import React, { useState, useEffect, useMemo } from 'react';
-import { Disclosure, Transition } from '@headlessui/react';
-import { Bars3Icon, XMarkIcon, SunIcon, MoonIcon, ArrowLeftOnRectangleIcon, ClipboardDocumentListIcon, CreditCardIcon, ListBulletIcon, CurrencyDollarIcon, BoltIcon } from '@heroicons/react/24/outline';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../Auth/AuthProvider';
 import { db, auth } from '../../config/firebase';
@@ -15,18 +13,13 @@ import LoadingIndicator from '../LoadingIndicator';
 import ErrorMessage from '../ErrorMessage';
 import SuccessMessage from '../SuccessMessage';
 import OptionSelector from '../OptionSelector';
-import WaiterPayments from './WaiterPayments';
-import WaiterTasks from './WaiterTasks';
-import WaiterCashier from './WaiterCashier';
 import { getColombiaLocalDateString } from '../../utils/bogotaDate';
-import CajaPOS from './CajaPOS';
-import QuickPOSOrders from './QuickPOSOrders';
 import { initializeMealData, handleMealChange, addMeal, duplicateMeal, removeMeal } from '../../utils/MealLogic';
 import { calculateTotal, calculateMealPrice } from '../../utils/MealCalculations';
 import { initializeBreakfastData, handleBreakfastChange, addBreakfast, duplicateBreakfast, removeBreakfast, calculateBreakfastPrice, calculateTotalBreakfastPrice } from '../../utils/BreakfastLogic';
 import { quickVariantToMeal, quickVariantToBreakfast } from '../../utils/quickVariantMapper';
 
-const WaiterDashboard = () => {
+const DeliveryTableOrders = () => {
   const { user, role, loading } = useAuth();
   const navigate = useNavigate();
   const [meals, setMeals] = useState([initializeMealData({}, true)]);
@@ -77,8 +70,6 @@ const WaiterDashboard = () => {
   // Permitir override manual del menú
   const [manualMenuType, setManualMenuType] = useState(null);
   const [theme, setTheme] = useState('dark');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [currentView, setCurrentView] = useState('orders'); // 'orders', 'payments', 'tasks', 'cashier', 'quickpos'
   const [schedules, setSchedules] = useState({
     breakfastStart: 420, // 07:00
     breakfastEnd: 631,   // 10:31
@@ -461,8 +452,8 @@ const WaiterDashboard = () => {
       setTimeout(() => navigate('/staffhub'), 3000);
       return;
     }
-    if (role !== 3) {
-      setErrorMessage('Acceso denegado. Solo las meseras pueden acceder a esta página.');
+    if (role !== 4 && role !== 3) {
+      setErrorMessage('Acceso denegado. Solo personal autorizado puede acceder a esta página.');
       setTimeout(() => navigate('/staffhub'), 3000);
       return;
     }
@@ -865,7 +856,7 @@ const WaiterDashboard = () => {
       // Crear nueva orden basada en la actual
       const newOrderData = {
         userId: user.uid,
-        userEmail: user.email || `waiter_${user.uid}@example.com`,
+        userEmail: user.email || `delivery_${user.uid}@example.com`,
         status: 'Pendiente',
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -1616,351 +1607,10 @@ const WaiterDashboard = () => {
 
   return (
     <div className={`min-h-screen ${theme === 'dark' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-900'} pb-4`}>
-      {/* Header con menú hamburguesa estilo Admin/Delivery */}
-      <Disclosure as="nav" className={`${theme === 'dark' ? 'bg-gray-800' : 'bg-gray-200'} shadow-lg fixed top-0 left-0 right-0 z-[100000]`}>
-        {({ open }) => (
-          <>
-            <div className="max-w-full mx-auto px-2 sm:px-4 lg:px-8">
-              <div className="flex items-center justify-between h-16">
-                <div className="flex items-center">
-                  <button
-                    onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                    className="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-white hover:bg-gray-700 focus:outline-none -ml-2"
-                  >
-                    <span className="sr-only">Toggle sidebar</span>
-                    {isSidebarOpen ? (
-                      <XMarkIcon className="block h-6 w-6" aria-hidden="true" />
-                    ) : (
-                      <Bars3Icon className="block h-6 w-6" aria-hidden="true" />
-                    )}
-                  </button>
-                  <h1 className="text-base sm:text-lg font-semibold ml-2 sm:ml-4">Panel del Mesero</h1>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-                    className={`p-2 rounded-full ${theme === 'dark' ? 'text-yellow-400 hover:bg-gray-700' : 'text-orange-500 hover:bg-gray-300'} focus:outline-none`}
-                    aria-label="Toggle theme"
-                  >
-                    {theme === 'dark' ? (
-                      <SunIcon className="h-6 w-6" />
-                    ) : (
-                      <MoonIcon className="h-6 w-6" />
-                    )}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <Transition
-              show={isSidebarOpen}
-              enter="transition-all duration-300 ease-out"
-              enterFrom="-translate-x-full"
-              enterTo="translate-x-0"
-              leave="transition-all duration-300 ease-in"
-              leaveFrom="translate-x-0"
-              leaveTo="-translate-x-full"
-            >
-              <Disclosure.Panel className="sm:hidden fixed top-0 left-0 h-full w-full bg-black/50 z-[60]" onClick={() => setIsSidebarOpen(false)}>
-                <div className={`h-full ${isSidebarOpen ? 'w-64' : 'w-0'} ${theme === 'dark' ? 'bg-gray-800' : 'bg-gray-200'} p-4 transition-all duration-300 shadow-lg`} onClick={(e) => e.stopPropagation()}>
-                  <div className="flex justify-between items-center mb-6">
-                    <h2 className={`text-xl font-bold ${theme === 'dark' ? 'text-gray-100' : 'text-gray-800'}`}>Cocina Casera</h2>
-                    <button
-                      onClick={() => setIsSidebarOpen(false)}
-                      className="p-2 rounded-md text-gray-400 hover:text-white hover:bg-gray-700 focus:outline-none"
-                    >
-                      <XMarkIcon className="h-6 w-6" aria-hidden="true" />
-                    </button>
-                  </div>
-                  <nav className="space-y-2 flex flex-col h-[calc(100vh-8rem)]">
-                    <button
-                      onClick={() => { setCurrentView('orders'); setIsSidebarOpen(false); }}
-                      className={`flex items-center px-4 py-2 rounded-md text-sm font-medium ${
-                        currentView === 'orders' 
-                          ? theme === 'dark' 
-                            ? 'bg-blue-700 text-white' 
-                            : 'bg-blue-200 text-blue-800'
-                          : theme === 'dark' 
-                            ? 'text-gray-300 hover:text-white hover:bg-gray-700' 
-                            : 'text-gray-700 hover:text-black hover:bg-gray-300'
-                      } transition-all duration-200`}
-                    >
-                      <ClipboardDocumentListIcon className={`w-6 h-6 mr-2 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} />
-                      <span>Gestión de Órdenes de Mesas</span>
-                    </button>
-                    <button
-                      onClick={() => { setCurrentView('payments'); setIsSidebarOpen(false); }}
-                      className={`flex items-center px-4 py-2 rounded-md text-sm font-medium ${
-                        currentView === 'payments' 
-                          ? theme === 'dark' 
-                            ? 'bg-blue-700 text-white' 
-                            : 'bg-blue-200 text-blue-800'
-                          : theme === 'dark' 
-                            ? 'text-gray-300 hover:text-white hover:bg-gray-700' 
-                            : 'text-gray-700 hover:text-black hover:bg-gray-300'
-                      } transition-all duration-200`}
-                    >
-                      <CreditCardIcon className={`w-6 h-6 mr-2 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} />
-                      <span>Pagos</span>
-                    </button>
-                    <button
-                      onClick={() => { setCurrentView('tasks'); setIsSidebarOpen(false); }}
-                      className={`flex items-center px-4 py-2 rounded-md text-sm font-medium ${
-                        currentView === 'tasks' 
-                          ? theme === 'dark' 
-                            ? 'bg-blue-700 text-white' 
-                            : 'bg-blue-200 text-blue-800'
-                          : theme === 'dark' 
-                            ? 'text-gray-300 hover:text-white hover:bg-gray-700' 
-                            : 'text-gray-700 hover:text-black hover:bg-gray-300'
-                      } transition-all duration-200`}
-                    >
-                      <ListBulletIcon className={`w-6 h-6 mr-2 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} />
-                      <span>Gestión de Tareas</span>
-                    </button>
-                    <button
-                      onClick={() => { setCurrentView('quickpos'); setIsSidebarOpen(false); }}
-                      className={`flex items-center px-4 py-2 rounded-md text-sm font-medium ${
-                        currentView === 'quickpos' 
-                          ? theme === 'dark' 
-                            ? 'bg-green-700 text-white' 
-                            : 'bg-green-200 text-green-800'
-                          : theme === 'dark' 
-                            ? 'text-gray-300 hover:text-white hover:bg-gray-700' 
-                            : 'text-gray-700 hover:text-black hover:bg-gray-300'
-                      } transition-all duration-200`}
-                    >
-                      <BoltIcon className={`w-6 h-6 mr-2 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} />
-                      <span>Pedido Rápido</span>
-                    </button>
-                    {/* Caja registradora oculta para meseros
-                    <button
-                      onClick={() => { setCurrentView('cashier'); setIsSidebarOpen(false); }}
-                      className={`flex items-center px-4 py-2 rounded-md text-sm font-medium ${
-                        currentView === 'cashier'
-                          ? theme === 'dark'
-                            ? 'bg-blue-700 text-white'
-                            : 'bg-blue-200 text-blue-800'
-                          : theme === 'dark' 
-                            ? 'text-gray-300 hover:text-white hover:bg-gray-700' 
-                            : 'text-gray-700 hover:text-black hover:bg-gray-300'
-                      } transition-all duration-200`}
-                    >
-                      <CurrencyDollarIcon className={`w-6 h-6 mr-2 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} />
-                      <span>Caja registradora</span>
-                    </button>
-                    */}
-                    <button
-                      onClick={handleLogout}
-                      className={`mt-auto flex items-center px-4 py-2 rounded-md text-sm font-medium ${theme === 'dark' ? 'text-red-300 hover:text-white hover:bg-red-700' : 'text-red-600 hover:text-red-800 hover:bg-red-200'} transition-all duration-200`}
-                    >
-                      <ArrowLeftOnRectangleIcon className={`w-6 h-6 mr-2 ${theme === 'dark' ? 'text-red-300' : 'text-red-600'}`} />
-                      <span>Cerrar Sesión</span>
-                    </button>
-                  </nav>
-                </div>
-              </Disclosure.Panel>
-            </Transition>
-          </>
-        )}
-      </Disclosure>
-
-      {/* Sidebar de escritorio (hover/expansión) */}
-      <div
-        className={`hidden sm:block fixed top-16 bottom-0 left-0 ${
-          isSidebarOpen ? 'w-64' : 'w-16'
-        } ${theme === 'dark' ? 'bg-gray-800' : 'bg-gray-200'} p-4 transition-all duration-300 z-40`}
-        onMouseEnter={() => setIsSidebarOpen(true)}
-        onMouseLeave={() => setIsSidebarOpen(false)}
-      >
-        <div className="flex justify-between items-center mb-6">
-          <h2 className={`text-xl font-bold ${theme === 'dark' ? 'text-gray-100' : 'text-gray-800'} ${isSidebarOpen ? 'block' : 'hidden'}`}>
-            Cocina Casera
-          </h2>
-        </div>
-        <nav className="space-y-2 flex flex-col h-[calc(100vh-8rem)]">
-          <button
-            onClick={() => setCurrentView('orders')}
-            className={`relative flex items-center px-4 py-2 rounded-md text-sm font-medium min-w-[48px]
-              ${
-                currentView === 'orders' 
-                  ? theme === 'dark' 
-                    ? 'bg-blue-700 text-white' 
-                    : 'bg-blue-200 text-blue-800'
-                  : isSidebarOpen
-                    ? theme === 'dark'
-                      ? 'text-gray-300 hover:text-white hover:bg-gray-700'
-                      : 'text-gray-700 hover:text-black hover:bg-gray-300'
-                    : 'justify-center'
-              } transition-all duration-300`}
-          >
-            <ClipboardDocumentListIcon
-              className={`w-6 h-6 ${isSidebarOpen ? 'mr-2' : 'mr-0'} ${
-                theme === 'dark' ? 'text-gray-200' : 'text-gray-700'
-              }`}
-            />
-            <span className={`transition-opacity duration-200 ${isSidebarOpen ? 'opacity-100 block' : 'opacity-0 hidden'}`}>
-              Gestión de Órdenes de Mesas
-            </span>
-          </button>
-
-          <button
-            onClick={() => setCurrentView('payments')}
-            className={`relative flex items-center px-4 py-2 rounded-md text-sm font-medium min-w-[48px]
-              ${
-                currentView === 'payments' 
-                  ? theme === 'dark' 
-                    ? 'bg-blue-700 text-white' 
-                    : 'bg-blue-200 text-blue-800'
-                  : isSidebarOpen
-                    ? theme === 'dark'
-                      ? 'text-gray-300 hover:text-white hover:bg-gray-700'
-                      : 'text-gray-700 hover:text-black hover:bg-gray-300'
-                    : 'justify-center'
-              } transition-all duration-300`}
-          >
-            <CreditCardIcon
-              className={`w-6 h-6 ${isSidebarOpen ? 'mr-2' : 'mr-0'} ${
-                theme === 'dark' ? 'text-gray-200' : 'text-gray-700'
-              }`}
-            />
-            <span className={`transition-opacity duration-200 ${isSidebarOpen ? 'opacity-100 block' : 'opacity-0 hidden'}`}>
-              Pagos
-            </span>
-          </button>
-
-          <button
-            onClick={() => setCurrentView('tasks')}
-            className={`relative flex items-center px-4 py-2 rounded-md text-sm font-medium min-w-[48px]
-              ${
-                currentView === 'tasks' 
-                  ? theme === 'dark' 
-                    ? 'bg-blue-700 text-white' 
-                    : 'bg-blue-200 text-blue-800'
-                  : isSidebarOpen
-                    ? theme === 'dark'
-                      ? 'text-gray-300 hover:text-white hover:bg-gray-700'
-                      : 'text-gray-700 hover:text-black hover:bg-gray-300'
-                    : 'justify-center'
-              } transition-all duration-300`}
-          >
-            <ListBulletIcon
-              className={`w-6 h-6 ${isSidebarOpen ? 'mr-2' : 'mr-0'} ${
-                theme === 'dark' ? 'text-gray-200' : 'text-gray-700'
-              }`}
-            />
-            <span className={`transition-opacity duration-200 ${isSidebarOpen ? 'opacity-100 block' : 'opacity-0 hidden'}`}>
-              Gestión de Tareas
-            </span>
-          </button>
-
-          <button
-            onClick={() => setCurrentView('quickpos')}
-            className={`relative flex items-center px-4 py-2 rounded-md text-sm font-medium min-w-[48px]
-              ${
-                currentView === 'quickpos' 
-                  ? theme === 'dark' 
-                    ? 'bg-green-700 text-white' 
-                    : 'bg-green-200 text-green-800'
-                  : isSidebarOpen
-                    ? theme === 'dark'
-                      ? 'text-gray-300 hover:text-white hover:bg-gray-700'
-                      : 'text-gray-700 hover:text-black hover:bg-gray-300'
-                    : 'justify-center'
-              } transition-all duration-300`}
-          >
-            <BoltIcon
-              className={`w-6 h-6 ${isSidebarOpen ? 'mr-2' : 'mr-0'} ${
-                theme === 'dark' ? 'text-gray-200' : 'text-gray-700'
-              }`}
-            />
-            <span className={`transition-opacity duration-200 ${isSidebarOpen ? 'opacity-100 block' : 'opacity-0 hidden'}`}>
-              Pedido Rápido
-            </span>
-          </button>
-
-          {/* Caja registradora oculta para meseros
-          <button
-            onClick={() => setCurrentView('cashier')}
-            className={`relative flex items-center px-4 py-2 rounded-md text-sm font-medium min-w-[48px]
-              ${currentView === 'cashier'
-                ? theme === 'dark'
-                  ? 'bg-blue-700 text-white'
-                  : 'bg-blue-200 text-blue-800'
-                : isSidebarOpen
-                  ? theme === 'dark'
-                    ? 'text-gray-300 hover:text-white hover:bg-gray-700'
-                    : 'text-gray-700 hover:text-black hover:bg-gray-300'
-                  : 'justify-center'} transition-all duration-300`}
-          >
-            <CurrencyDollarIcon
-              className={`w-6 h-6 ${isSidebarOpen ? 'mr-2' : 'mr-0'} ${
-                theme === 'dark' ? 'text-gray-200' : 'text-gray-700'
-              }`}
-            />
-            <span className={`transition-opacity duration-200 ${isSidebarOpen ? 'opacity-100 block' : 'opacity-0 hidden'}`}>
-              Caja registradora
-            </span>
-          </button>
-          */}
-
-          <button
-            onClick={handleLogout}
-            className={`mt-auto flex items-center px-4 py-2 rounded-md text-sm font-medium min-w-[48px]
-              ${
-                isSidebarOpen
-                  ? theme === 'dark'
-                    ? 'text-red-300 hover:text-white hover:bg-red-700'
-                    : 'text-red-600 hover:text-red-800 hover:bg-red-200'
-                  : 'justify-center'
-              } transition-all duration-300`}
-          >
-            <ArrowLeftOnRectangleIcon
-              className={`w-6 h-6 ${isSidebarOpen ? 'mr-2' : 'mr-0'} ${
-                theme === 'dark' ? 'text-red-300' : 'text-red-600'
-              }`}
-            />
-            <span className={`transition-opacity duration-200 ${isSidebarOpen ? 'opacity-100 block' : 'opacity-0 hidden'}`}>
-              Cerrar Sesión
-            </span>
-          </button>
-        </nav>
-      </div>
-
-      {/* Contenido principal */}
-      <div className={`flex-1 p-4 pt-16 sm:pt-16 ${isSidebarOpen ? 'sm:ml-64' : 'sm:ml-16'} transition-all duration-300 min-h-screen`}>
-        {currentView === 'payments' ? (
-          // Vista de Pagos
-          <WaiterPayments 
-            setError={setErrorMessage} 
-            setSuccess={setSuccessMessage} 
-            theme={theme} 
-          />
-        ) : currentView === 'tasks' ? (
-          // Vista de Tareas
-          <WaiterTasks 
-            setError={setErrorMessage} 
-            setSuccess={setSuccessMessage} 
-            theme={theme} 
-          />
-        ) : currentView === 'quickpos' ? (
-          // Vista Pedido Rápido
-          <QuickPOSOrders 
-            setError={setErrorMessage}
-            setSuccess={setSuccessMessage}
-          />
-        ) : currentView === 'cashier' ? (
-          // Vista de Caja Registradora (CajaPOS embebida)
-          <div className="">
-            <CajaPOS 
-              setError={setErrorMessage} 
-              setSuccess={setSuccessMessage} 
-              theme={theme} 
-            />
-          </div>
-        ) : (
-          // Vista de Órdenes (contenido original)
-          <>
+      {/* Contenido principal - Sin header duplicado porque DeliveryOrdersPage ya lo proporciona */}
+      <div className="flex-1 transition-all duration-300 min-h-screen">
+        {/* Content */}
+        <>
             <div className="flex border-b border-gray-300 mb-4">
               <button
                 className={`px-4 py-2 text-sm font-medium ${activeTab === 'create' ? 'border-b-2 border-blue-500 text-blue-500' : 'text-gray-600'}`}
@@ -2017,7 +1667,7 @@ const WaiterDashboard = () => {
                 incompleteBreakfastIndex={incompleteBreakfastIndex}
                 incompleteSlideIndex={incompleteBreakfastSlideIndex}
                 isOrderingDisabled={isOrderingDisabled}
-                userRole={role}
+                userRole={3}
                 savedAddress={{}}
                 isTableOrder={true}
               />
@@ -2063,7 +1713,7 @@ const WaiterDashboard = () => {
                 paymentMethods={paymentMethods}
                 times={[]}
                 isTableOrder={true}
-                userRole={role}
+                userRole={3}
                 onMealChange={(id, field, value) => handleMealChange(setMeals, id, field, value)}
                 onRemoveMeal={(id) => removeMeal(setMeals, setSuccessMessage, id, meals)}
                 onAddMeal={() => addMeal(setMeals, setSuccessMessage, meals, initializeMealData({}, true))}
@@ -3269,7 +2919,6 @@ const WaiterDashboard = () => {
           </div>
         )}
           </>
-        )}
         <div>
           <div className="fixed top-16 right-4 z-[10002] space-y-2 w-80 max-w-xs">
             {isLoading && <LoadingIndicator />}
@@ -3286,4 +2935,4 @@ const WaiterDashboard = () => {
   );
 };
 
-export default WaiterDashboard;
+export default DeliveryTableOrders;
