@@ -919,7 +919,7 @@ const onSendOrder = async (isTableOrder = false) => {
     if (incompleteMealIndex !== null) {
       setIncompleteMealIndex(incompleteMealIndex);
       setIncompleteSlideIndex(incompleteSlideIndex);
-      setErrorMessage(`Por favor, completa el campo "${firstMissingField}" para el Almuerzo #${incompleteMealIndex + 1}.`);
+      setErrorMessage(`Por favor, completa el campo "${firstMissingField}" para el Almuerzo #${incompleteMealIndex + 1}. Se guardará como parcial.`);
       setTimeout(() => {
         const element = document.getElementById(`meal-item-${incompleteMealIndex}`);
         if (element) {
@@ -929,7 +929,7 @@ const onSendOrder = async (isTableOrder = false) => {
           element.dispatchEvent(new CustomEvent('updateSlide', { detail: { slideIndex: incompleteSlideIndex } }));
         }
       }, 100);
-      return;
+      // No bloquear el guardado: continuar como pedido parcial
     }
 
     setErrorMessage(null);
@@ -941,22 +941,18 @@ try {
         await registerClientAndSaveOrder(meals, isTableOrder, false);
         
         // Solo si se guarda correctamente, enviar a WhatsApp (si no es mesa)
-        if (!isTableOrder) {
-          const total = Array.isArray(meals) ? calculateTotal(meals) : 0;
-          await sendToWhatsApp(
-            setIsLoading,
-            setErrorMessage,
-            () => {},                 // suprime el éxito interno
-            meals,
-            incompleteMealIndex,
-            setIncompleteMealIndex,
-            incompleteSlideIndex,
-            setIncompleteSlideIndex,
-            calculateMealPrice,
-            total,
-            sides
-          );
-        }
+            if (!isTableOrder) {
+              const total = Array.isArray(meals) ? calculateTotal(meals) : 0;
+              await sendToWhatsApp(
+                setIsLoading,
+                setErrorMessage,
+                () => {},
+                meals,
+                isTableOrder,
+                false,
+                total
+              );
+            }
         
         setSuccessMessage(isTableOrder ? '¡Orden de mesa guardada con éxito!' : '¡Pedido enviado y cliente registrado con éxito!');
         setMeals([]);
@@ -1074,7 +1070,7 @@ try {
                           // Solo validar dirección si ya hay desayunos (segundo en adelante)
                           if (breakfasts.length > 0 && !isAddressComplete()) {
                             setErrorMessage('Por favor, completa tu dirección y teléfono antes de añadir más desayunos.');
-                            return;
+                            // No bloquear el guardado: continuar como pedido parcial
                           }
                           setBreakfasts([...breakfasts, { ...initialBreakfast, id: Date.now() }]);
                         }}

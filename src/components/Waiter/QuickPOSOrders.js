@@ -1,6 +1,6 @@
 // src/components/Waiter/QuickPOSOrders.js
 import React, { useState, useMemo, useEffect } from 'react';
-import { collection, addDoc, serverTimestamp, onSnapshot, doc, updateDoc, query, orderBy } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, onSnapshot, doc, updateDoc, query, orderBy, where } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { useAuth } from '../Auth/AuthProvider';
 import { PlusCircleIcon, HomeIcon, XCircleIcon } from '@heroicons/react/24/outline';
@@ -21,7 +21,12 @@ const QuickPOSOrders = ({ setError=()=>{}, setSuccess=()=>{} }) => {
   // Mesas de la DB
   const [tables, setTables] = useState([]);
   const [showTableSelector, setShowTableSelector] = useState(false);
-  // Eliminado: pending orders (no se muestran al mesero en modo rápido)
+  // Órdenes pendientes (igual visual que CajaPOS)
+  const [tableOrders, setTableOrders] = useState([]);
+  const [breakfastOrders, setBreakfastOrders] = useState([]);
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [showOrderDetailModal, setShowOrderDetailModal] = useState(false);
+  const [selectedOrderDetail, setSelectedOrderDetail] = useState(null);
 
   // Suscripción posItems
   useEffect(() => {
@@ -42,7 +47,45 @@ const QuickPOSOrders = ({ setError=()=>{}, setSuccess=()=>{} }) => {
     return () => unsub();
   }, []);
 
-  // Sin suscripción a órdenes pendientes para mesero.
+  // Suscripción a órdenes pendientes para mesero (modo rápido) usando filtros directos (where) para eficiencia
+  useEffect(() => {
+    if (!user?.uid) return; // esperar usuario
+    const qTable = query(
+      collection(db, 'tableOrders'),
+      where('status', '==', 'Pendiente'),
+      where('userId', '==', user.uid),
+      orderBy('createdAt', 'desc')
+    );
+    const unsubTable = onSnapshot(qTable, (snapshot) => {
+      setTableOrders(snapshot.docs.map(d => ({ id: d.id, ...d.data(), orderType: 'almuerzo' })));
+    });
+    const qBreakfast = query(
+      collection(db, 'breakfastOrders'),
+      where('status', '==', 'Pendiente'),
+      where('userId', '==', user.uid),
+      orderBy('createdAt', 'desc')
+    );
+    const unsubBreakfast = onSnapshot(qBreakfast, (snapshot) => {
+      setBreakfastOrders(snapshot.docs.map(d => ({ id: d.id, ...d.data(), orderType: 'desayuno' })));
+    });
+    const timer = setInterval(() => setCurrentTime(new Date()), 60000);
+    return () => { unsubTable(); unsubBreakfast(); clearInterval(timer); };
+  }, [user?.uid]);
+
+  const pendingOrdersForPOS = useMemo(() => {
+    return [...breakfastOrders, ...tableOrders];
+  }, [breakfastOrders, tableOrders]);
+
+  const showOrderDetails = (order) => {
+    setSelectedOrderDetail(order);
+    setShowOrderDetailModal(true);
+  };
+
+  const getMeseroName = (email='') => {
+    if (!email) return '';
+    const name = email.split('@')[0];
+    return name.charAt(0).toUpperCase() + name.slice(1).replace(/[._]/g, ' ');
+  };
 
   const activeItems = useMemo(()=> posItems.filter(i => i.active!==false), [posItems]);
   const categories = useMemo(()=> { const s=new Set(); activeItems.forEach(i=>{ if(i.category) s.add(i.category); }); return Array.from(s).sort(); }, [activeItems]);
@@ -249,7 +292,75 @@ const QuickPOSOrders = ({ setError=()=>{}, setSuccess=()=>{} }) => {
           {/* Scroll catálogo */}
           <div className="flex-1 relative min-h-0">
             <div className="h-full max-h-full lg:max-h-[calc(100vh-12rem)] overflow-y-auto overscroll-contain pr-4 space-y-4 custom-scrollbar pt-1">
-              {/* Se elimina sección de órdenes pendientes para mesero */}
+              {/* ÓRDENES PENDIENTES - Similar a CajaPOS */}
+              {pendingOrdersForPOS.length > 0 && (
+                <div>
+                  <div className="flex items-center mb-2">
+                    <span className="text-[10px] uppercase tracking-wide text-orange-400 bg-orange-500/20 px-2 py-1 rounded">🔔 Órdenes Pendientes</span>
+                    <span className="ml-2 text-[10px] text-orange-300">{pendingOrdersForPOS.length}</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3 sm:gap-4 md:grid-cols-4 xl:grid-cols-6">
+                    {pendingOrdersForPOS.map(order => {
+                      const orderTime = new Date(order.createdAt?.seconds ? order.createdAt.seconds * 1000 : order.createdAt);
+                      const minutesAgo = Math.max(0, Math.floor((currentTime - orderTime) / 60000));
+                      const tableNum = order.tableNumber || order.meals?.[0]?.tableNumber || order.breakfasts?.[0]?.tableNumber || '';
+                      const isLlevar = !tableNum || tableNum.toLowerCase().includes('llevar');
+                      const displayTable = isLlevar ? 'Llevar' : tableNum;
+                      const displayTotal = order.total || order.quickTotal || 0;
+                      const orderLabel = order.orderType === 'desayuno' || order.type === 'breakfast' ? '🍳' : '🍽️';
+                      const meseroName = getMeseroName(order.userEmail||'');
+                      return (
+                        <div key={order.id} className="relative group">
+                          <button onClick={() => showOrderDetails(order)} className="absolute -top-2 -right-2 bg-blue-500 hover:bg-blue-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition z-10">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M12 18a6 6 0 100-12 6 6 0 000 12z" />
+                            </svg>
+                          </button>
+                          <button className="w-20 h-20 sm:w-24 sm:h-24 mx-auto flex flex-col items-center justify-center text-center text-xs font-medium shadow-md hover:shadow-xl transition rounded-lg bg-gradient-to-br from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-white relative overflow-hidden">
+                            <span className="text-2xl mb-1">{orderLabel}</span>
+                            <span className="text-[10px] font-bold">{displayTable}</span>
+                            {meseroName && <span className="text-[9px] font-bold text-black">{meseroName}</span>}
+                            <span className="text-[9px] opacity-80">{minutesAgo}m</span>
+                          </button>
+                          <div className="mt-1 text-center text-[11px] text-orange-400 font-semibold">{formatPrice(displayTotal)}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Modal detalle de orden */}
+              {showOrderDetailModal && selectedOrderDetail && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowOrderDetailModal(false)}>
+                  <div className="bg-gray-800 rounded-2xl shadow-2xl max-w-sm w-full" onClick={(e)=>e.stopPropagation()}>
+                    <div className="px-4 py-3 border-b border-gray-700 flex justify-between items-center">
+                      <h3 className="text-base font-bold text-white">Información del Pedido</h3>
+                      <button onClick={()=>setShowOrderDetailModal(false)} className="text-gray-400 hover:text-white transition">
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                      </button>
+                    </div>
+                    <div className="p-4 text-sm text-gray-200 space-y-2">
+                      <div><span className="font-semibold">Tipo:</span> {selectedOrderDetail.orderType || selectedOrderDetail.type}</div>
+                      <div><span className="font-semibold">Mesa/Llevar:</span> {selectedOrderDetail.tableNumber || selectedOrderDetail.meals?.[0]?.tableNumber || selectedOrderDetail.breakfasts?.[0]?.tableNumber || 'Llevar'}</div>
+                      <div><span className="font-semibold">Total:</span> {formatPrice(selectedOrderDetail.total || selectedOrderDetail.quickTotal || 0)}</div>
+                      {Array.isArray(selectedOrderDetail.quickItems) && selectedOrderDetail.quickItems.length > 0 && (
+                        <div>
+                          <div className="font-semibold mb-1">Artículos rápidos:</div>
+                          <ul className="list-disc list-inside space-y-1">
+                            {selectedOrderDetail.quickItems.map((it, idx) => (
+                              <li key={idx}>{it.name} x{it.quantity} - {formatPrice(it.price)}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                    <div className="px-4 py-3 border-t border-gray-700 flex gap-2">
+                      <button onClick={()=>setShowOrderDetailModal(false)} className="flex-1 py-2 px-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition text-sm">Cerrar</button>
+                    </div>
+                  </div>
+                </div>
+              )}
               {/* Catálogo agrupado */}
               {groupedItems.map(g => {
                 const cat = g.category || 'Sin Categoría';

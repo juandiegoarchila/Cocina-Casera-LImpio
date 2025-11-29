@@ -2,7 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../Auth/AuthProvider';
 import { db } from '../../config/firebase';
-import { collection, onSnapshot, updateDoc, doc } from 'firebase/firestore';
+import { collection, onSnapshot, updateDoc, doc, query, where, orderBy } from 'firebase/firestore';
 import TablaPedidos from '../Admin/TablaPedidos';
 import { cleanText, getAddressDisplay, getMealDetailsDisplay } from '../Admin/utils';
 import { Disclosure, Transition } from '@headlessui/react';
@@ -21,6 +21,8 @@ import DeliveryTasks from './DeliveryTasks';
 import DeliveryTableOrders from './DeliveryTableOrders';
 import QuickPOSOrders from '../Waiter/QuickPOSOrders';
 import { BoltIcon } from '@heroicons/react/24/outline';
+import SuccessMessage from '../SuccessMessage';
+import ErrorMessage from '../ErrorMessage';
 
 const DeliveryOrdersPage = () => {
   const { user, loading, role } = useAuth();
@@ -45,6 +47,12 @@ const DeliveryOrdersPage = () => {
   const [editingPaymentsOrder, setEditingPaymentsOrder] = useState(null);
   const [deliveryPersons, setDeliveryPersons] = useState({});
   const [editingDeliveryId, setEditingDeliveryId] = useState(null);
+  // Pendientes propios (solo domiciliario actual) en tiempo real
+  const [myPendingTableOrders, setMyPendingTableOrders] = useState([]);
+  const [myPendingBreakfastOrders, setMyPendingBreakfastOrders] = useState([]);
+  const [pendingCurrentTime, setPendingCurrentTime] = useState(new Date());
+  const [showPendingDetailModal, setShowPendingDetailModal] = useState(false);
+  const [selectedPendingOrder, setSelectedPendingOrder] = useState(null);
 
   useEffect(() => {
     if (loading) return;
@@ -53,6 +61,33 @@ const DeliveryOrdersPage = () => {
       return;
     }
   }, [user, loading, role]);
+
+  // Suscripciones tiempo real a órdenes pendientes propias (colecciones usadas por QuickPOS)
+  useEffect(() => {
+    if (!user?.uid) return;
+    // tableOrders (almuerzos/mesa) creados por este usuario y pendientes
+    const qTable = query(
+      collection(db, 'tableOrders'),
+      where('status', '==', 'Pendiente'),
+      where('userId', '==', user.uid),
+      orderBy('createdAt', 'desc')
+    );
+    const unsubTable = onSnapshot(qTable, snap => {
+      setMyPendingTableOrders(snap.docs.map(d => ({ id: d.id, ...d.data(), orderType: 'almuerzo' })));
+    });
+    // breakfastOrders pendientes del usuario
+    const qBreakfast = query(
+      collection(db, 'breakfastOrders'),
+      where('status', '==', 'Pendiente'),
+      where('userId', '==', user.uid),
+      orderBy('createdAt', 'desc')
+    );
+    const unsubBreakfast = onSnapshot(qBreakfast, snap => {
+      setMyPendingBreakfastOrders(snap.docs.map(d => ({ id: d.id, ...d.data(), orderType: 'desayuno' })));
+    });
+    const timer = setInterval(()=> setPendingCurrentTime(new Date()), 60000);
+    return () => { unsubTable(); unsubBreakfast(); clearInterval(timer); };
+  }, [user?.uid]);
 
   const handleLogout = async () => {
     try {
@@ -205,6 +240,16 @@ const DeliveryOrdersPage = () => {
       );
     });
   }, [orders, searchTerm, orderTypeFilter, selectedDate]);
+
+  // Lista combinada de pendientes propios
+  const myPendingOrders = useMemo(() => ([...myPendingBreakfastOrders, ...myPendingTableOrders]), [myPendingBreakfastOrders, myPendingTableOrders]);
+
+  const openPendingDetail = (order) => { setSelectedPendingOrder(order); setShowPendingDetailModal(true); };
+  const getUserNameFromEmail = (email='') => {
+    if (!email) return '';
+    const base = email.split('@')[0];
+    return base.charAt(0).toUpperCase() + base.slice(1).replace(/[._]/g,' ');
+  };
 
   const sortedOrders = useMemo(() => {
     // Primero ordenar por fecha de creación descendente (más recientes primero)
@@ -680,6 +725,44 @@ const DeliveryOrdersPage = () => {
   {/* Ocultar banners en la vista principal de pedidos para no duplicar el toast de TablaPedidos */}
   {/* Se pueden mostrar en otras rutas si se requiere */}
 
+        {/* Bloque Órdenes Pendientes propias (solo las creadas por el domiciliario) */}
+        <div className="mb-4">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold">🔔 Órdenes Pendientes</span>
+            <span className="text-xs px-2 py-0.5 rounded bg-yellow-100 text-yellow-800 font-medium">{myPendingOrders.length}</span>
+          </div>
+          {myPendingOrders.length > 0 && (
+            <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
+              {myPendingOrders.slice(0, 12).map(o => {
+                const createdDate = o.createdAt?.seconds ? new Date(o.createdAt.seconds * 1000) : (o.createdAt instanceof Date ? o.createdAt : new Date());
+                const minutesAgo = Math.max(0, Math.floor((pendingCurrentTime - createdDate) / 60000));
+                const tableNum = o.tableNumber || o.meals?.[0]?.tableNumber || o.breakfasts?.[0]?.tableNumber || '';
+                const isLlevar = !tableNum || tableNum.toLowerCase().includes('llevar');
+                const displayTable = isLlevar ? 'Llevar' : tableNum;
+                const displayTotal = o.total || o.quickTotal || 0;
+                const orderLabel = (o.orderType === 'desayuno' || o.type === 'breakfast') ? '🍳' : '🍽️';
+                const userName = getUserNameFromEmail(o.userEmail||'');
+                return (
+                  <div key={o.id} className={`relative group rounded ${theme==='dark'?'bg-gray-800':'bg-white'} shadow px-3 py-2 flex items-center justify-between text-xs`}>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-base">{orderLabel}</span>
+                      <div className="min-w-0">
+                        <div className="font-medium truncate">{userName || 'Pedido'}</div>
+                        <div className="text-[10px] opacity-70 truncate">{displayTable}</div>
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-end gap-0.5">
+                      <div className="text-[11px] font-semibold">{new Intl.NumberFormat('es-CO',{ style:'currency', currency:'COP', maximumFractionDigits:0 }).format(displayTotal)}</div>
+                      <div className="text-[10px] opacity-60">{minutesAgo}m</div>
+                      <button onClick={()=>openPendingDetail(o)} className="text-[10px] px-2 py-0.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition">Info</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         <Routes>
           <Route path="/" element={
             <TablaPedidos
@@ -750,6 +833,47 @@ const DeliveryOrdersPage = () => {
           <Route path="/quickpos" element={<QuickPOSOrders setError={setError} setSuccess={setSuccess} />} />
           <Route path="*" element={<Navigate to="/delivery" replace />} />
         </Routes>
+
+        {/* Área de mensajes flotantes para avisos de guardado */}
+        <div className="fixed top-20 right-4 z-[10002] space-y-2 w-80 max-w-xs">
+          {error && (
+            <ErrorMessage message={error} onClose={() => setError('')} />
+          )}
+          {success && (
+            <SuccessMessage message={success} onClose={() => setSuccess('')} />
+          )}
+        </div>
+
+        {showPendingDetailModal && selectedPendingOrder && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[10003] p-4" onClick={()=>setShowPendingDetailModal(false)}>
+            <div className={`rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden ${theme==='dark'?'bg-gray-800':'bg-white'}`} onClick={(e)=>e.stopPropagation()}>
+              <div className="px-4 py-3 border-b border-gray-700 flex justify-between items-center">
+                <h3 className={`text-base font-bold ${theme==='dark'?'text-white':'text-gray-800'}`}>Detalle del Pedido</h3>
+                <button onClick={()=>setShowPendingDetailModal(false)} className="text-gray-400 hover:text-white transition">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+              <div className={`p-4 text-sm ${theme==='dark'?'text-gray-200':'text-gray-800'} space-y-2`}>
+                <div><span className="font-semibold">Tipo:</span> {selectedPendingOrder.orderType || selectedPendingOrder.type}</div>
+                <div><span className="font-semibold">Mesa/Llevar:</span> {selectedPendingOrder.tableNumber || selectedPendingOrder.meals?.[0]?.tableNumber || selectedPendingOrder.breakfasts?.[0]?.tableNumber || 'Llevar'}</div>
+                <div><span className="font-semibold">Total:</span> {new Intl.NumberFormat('es-CO',{ style:'currency', currency:'COP', maximumFractionDigits:0 }).format(selectedPendingOrder.total || selectedPendingOrder.quickTotal || 0)}</div>
+                {Array.isArray(selectedPendingOrder.quickItems) && selectedPendingOrder.quickItems.length > 0 && (
+                  <div>
+                    <div className="font-semibold mb-1">Artículos rápidos:</div>
+                    <ul className="list-disc list-inside space-y-1">
+                      {selectedPendingOrder.quickItems.map((it, idx) => (
+                        <li key={idx}>{it.name} x{it.quantity} - {new Intl.NumberFormat('es-CO',{ style:'currency', currency:'COP', maximumFractionDigits:0 }).format(it.price)}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+              <div className="px-4 py-3 border-t border-gray-700 flex gap-2">
+                <button onClick={()=>setShowPendingDetailModal(false)} className="flex-1 py-2 px-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition text-sm">Cerrar</button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Modal para mostrar detalles del pedido */}
