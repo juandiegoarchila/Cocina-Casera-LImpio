@@ -898,7 +898,8 @@ const onSendOrder = async (isTableOrder = false) => {
       else if (!meal?.drink) missing.push('Bebida');
       else if (!isTableOrder && meal?.cutlery === null) missing.push('Cubiertos');
       else if (!isTableOrder && !meal?.time) missing.push('Hora');
-      else if (!isTableOrder && !meal?.address?.address) missing.push('Dirección');
+      // Dirección debe tener texto y teléfono (para pedidos a domicilio)
+      else if (!isTableOrder && (!meal?.address?.address || !meal?.address?.phoneNumber)) missing.push('Dirección');
       else if (!isTableOrder && !meal?.payment?.name) missing.push('Método de pago');
       else if (!isCompleteRice && (!meal?.sides || meal.sides.length === 0)) missing.push('Acompañamientos');
   // Validaciones eliminadas relacionadas con addressType/localName
@@ -919,7 +920,7 @@ const onSendOrder = async (isTableOrder = false) => {
     if (incompleteMealIndex !== null) {
       setIncompleteMealIndex(incompleteMealIndex);
       setIncompleteSlideIndex(incompleteSlideIndex);
-      setErrorMessage(`Por favor, completa el campo "${firstMissingField}" para el Almuerzo #${incompleteMealIndex + 1}. Se guardará como parcial.`);
+      setErrorMessage(`⚠️ Por favor, completa el campo "${firstMissingField}" para el Almuerzo #${incompleteMealIndex + 1} antes de enviar. El pedido NO se enviará hasta que esté completo.`);
       setTimeout(() => {
         const element = document.getElementById(`meal-item-${incompleteMealIndex}`);
         if (element) {
@@ -929,9 +930,10 @@ const onSendOrder = async (isTableOrder = false) => {
           element.dispatchEvent(new CustomEvent('updateSlide', { detail: { slideIndex: incompleteSlideIndex } }));
         }
       }, 100);
-      // No bloquear el guardado: continuar como pedido parcial
+      // Bloquear completamente el envío si falta algún campo requerido
+      return; // <-- Salir sin intentar guardar ni enviar
     }
-
+    // Solo limpiar error e iniciar loading si todo está completo
     setErrorMessage(null);
     setIsLoading(true);
 
