@@ -436,6 +436,8 @@ const DeliveryOrdersPage = () => {
   // Texto promocional genérico (sin emojis)
   msg += `\n\nSi mañana deseas pedir almuerzo o desayuno, puedes hacerlo fácil desde la página:`;
   msg += '\nhttps://cocina-casera.web.app/';
+  msg += '\n\n📋 *Recuerda que aceptaste las condiciones de entrega:*';
+  msg += '\n👉 Ver condiciones completas: https://cocina-casera.web.app/politicas';
         
         // Abrimos WhatsApp en nueva pestaña; si falla, mostramos alerta pero continuamos
         const opened = openWhatsApp(phone, msg);
