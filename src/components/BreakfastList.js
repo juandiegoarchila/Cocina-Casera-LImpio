@@ -31,6 +31,46 @@ const BreakfastList = ({
   const [showMaxBreakfastsError, setShowMaxBreakfastsError] = useState(false);
 
   useEffect(() => {
+    const handleQuickMultiply = (e) => {
+      const { mealId, count, field, value, type } = e.detail;
+      if (type !== 'breakfast' || count <= 1) return;
+      
+      const baseBreakfastIndex = breakfasts.findIndex(b => b.id === mealId);
+      if (baseBreakfastIndex === -1) return;
+      
+      const currentBreakfastsCount = breakfasts.length;
+      
+      if (count <= currentBreakfastsCount) {
+        for (let i = 0; i < count; i++) {
+          const targetBreakfast = breakfasts[i];
+          if (targetBreakfast) {
+            setTimeout(() => onBreakfastChange(targetBreakfast.id, field, value), i * 50);
+          }
+        }
+      } else {
+        const baseBreakfast = breakfasts[baseBreakfastIndex];
+        
+        for (let i = 0; i < currentBreakfastsCount; i++) {
+          const targetBreakfast = breakfasts[i];
+          if (targetBreakfast) {
+            setTimeout(() => onBreakfastChange(targetBreakfast.id, field, value), i * 50);
+          }
+        }
+        
+        const newBreakfastsNeeded = count - currentBreakfastsCount;
+        for (let i = 0; i < newBreakfastsNeeded; i++) {
+          setTimeout(() => {
+            const breakfastWithValue = { ...baseBreakfast, [field]: value };
+            onDuplicateBreakfast(breakfastWithValue);
+          }, (currentBreakfastsCount + i) * 100);
+        }
+      }
+    };
+    window.addEventListener('quick-multiply-order', handleQuickMultiply);
+    return () => window.removeEventListener('quick-multiply-order', handleQuickMultiply);
+  }, [breakfasts, maxBreakfasts, onBreakfastChange, onDuplicateBreakfast]);
+
+  useEffect(() => {
     if (process.env.NODE_ENV === 'development') {
       console.log('[BreakfastList] Props recibidas:', {
         eggs: eggs || [],
@@ -147,7 +187,7 @@ const BreakfastList = ({
           ))
         )}
       </div>
-      {breakfasts.length > 0 && (
+      {breakfasts.length > 0 && !isTableOrder && (
         <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 shadow-md">
           <h3 className="font-semibold text-blue-800 mb-2 flex items-center text-sm md:text-base">
             <span className="mr-1.5 text-xl">🚀</span>

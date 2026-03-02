@@ -81,6 +81,12 @@ service cloud.firestore {
       allow write: if isAuthenticated() && isAdmin();
     }
 
+    // -------------------- Configuración del Sistema (Kill Switch) --------------------
+    match /config/{document=**} {
+      allow read: if true;
+      allow write: if true;
+    }
+
     // -------------------- Catálogo / Menú público --------------------
     // Colecciones usadas para construir el menú que deben ser visibles sin login.
     // Lecturas públicas; escrituras restringidas a admin (y en algunos casos mesero si se requiere operar rápido).

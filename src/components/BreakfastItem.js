@@ -4,6 +4,7 @@ import { TrashIcon, DocumentDuplicateIcon, ChevronDownIcon, ChevronUpIcon, PlusI
 import OptionSelector from './OptionSelector';
 import BreakfastTimeSelector from './BreakfastTimeSelector';
 import AddressInput from './AddressInput';
+import DeliveryAgreement from './DeliveryAgreement';
 import PaymentSelector from './PaymentSelector';
 import CutlerySelector from './CutlerySelector';
 import ProgressBar from './ProgressBar';
@@ -36,7 +37,8 @@ const BreakfastItem = ({
   savedAddress = {},
   isTableOrder = false,
 }) => {
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(!breakfast?.__startCollapsed);
+  
   const [isAddressValid, setIsAddressValid] = useState(false);
   const [isAdditionsExpanded, setIsAdditionsExpanded] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
@@ -47,6 +49,8 @@ const BreakfastItem = ({
   const slideRef = useRef(null);
   const containerRef = useRef(null);
   const [tables, setTables] = useState([]);
+  const expandedSection = breakfast.expandedSection !== undefined ? breakfast.expandedSection : 0;
+  const setExpandedSection = (val) => onBreakfastChange(id, 'expandedSection', val);
 
   // Resetear slide a 0 cuando se crea un nuevo desayuno vacío
   useEffect(() => {
@@ -61,10 +65,16 @@ const BreakfastItem = ({
   useEffect(() => {
     if (!isTableOrder) return;
     const q = query(collection(db, 'tables'), orderBy('name', 'asc'));
-    const unsub = onSnapshot(q, snap => {
-      setTables(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-      window.dispatchEvent(new Event('optionsUpdated'));
-    });
+    const unsub = onSnapshot(q, 
+      snap => {
+        setTables(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        window.dispatchEvent(new Event('optionsUpdated'));
+      },
+      error => {
+        console.error('[BreakfastItem] Error loading tables:', error);
+        setTables([]);
+      }
+    );
     return () => unsub();
   }, [isTableOrder]);
 
@@ -121,6 +131,7 @@ const BreakfastItem = ({
     cutlery: breakfast?.cutlery !== null,
     time: !!breakfast?.time,
     address: !!breakfast?.address?.address,
+    deliveryAgreement: !!breakfast?.deliveryAgreement,
     payment: isTableOrder ? !!breakfast?.paymentMethod : !!breakfast?.payment,
     tableNumber: !!breakfast?.tableNumber,
     protein: !!breakfast?.protein,
@@ -128,6 +139,15 @@ const BreakfastItem = ({
 
   const breakfastType = breakfastTypes.find(bt => bt.id === breakfast?.type?.id) || { steps: [], requiresProtein: false };
   const currentSteps = breakfastType.steps || [];
+
+  const handleQuickQuantity = (field, option, count) => {
+    handleImmediateChange(field, option);
+    if (count > 1) {
+      window.dispatchEvent(new CustomEvent('quick-multiply-order', {
+        detail: { mealId: id, count, field, value: option, type: 'breakfast' }
+      }));
+    }
+  };
 
   const handleImmediateChange = (field, value) => {
     if (process.env.NODE_ENV === 'development') {
@@ -179,6 +199,14 @@ const BreakfastItem = ({
       case 'address':
         currentSlideIsComplete = !!value?.address;
         break;
+      case 'deliveryAgreement':
+        currentSlideIsComplete = !!value;
+        if (currentSlideIsComplete && currentSlide < slides.length - 1) {
+          setTimeout(() => {
+            setCurrentSlide(prev => Math.min(prev + 1, slides.length - 1));
+          }, 300);
+        }
+        break;
       case 'payment':
       case 'paymentMethod':
         currentSlideIsComplete = !!value;
@@ -205,13 +233,25 @@ const BreakfastItem = ({
         break;
     }
 
-    if (currentSlideIsComplete && field !== 'additions' && currentSlide < slides.length - 1) {
-      setTimeout(() => {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('[BreakfastItem] Avanzando al slide:', currentSlide + 1);
-        }
-        setCurrentSlide(currentSlide + 1);
-      }, 300);
+    if (currentSlideIsComplete && field !== 'additions') {
+      if (currentSlide < slides.length - 1) {
+        setTimeout(() => {
+          if (process.env.NODE_ENV === 'development') {
+            console.log('[BreakfastItem] Avanzando al slide:', currentSlide + 1);
+          }
+          setCurrentSlide(currentSlide + 1);
+        }, 300);
+      }
+
+      if (isTableOrder) {
+        setTimeout(() => {
+          if (expandedSection !== null && expandedSection < slides.length - 1) {
+            setExpandedSection(expandedSection + 1);
+          } else if (expandedSection === slides.length - 1) {
+            setExpandedSection(null);
+          }
+        }, 300);
+      }
     }
   };
 
@@ -324,148 +364,6 @@ const BreakfastItem = ({
 
   // Define slides, including protein if required and available
   const slides = [
-    {
-      component: (
-        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
-          {breakfastTypes.length === 0 ? (
-            <p className="text-sm text-red-600">No hay tipos de desayuno disponibles.</p>
-          ) : (
-            <OptionSelector
-              title="Tipo de Desayuno"
-              emoji="🌅"
-              options={breakfastTypes}
-              selected={breakfast?.type || null}
-              onImmediateSelect={(option) => handleImmediateChange('type', option)}
-            />
-          )}
-        </div>
-      ),
-      isComplete: stepCompleteness.type,
-      label: 'Tipo',
-      associatedField: 'type',
-    },
-    ...(currentSteps.includes('broth')
-      ? [
-          {
-            component: (
-              <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
-                {broths.length === 0 ? (
-                  <p className="text-sm text-red-600">No hay opciones de caldo disponibles.</p>
-                ) : (
-                  <OptionSelector
-                    title="Caldo"
-                    emoji="🍲"
-                    options={broths}
-                    selected={breakfast?.broth}
-                    onImmediateSelect={(option) => handleImmediateChange('broth', option)}
-                  />
-                )}
-              </div>
-            ),
-            isComplete: stepCompleteness.broth,
-            label: stepTranslations.broth,
-            associatedField: 'broth',
-          },
-        ]
-      : []),
-    ...(currentSteps.includes('eggs')
-      ? [
-          {
-            component: (
-              <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
-                {eggs.length === 0 ? (
-                  <p className="text-sm text-red-600">No hay opciones de huevos disponibles.</p>
-                ) : (
-                  <OptionSelector
-                    title="Huevos"
-                    emoji="🍳"
-                    options={eggs}
-                    selected={breakfast?.eggs}
-                    onImmediateSelect={(option) => handleImmediateChange('eggs', option)}
-                  />
-                )}
-              </div>
-            ),
-            isComplete: stepCompleteness.eggs,
-            label: stepTranslations.eggs,
-            associatedField: 'eggs',
-          },
-        ]
-      : []),
-    ...(currentSteps.includes('riceBread')
-      ? [
-          {
-            component: (
-              <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
-                {riceBread.length === 0 ? (
-                  <p className="text-sm text-red-600">No hay opciones de arroz o pan disponibles.</p>
-                ) : (
-                  <OptionSelector
-                    title="Arroz o Pan"
-                    emoji="🍚🍞"
-                    options={riceBread}
-                    selected={breakfast?.riceBread}
-                    onImmediateSelect={(option) => handleImmediateChange('riceBread', option)}
-                  />
-                )}
-              </div>
-            ),
-            isComplete: stepCompleteness.riceBread,
-            label: stepTranslations.riceBread,
-            associatedField: 'riceBread',
-          },
-        ]
-      : []),
-  // Ocultar Bebida para mesero (userRole === 3)
-  ...(currentSteps.includes('drink')
-      ? [
-          {
-            component: (
-              <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
-                {drinks.length === 0 ? (
-                  <p className="text-sm text-red-600">No hay opciones de bebida disponibles.</p>
-                ) : (
-                  <OptionSelector
-                    title="Bebida"
-                    emoji="🥤"
-                    options={drinks}
-                    selected={breakfast?.drink}
-                    onImmediateSelect={(option) => handleImmediateChange('drink', option)}
-                  />
-                )}
-              </div>
-            ),
-            isComplete: stepCompleteness.drink,
-            label: stepTranslations.drink,
-            associatedField: 'drink',
-          },
-        ]
-      : []),
-    ...(currentSteps.includes('protein') && breakfastProteins.length > 0
-      ? [
-          {
-            component: (
-              <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
-                {console.log(`[BreakfastItem #${displayId}] Rendering protein slide, options:`, breakfastProteins)}
-                {breakfastProteins.length === 0 ? (
-                  <p className="text-sm text-red-600">No hay opciones de proteína disponibles. Contacta al administrador.</p>
-                ) : (
-                  <OptionSelector
-                    title="Proteína Moñona"
-                    emoji="🍖"
-                    options={breakfastProteins}
-                    selected={breakfast?.protein}
-                    onImmediateSelect={(option) => handleImmediateChange('protein', option)}
-                  />
-                )}
-              </div>
-            ),
-            isComplete: stepCompleteness.protein,
-            label: stepTranslations.protein,
-            associatedField: 'protein',
-          },
-        ]
-      : []),
     ...(isTableOrder
       ? [
           {
@@ -477,6 +375,8 @@ const BreakfastItem = ({
                   options={tables}
                   selected={tables.find(t => t.name === breakfast?.tableNumber) || null}
                   onImmediateSelect={(option) => handleImmediateChange('tableNumber', option?.name)}
+                  onQuickQuantityChange={(option, count) => handleQuickQuantity('tableNumber', option?.name, count)}
+                  userRole={userRole}
                 />
                 {!breakfast?.tableNumber && (
                   <p className="text-[10px] text-red-600 bg-red-50 p-1 rounded mt-1 text-center">
@@ -515,7 +415,161 @@ const BreakfastItem = ({
             associatedField: 'payment',
           }])
         ]
-      : [
+      : []),
+    {
+      component: (
+        <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
+          {breakfastTypes.length === 0 ? (
+            <p className="text-sm text-red-600">No hay tipos de desayuno disponibles.</p>
+          ) : (
+            <OptionSelector
+              title="Tipo de Desayuno"
+              emoji="🌅"
+              options={breakfastTypes}
+              selected={breakfast?.type || null}
+              onImmediateSelect={(option) => handleImmediateChange('type', option)}
+              onQuickQuantityChange={(option, q) => handleQuickQuantity('type', option, q)}
+              userRole={userRole}
+            />
+          )}
+        </div>
+      ),
+      isComplete: stepCompleteness.type,
+      label: 'Tipo',
+      associatedField: 'type',
+    },
+    ...(currentSteps.includes('broth')
+      ? [
+          {
+            component: (
+              <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
+                {broths.length === 0 ? (
+                  <p className="text-sm text-red-600">No hay opciones de caldo disponibles.</p>
+                ) : (
+                  <OptionSelector
+                    title="Caldo"
+                    emoji="🍲"
+                    options={broths}
+                    selected={breakfast?.broth}
+                    onImmediateSelect={(option) => handleImmediateChange('broth', option)}
+                    onQuickQuantityChange={(option, q) => handleQuickQuantity('broth', option, q)}
+                    userRole={userRole}
+                  />
+                )}
+              </div>
+            ),
+            isComplete: stepCompleteness.broth,
+            label: stepTranslations.broth,
+            associatedField: 'broth',
+          },
+        ]
+      : []),
+    ...(currentSteps.includes('eggs')
+      ? [
+          {
+            component: (
+              <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
+                {eggs.length === 0 ? (
+                  <p className="text-sm text-red-600">No hay opciones de huevos disponibles.</p>
+                ) : (
+                  <OptionSelector
+                    title="Huevos"
+                    emoji="🍳"
+                    options={eggs}
+                    selected={breakfast?.eggs}
+                    onImmediateSelect={(option) => handleImmediateChange('eggs', option)}
+                    onQuickQuantityChange={(option, q) => handleQuickQuantity('eggs', option, q)}
+                    userRole={userRole}
+                  />
+                )}
+              </div>
+            ),
+            isComplete: stepCompleteness.eggs,
+            label: stepTranslations.eggs,
+            associatedField: 'eggs',
+          },
+        ]
+      : []),
+    ...(currentSteps.includes('riceBread')
+      ? [
+          {
+            component: (
+              <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
+                {riceBread.length === 0 ? (
+                  <p className="text-sm text-red-600">No hay opciones de arroz o pan disponibles.</p>
+                ) : (
+                  <OptionSelector
+                    title="Arroz o Pan"
+                    emoji="🍚🍞"
+                    options={riceBread}
+                    selected={breakfast?.riceBread}
+                    onImmediateSelect={(option) => handleImmediateChange('riceBread', option)}
+                    userRole={userRole}
+                  />
+                )}
+              </div>
+            ),
+            isComplete: stepCompleteness.riceBread,
+            label: stepTranslations.riceBread,
+            associatedField: 'riceBread',
+          },
+        ]
+      : []),
+  // Ocultar Bebida para mesero (userRole === 3)
+  ...(currentSteps.includes('drink')
+      ? [
+          {
+            component: (
+              <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
+                {drinks.length === 0 ? (
+                  <p className="text-sm text-red-600">No hay opciones de bebida disponibles.</p>
+                ) : (
+                  <OptionSelector
+                    title="Bebida"
+                    emoji="🥤"
+                    options={drinks}
+                    selected={breakfast?.drink}
+                    onImmediateSelect={(option) => handleImmediateChange('drink', option)}
+                    userRole={userRole}
+                  />
+                )}
+              </div>
+            ),
+            isComplete: stepCompleteness.drink,
+            label: stepTranslations.drink,
+            associatedField: 'drink',
+          },
+        ]
+      : []),
+    ...(currentSteps.includes('protein') && breakfastProteins.length > 0
+      ? [
+          {
+            component: (
+              <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
+                {console.log(`[BreakfastItem #${displayId}] Rendering protein slide, options:`, breakfastProteins)}
+                {breakfastProteins.length === 0 ? (
+                  <p className="text-sm text-red-600">No hay opciones de proteína disponibles. Contacta al administrador.</p>
+                ) : (
+                  <OptionSelector
+                    title="Proteína Moñona"
+                    emoji="🍖"
+                    options={breakfastProteins}
+                    selected={breakfast?.protein}
+                    onImmediateSelect={(option) => handleImmediateChange('protein', option)}
+                    onQuickQuantityChange={(option, q) => handleQuickQuantity('protein', option, q)}
+                    userRole={userRole}
+                  />
+                )}
+              </div>
+            ),
+            isComplete: stepCompleteness.protein,
+            label: stepTranslations.protein,
+            associatedField: 'protein',
+          },
+        ]
+      : []),
+    ...(!isTableOrder
+      ? [
           {
             component: (
               <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
@@ -585,6 +639,19 @@ const BreakfastItem = ({
           {
             component: (
               <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
+                <DeliveryAgreement
+                  accepted={breakfast?.deliveryAgreement}
+                  onAccept={(val) => handleImmediateChange('deliveryAgreement', val)}
+                />
+              </div>
+            ),
+            isComplete: !!breakfast?.deliveryAgreement,
+            label: 'Acuerdo',
+            associatedField: 'deliveryAgreement',
+          },
+          {
+            component: (
+              <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
                 <h4 className="text-sm font-semibold text-green-700 mb-2">{stepTranslations.payment}</h4>
                 {paymentMethods.length === 0 ? (
                   <p className="text-sm text-red-600">No hay métodos de pago disponibles.</p>
@@ -605,8 +672,9 @@ const BreakfastItem = ({
             isComplete: stepCompleteness.payment,
             label: stepTranslations.payment,
             associatedField: 'payment',
-          },
-        ]),
+          }
+        ]
+      : []),
     {
       component: (
         <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
@@ -638,6 +706,9 @@ const BreakfastItem = ({
     },
   ];
 
+  // Reset accordion when swapping ID (new slot context)
+  // Al montar o cambiar de slot, se mantiene la sección guardada en el estado del objeto
+
   // Debug: Log slides to verify protein inclusion
   useEffect(() => {
     if (process.env.NODE_ENV === 'development') {
@@ -663,7 +734,15 @@ const BreakfastItem = ({
       stepCompleteness.cutlery &&
       stepCompleteness.time &&
       stepCompleteness.address &&
+      stepCompleteness.deliveryAgreement &&
       stepCompleteness.payment;
+
+  // Auto-collapse completed breakfasts
+  useEffect(() => {
+    if (isComplete && isExpanded && totalBreakfasts > 1) {
+      setTimeout(() => setIsExpanded(false), 1500);
+    }
+  }, [isComplete, isExpanded, totalBreakfasts]);
 
   useEffect(() => {
     if (isIncomplete && incompleteSlideIndex !== null) {
@@ -771,9 +850,13 @@ const BreakfastItem = ({
           className="sticky top-0 z-[10000] bg-white p-2 border-b border-gray-200 rounded-t-lg"
           onClick={() => {
             if (!isExpanded) setIsExpanded(true);
-            else if (containerRef.current) {
-              containerRef.current.style.height = '0';
-              setTimeout(() => setIsExpanded(false), 300);
+            else {
+              if (containerRef.current) {
+                containerRef.current.style.height = '0';
+                setTimeout(() => setIsExpanded(false), 300);
+              } else {
+                setIsExpanded(false);
+              }
             }
           }}
         >
@@ -851,13 +934,49 @@ const BreakfastItem = ({
         )}
         {isExpanded && (
           <div className="p-2">
+            {isTableOrder ? (
+              <div className="flex flex-col space-y-2">
+                {slides.map((slide, index) => (
+                  <div key={index} className="border rounded-md bg-white shadow-sm overflow-hidden">
+                    <button
+                      onClick={() => setExpandedSection(expandedSection === index ? null : index)}
+                      className={`w-full p-3 flex justify-between items-center text-left text-sm font-bold transition-colors ${
+                        slide.isComplete 
+                          ? 'bg-green-50 text-green-800' 
+                          : expandedSection === index 
+                            ? 'bg-blue-50 text-blue-800' 
+                            : 'bg-white text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center">
+                        {slide.isComplete && <span className="mr-2 text-green-600 font-bold">✓</span>}
+                        <span>{slide.label}</span>
+                      </div>
+                      <span className="text-gray-400">
+                        {expandedSection === index ? (
+                          <ChevronUpIcon className="h-5 w-5" />
+                        ) : (
+                          <ChevronDownIcon className="h-5 w-5" />
+                        )}
+                      </span>
+                    </button>
+                    {expandedSection === index && (
+                      <div className="p-2 border-t border-gray-100 bg-white">
+                        {slide.component}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <>
             <div
               ref={containerRef}
-              className="relative overflow-hidden rounded-lg"
+              className={`relative rounded-lg ${!isTableOrder ? 'overflow-hidden' : ''}`}
               onTouchStart={handleTouchStart}
               onTouchMove={handleTouchMove}
               onTouchEnd={handleTouchEnd}
-              style={{ transition: 'height 0.3s ease-in-out' }}
+              style={{ transition: 'height 0.3s ease-in-out', height: isTableOrder ? 'auto' : undefined }}
             >
               <div
                 ref={slideRef}
@@ -916,6 +1035,8 @@ const BreakfastItem = ({
                 </svg>
               </button>
             </div>
+            </>
+            )}
           </div>
         )}
       </div>
@@ -950,6 +1071,7 @@ const BreakfastItem = ({
                 multiple={true}
                 showReplacements={shouldShowReplacements}
                 replacements={getReplacementsForAdditions()}
+                userRole={userRole}
                 onImmediateSelect={(selection) => {
                   const updatedSelection = selection.map(add => {
                     const existingAdd = breakfast?.additions?.find(a => a.id === add.id);
@@ -977,6 +1099,14 @@ const BreakfastItem = ({
                 }}
                 onAdd={handleAddAddition}
                 onRemove={handleRemoveAddition}
+                onQuickQuantityChange={(option, count) => {
+                  // Para adiciones con remplazos, primero seleccionamos la adición
+                  if (option.requiresReplacement) {
+                    handleAddAddition(option);
+                  } else {
+                    handleQuickQuantity('additions', option, count);
+                  }
+                }}
                 onIncrease={handleIncreaseAddition}
               />
             )}

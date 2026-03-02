@@ -16,7 +16,7 @@ import SuccessMessage from './components/SuccessMessage';
 import InfoMessage from './components/InfoMessage';
 import { Route, Routes } from 'react-router-dom';
 import { useAuth } from './components/Auth/AuthProvider';
-import { initializeMealData, handleMealChange, addMeal, duplicateMeal, removeMeal, sendToWhatsApp, paymentSummary as paymentSummaryByMode } from './utils/MealLogic';
+import { initializeMealData, handleMealChange, addMeal, duplicateMeal, removeMeal, sendToWhatsApp, generateMessageFromMeals, paymentSummary as paymentSummaryByMode } from './utils/MealLogic';
 import { calculateTotal, calculateMealPrice } from './utils/MealCalculations';
 import Footer from './components/Footer';
 import Modal from './components/Modal';
@@ -28,6 +28,11 @@ import { encodeMessage } from './utils/Helpers';
 import CajaPOS from './components/Waiter/CajaPOS';
 import { getColombiaLocalDateString } from './utils/bogotaDate';
 import UpdateAvailable from './components/UpdateAvailable';
+import PromotionalModal from './components/PromotionalModal';
+import OrderConfirmedScreen from './components/OrderConfirmedScreen';
+import DeliveryPolicyPage from './components/DeliveryPolicyPage';
+import LicenseManager from './components/Admin/LicenseManager';
+import SystemGuard from './components/common/SystemGuard';
 
 const StaffHub = lazy(() => import('./components/Auth/StaffHub')); 
 const AdminPage = lazy(() => import('./components/Admin/AdminPage'));
@@ -48,6 +53,19 @@ const App = () => {
   const [errorMessage, setErrorMessage] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [showPromoModal, setShowPromoModal] = useState(false);
+  const [showOrderConfirmed, setShowOrderConfirmed] = useState(false);
+  const [lastOrderMessage, setLastOrderMessage] = useState('');
+
+  useEffect(() => {
+    setShowPromoModal(true);
+  }, []);
+
+  const handleNewOrder = () => {
+    setShowOrderConfirmed(false);
+    setLastOrderMessage('');
+    setShowPromoModal(true);
+  };
   const [incompleteMealIndex, setIncompleteMealIndex] = useState(null);
   const [incompleteSlideIndex, setIncompleteSlideIndex] = useState(null);
   const [incompleteBreakfastIndex, setIncompleteBreakfastIndex] = useState(null);
@@ -824,9 +842,10 @@ const App = () => {
           window.open(`https://web.whatsapp.com/send?phone=573016476916&text=${encodedMessage}`, '_blank');
         }
         
-        // Mostrar éxito y resetear
-        setSuccessMessage('¡Pedido de desayuno enviado con éxito!');
+        // Guardar mensaje y mostrar pantalla de confirmación (en vez de limpiar directo)
+        setLastOrderMessage(message);
         setBreakfasts([]);
+        setShowOrderConfirmed(true);
       } catch (saveError) {
         console.error('Error al guardar pedido:', saveError);
         // Si falla guardar, aún así enviar a WhatsApp pero mostrar advertencia
@@ -847,8 +866,10 @@ const App = () => {
           window.open(`https://web.whatsapp.com/send?phone=573016476916&text=${encodedMessage}`, '_blank');
         }
         
-        setSuccessMessage('¡Pedido enviado a WhatsApp! (Nota: hubo un problema al guardar en el sistema)');
+        // Guardar mensaje y mostrar pantalla de confirmación igualmente
+        setLastOrderMessage(message);
         setBreakfasts([]);
+        setShowOrderConfirmed(true);
       }
     } catch (error) {
       if (process.env.NODE_ENV === 'development') console.error('Error al enviar pedido de desayuno:', error);
@@ -945,6 +966,8 @@ try {
         // Solo si se guarda correctamente, enviar a WhatsApp (si no es mesa)
             if (!isTableOrder) {
               const total = Array.isArray(meals) ? calculateTotal(meals) : 0;
+              // Generar mensaje antes de enviar para tenerlo disponible para reintentos
+              const orderMessage = generateMessageFromMeals(meals, calculateMealPrice, total, sides);
               await sendToWhatsApp(
                 setIsLoading,
                 setErrorMessage,
@@ -954,6 +977,11 @@ try {
                 false,
                 total
               );
+              // Guardar mensaje y mostrar pantalla de confirmación
+              setLastOrderMessage(orderMessage);
+              setMeals([]);
+              setShowOrderConfirmed(true);
+              return; // Evitar el setMeals([]) del outer try después
             }
         
         setSuccessMessage(isTableOrder ? '¡Orden de mesa guardada con éxito!' : '¡Pedido enviado y cliente registrado con éxito!');
@@ -964,6 +992,8 @@ try {
         // Si falla guardar pero no es mesa, aún así enviar a WhatsApp
         if (!isTableOrder) {
           const total = Array.isArray(meals) ? calculateTotal(meals) : 0;
+          // Generar mensaje antes de enviar para tenerlo disponible
+          const orderMessage = generateMessageFromMeals(meals, calculateMealPrice, total, sides);
           await sendToWhatsApp(
             setIsLoading,
             setErrorMessage,
@@ -977,7 +1007,11 @@ try {
             total,
             sides
           );
-          setSuccessMessage('¡Pedido enviado a WhatsApp! (Nota: hubo un problema al guardar en el sistema)');
+          // Guardar mensaje y mostrar pantalla de confirmación
+          setLastOrderMessage(orderMessage);
+          setMeals([]);
+          setShowOrderConfirmed(true);
+          return; // Salir sin continuar
         } else {
           setErrorMessage('Error al guardar orden de mesa. Intenta de nuevo.');
         }
@@ -997,8 +1031,11 @@ try {
 
   return (
     <Suspense fallback={<FullScreenLoader message="Cargando aplicación..." />}>
-      <Routes>
-        <Route path="/login" element={<Login />} />
+      <SystemGuard>
+        <Routes>
+          <Route path="/license-control" element={<LicenseManager />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/politicas" element={<DeliveryPolicyPage />} />
         <Route path="/staffhub" element={<StaffHub />} />
         <Route path="/admin/*" element={<AdminPage />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
@@ -1029,7 +1066,12 @@ try {
               <PrivacyPolicy />
             </Modal>
             <main role="main" className="p-2 sm:p-4 flex-grow w-full max-w-4xl mx-auto">
-              {isOrderingDisabled || currentMenuType === 'closed' ? (
+              {showOrderConfirmed ? (
+                <OrderConfirmedScreen
+                  message={lastOrderMessage}
+                  onNewOrder={handleNewOrder}
+                />
+              ) : isOrderingDisabled || currentMenuType === 'closed' ? (
                 <div className="flex items-center justify-center min-h-[65vh] mt-4">
                   <div className="w-full max-w-3xl text-center bg-red-50 text-red-700 p-4 sm:p-6 rounded-2xl shadow-md space-y-3">
                     <h2 className="text-xl sm:text-2xl font-bold">{globalNotice.title || '🚫 Restaurante cerrado'}</h2>
@@ -1174,11 +1216,13 @@ try {
               {successMessage && <SuccessMessage message={successMessage} onClose={() => setSuccessMessage(null)} />}
               {infoMessage && <InfoMessage message={infoMessage} onClose={() => setInfoMessage(null)} />}
             </div>
+            <PromotionalModal isOpen={showPromoModal} onClose={() => setShowPromoModal(false)} />
             <Footer />
           </div>
         } />
         <Route path="/test" element={<div className="text-center text-green-500">Ruta de prueba funcionando</div>} />
-      </Routes>
+        </Routes>
+      </SystemGuard>
     </Suspense>
   );
 };

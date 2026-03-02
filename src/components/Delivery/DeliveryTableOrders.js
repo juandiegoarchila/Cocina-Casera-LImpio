@@ -18,6 +18,7 @@ import { initializeMealData, handleMealChange, addMeal, duplicateMeal, removeMea
 import { calculateTotal, calculateMealPrice } from '../../utils/MealCalculations';
 import { initializeBreakfastData, handleBreakfastChange, addBreakfast, duplicateBreakfast, removeBreakfast, calculateBreakfastPrice, calculateTotalBreakfastPrice } from '../../utils/BreakfastLogic';
 import { quickVariantToMeal, quickVariantToBreakfast } from '../../utils/quickVariantMapper';
+import { PlusCircleIcon, XCircleIcon, EyeIcon, TrashIcon, ChevronUpIcon, ChevronDownIcon, CalculatorIcon } from '@heroicons/react/24/outline';
 
 const DeliveryTableOrders = () => {
   const { user, role, loading } = useAuth();
@@ -77,8 +78,140 @@ const DeliveryTableOrders = () => {
     lunchEnd: 950,       // 15:50
   });
   const [timeRemaining, setTimeRemaining] = useState('');
+  
+  // Ref para controlar la sincronización y evitar bucles
+  const isSwitchingSlot = React.useRef(false);
+
+  /* --- QUICK PANEL / COMBAT MODE DESIGN STATE --- */
+  const [slotsData, setSlotsData] = useState(() => {
+      // Estado inicial con un slot de almuerzo válido
+      const initialMeal = initializeMealData({}, true);
+      const initialId = Date.now();
+      return {
+          [initialId]: { id: initialId, type: 'lunch', items: [initialMeal], table: null }
+      };
+  });
+  
+  // Derivar ID inicial
+  const [activeSlotId, setActiveSlotId] = useState(() => Number(Object.keys(slotsData || {})[0] || 0));
+
+  // Sync: Cargar datos cuando cambia el slot activo
+  useEffect(() => {
+      const currentSlot = slotsData[activeSlotId];
+      if (currentSlot) {
+          isSwitchingSlot.current = true;
+          // Sincronizar vista con el tipo de slot
+          setManualMenuType(currentSlot.type);
+
+          if (currentSlot.type === 'lunch') {
+              setMeals(currentSlot.items || []);
+              setBreakfasts([]);
+          } else {
+              setBreakfasts(currentSlot.items || []);
+              setMeals([]);
+          }
+      }
+  }, [activeSlotId]);
+
+  // Sync: Guardar cambios de Meals en el slot activo
+  useEffect(() => {
+      if (isSwitchingSlot.current) {
+          isSwitchingSlot.current = false;
+          return;
+      }
+      if (slotsData[activeSlotId]?.type === 'lunch') {
+          setSlotsData(prev => ({
+              ...prev,
+              [activeSlotId]: { ...prev[activeSlotId], items: meals }
+          }));
+      }
+  }, [meals]);
+
+  // Sync: Guardar cambios de Breakfasts en el slot activo
+  useEffect(() => {
+      if (isSwitchingSlot.current) {
+          isSwitchingSlot.current = false;
+          return;
+      }
+      if (slotsData[activeSlotId]?.type === 'breakfast') {
+          setSlotsData(prev => ({
+              ...prev,
+              [activeSlotId]: { ...prev[activeSlotId], items: breakfasts }
+          }));
+      }
+  }, [breakfasts]);
+
+  // Wrappers para interceptar cambios desde los componentes hijos
+  const updateMeals = (newMealsOrFn) => {
+      setMeals(newMealsOrFn);
+      // El useEffect([meals]) se encargará de la sincronización
+  };
+
+  const updateBreakfasts = (newBreakfastsOrFn) => {
+      setBreakfasts(newBreakfastsOrFn);
+      // El useEffect([breakfasts]) se encargará de la sincronización
+  };
+
   const [expandedBreakfast, setExpandedBreakfast] = useState(true);
   const [expandedLunch, setExpandedLunch] = useState(true);
+
+  const [showOrdersModal, setShowOrdersModal] = useState(false);
+
+  const createNewSlot = (type = 'lunch') => {
+    const newId = Date.now();
+    const newItems = type === 'lunch' 
+        ? [initializeMealData({}, true)] 
+        : [initializeBreakfastData({ isWaitress: true })];
+        
+    const newSlot = {
+      id: newId,
+      type: type, 
+      table: null,
+      items: newItems, 
+      notes: ''
+    };
+    
+    setSlotsData(prev => {
+        const next = { ...prev, [newId]: newSlot };
+        return next;
+    });
+    // Set active AFTER state update logic settles, or immediately works too
+    setActiveSlotId(newId);
+    setManualMenuType(type); // Ensure view switches
+  };
+
+  const removeSlot = (id) => {
+    setSlotsData(prev => {
+        const next = { ...prev };
+        delete next[id];
+
+        // Ensure at least one slot always exists
+        if (Object.keys(next).length === 0) {
+           const newId = Date.now();
+           const newItems = [initializeMealData({}, true)];
+           next[newId] = {
+              id: newId,
+              type: 'lunch',
+              table: null,
+              items: newItems,
+              notes: ''
+           };
+        }
+
+        if (Number(activeSlotId) === Number(id) || !next[activeSlotId]) {
+            const keys = Object.keys(next);
+            if (keys.length > 0) {
+               const newActiveId = Number(keys[0]);
+               setActiveSlotId(newActiveId);
+               // Sincronizar el tipo de menú manualmente para asegurar cambio de vista
+               if (next[newActiveId]) {
+                 setManualMenuType(next[newActiveId].type);
+               }
+            }
+        }
+        return next;
+    });
+  };
 
   // Estado para controlar secciones abiertas en el modal de edición
   const [openSections, setOpenSections] = useState({});
@@ -553,6 +686,9 @@ const DeliveryTableOrders = () => {
           // Filtrar por usuario Y por fecha del día actual
           if (order.userId !== user?.uid) return false;
           
+          // Ocultar órdenes ya pagadas (ya no están en la lista activa del mesero)
+          if (order.isPaid === true) return false;
+          
           // Permitir órdenes recientes (últimos 10 min) independientemente de la fecha (fix para updates inmediatos)
           const isRecent = (now - order.createdAt) < 10 * 60 * 1000;
           
@@ -636,6 +772,9 @@ const DeliveryTableOrders = () => {
         .filter(order => {
           // Filtrar por usuario Y por fecha del día actual
           if (order.userId !== user?.uid) return false;
+          
+          // Ocultar órdenes ya pagadas
+          if (order.isPaid === true) return false;
           
           // Permitir órdenes recientes (últimos 10 min) independientemente de la fecha
           const isRecent = (now - order.createdAt) < 10 * 60 * 1000;
@@ -746,56 +885,77 @@ const DeliveryTableOrders = () => {
       return;
     }
 
+    // 1. Validar slot ACTIVO primero
     let incompleteMealIndex = null;
     let incompleteSlideIndex = null;
     let firstMissingField = '';
-    for (let i = 0; i < meals.length; i++) {
-      const meal = meals[i];
-      const isCompleteRice = Array.isArray(meal?.principle) && meal.principle.some(p => ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'].includes(p.name));
-      const missing = [];
-      const slideMap = {
-        'Sopa o reemplazo de sopa': 0,
-        'Principio': 1,
-        'Proteína': 2,
-        'Bebida': 3,
-        'Acompañamientos': 4,
-        'Mesa': 5,
-        'Método de pago': 6,
-      };
+    
+    const slideMap = {
+      'Sopa o reemplazo de sopa': 0,
+      'Principio': 1,
+      'Proteína': 2,
+      'Bebida': 3,
+      'Acompañamientos': 4,
+      'Mesa': 5,
+      'Método de pago': 6,
+    };
 
-      if (!meal?.soup && !meal?.soupReplacement) missing.push('Sopa o reemplazo de sopa');
-      if (!meal?.principle && !meal?.principleReplacement) missing.push('Principio');
-      if (!isCompleteRice && !meal?.protein) missing.push('Proteína');
-      // Bebida y Método de pago ya NO son requeridos para mesero
-      if (!isCompleteRice && (!meal?.sides || meal.sides.length === 0)) missing.push('Acompañamientos');
-      if (!meal?.tableNumber) missing.push('Mesa');
-
-      if (missing.length > 0) {
-        if (process.env.NODE_ENV === 'development') {
-          console.log(`Meal ${i + 1} is incomplete. Missing fields:`, missing);
-          console.log(`Meal ${i + 1} data:`, meal);
-        }
-        incompleteMealIndex = i;
-        firstMissingField = missing[0];
-        incompleteSlideIndex = slideMap[firstMissingField] || 0;
-        break;
+    const validateList = (list) => {
+      for (let i = 0; i < list.length; i++) {
+        const meal = list[i];
+        const isCompleteRice = Array.isArray(meal?.principle) && meal.principle.some(p => ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'].includes(p.name));
+        const missing = [];
+        if (!meal?.soup && !meal?.soupReplacement) missing.push('Sopa o reemplazo de sopa');
+        if ((!meal?.principle || meal?.principle?.length === 0) && !meal?.principleReplacement) missing.push('Principio');
+        if (!isCompleteRice && !meal?.protein) missing.push('Proteína');
+        if (!isCompleteRice && (!meal?.sides || meal.sides.length === 0)) missing.push('Acompañamientos');
+        if (!meal?.tableNumber) missing.push('Mesa');
+        if (missing.length > 0) return { index: i, field: missing[0] };
       }
-    }
+      return null;
+    };
 
-    if (incompleteMealIndex !== null) {
-      setIncompleteMealIndex(incompleteMealIndex);
-      setIncompleteSlideIndex(incompleteSlideIndex);
-      setErrorMessage(`Por favor, completa el campo "${firstMissingField}" para el Almuerzo #${incompleteMealIndex + 1}.`);
+    const activeError = validateList(meals);
+    if (activeError) {
+      setIncompleteMealIndex(activeError.index);
+      setIncompleteSlideIndex(slideMap[activeError.field] || 0);
+      setErrorMessage(`Por favor, completa el campo "${activeError.field}" para el Almuerzo #${activeError.index + 1}.`);
       setTimeout(() => {
-        const element = document.getElementById(`meal-item-${incompleteMealIndex}`);
+        const element = document.getElementById(`meal-item-${activeError.index}`);
         if (element) {
           element.scrollIntoView({ behavior: 'smooth', block: 'center' });
           element.classList.add('highlight-incomplete');
           setTimeout(() => element.classList.remove('highlight-incomplete'), 3000);
-          element.dispatchEvent(new CustomEvent('updateSlide', { detail: { slideIndex: incompleteSlideIndex } }));
+          element.dispatchEvent(new CustomEvent('updateSlide', { detail: { slideIndex: slideMap[activeError.field] || 0 } }));
         }
       }, 100);
       return;
+    }
+
+    // 2. Agrupar con otros slots de la misma mesa
+    const currentTable = meals[0]?.tableNumber;
+    let finalMeals = [...meals];
+    let slotsToClear = [activeSlotId];
+
+    if (currentTable && currentTable !== 'llevar') {
+      Object.entries(slotsData).forEach(([id, slot]) => {
+        const idNum = Number(id);
+        if (idNum !== activeSlotId && slot.type === 'lunch') {
+          const slotTable = slot.items?.[0]?.tableNumber;
+          if (slotTable === currentTable) {
+            // Validar este slot también antes de agrupar
+            const slotError = validateList(slot.items);
+            if (slotError) {
+              // Si está incompleto, cambiamos a ese slot para que el usuario lo vea
+              setActiveSlotId(idNum);
+              setErrorMessage(`El pedido de la ${currentTable} en otra pestaña está incompleto (${slotError.field}).`);
+              throw new Error('INCOMPLETE_GROUPED_SLOT');
+            }
+            finalMeals = [...finalMeals, ...slot.items];
+            slotsToClear.push(idNum);
+          }
+        }
+      });
     }
 
     setErrorMessage(null);
@@ -804,16 +964,16 @@ const DeliveryTableOrders = () => {
       const order = {
         userId: user.uid,
         userEmail: user.email || `waiter_${user.uid}@example.com`,
-        meals: meals.map(meal => ({
+        meals: finalMeals.map(meal => ({
           soup: meal.soup ? { name: meal.soup.name } : null,
           soupReplacement: meal.soupReplacement ? { name: meal.soupReplacement.name, replacement: meal.soupReplacement.replacement || '' } : null,
           principle: Array.isArray(meal.principle) ? meal.principle.map(p => ({ name: p.name, replacement: p.replacement || '' })) : [],
           principleReplacement: meal.principleReplacement ? { name: meal.principleReplacement.name } : null,
           protein: meal.protein ? { 
             name: meal.protein.name,
-            price: meal.protein.price || 0  // Incluir precio de la proteína
+            price: meal.protein.price || 0 
           } : null,
-          drink: meal.drink ? { name: meal.drink.name } : { name: 'Sin bebida' }, // Valor por defecto
+          drink: meal.drink ? { name: meal.drink.name } : { name: 'Sin bebida' },
           sides: Array.isArray(meal.sides) ? meal.sides.map(s => ({ name: s.name })) : [],
           additions: meal.additions?.map(addition => ({
             id: addition.id,
@@ -824,21 +984,41 @@ const DeliveryTableOrders = () => {
             price: addition.price || 0,
           })) || [],
           tableNumber: meal.tableNumber || '',
-          payment: meal.payment ? { name: meal.payment.name } : { name: 'Efectivo' }, // Usar 'payment' en lugar de 'paymentMethod'
+          payment: meal.payment ? { name: meal.payment.name } : { name: 'Efectivo' },
           orderType: meal.orderType || '',
           notes: meal.notes || '',
         })),
-        total: calculateTotal(meals, 3),
+        total: calculateTotal(finalMeals, 3),
         status: 'Pendiente',
+        isPaid: false,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
-      console.log('[WaiterDashboard] Saving order with meals:', order.meals);
+      
+      console.log('[WaiterDashboard] Saving grouped order:', order);
       await addDoc(collection(db, 'tableOrders'), order);
-  setSuccessMessage('¡Orden de mesa guardada con éxito!');
-  // Limpiar completamente la lista para mostrar mensaje "No hay almuerzos..."
-  setMeals([]);
+      setSuccessMessage(`¡Orden de ${currentTable} guardada con éxito (${finalMeals.length} platos)!`);
+      
+      // Limpiar todos los slots procesados
+      setSlotsData(prev => {
+        const next = { ...prev };
+        slotsToClear.forEach(id => delete next[id]);
+        
+        const remainingIds = Object.keys(next);
+        if (remainingIds.length === 0) {
+          const newId = Date.now();
+          next[newId] = { id: newId, type: 'lunch', items: [initializeMealData({}, true)], table: null };
+          setActiveSlotId(newId);
+        } else if (slotsToClear.includes(activeSlotId)) {
+          setActiveSlotId(Number(remainingIds[0]));
+        }
+        return next;
+      });
     } catch (error) {
+      if (error.message === 'INCOMPLETE_GROUPED_SLOT') {
+        setIsLoading(false);
+        return;
+      }
       if (process.env.NODE_ENV === 'development') console.error('Error al guardar la orden de mesa:', error);
       setErrorMessage('Error al guardar la orden. Intenta de nuevo.');
     } finally {
@@ -916,54 +1096,50 @@ const DeliveryTableOrders = () => {
       return;
     }
 
-    let incompleteIndex = null;
-    let incompleteSlide = null;
-    let firstMissingField = '';
+    // 1. Validar slot ACTIVO primero
+    const slideMap = {
+      type: 0,
+      broth: 1,
+      eggs: 2,
+      riceBread: 3,
+      drink: 4,
+      protein: 5,
+      tableNumber: 6,
+      paymentMethod: 7,
+      orderType: 8,
+    };
 
-    breakfasts.forEach((breakfast, index) => {
-      const typeData = Array.isArray(breakfastTypes) ? breakfastTypes.find(bt => bt.name === breakfast.type?.name) : null;
-      const steps = typeData ? typeData.steps || [] : ['type', 'eggs', 'broth', 'riceBread', 'drink', 'protein'];
-      const missing = [];
+    const validateList = (list) => {
+      for (let i = 0; i < list.length; i++) {
+        const breakfast = list[i];
+        const typeData = Array.isArray(breakfastTypes) ? breakfastTypes.find(bt => bt.name === breakfast.type?.name) : null;
+        const steps = typeData ? typeData.steps || [] : ['type', 'eggs', 'broth', 'riceBread', 'drink', 'protein'];
+        const missing = [];
 
-      if (!breakfast.type?.name) missing.push('type');
-      steps.forEach(step => {
-        if (step === 'tableNumber') {
-          if (!breakfast.tableNumber) missing.push('tableNumber');
-        } else if (step === 'paymentMethod' || step === 'drink') {
-          // Bebida y Pago ya NO son requeridos para mesero
-        } else if (step === 'orderType') {
-          if (!breakfast.orderType) missing.push('orderType');
-        } else if (!breakfast[step]) {
-          missing.push(step);
-        }
-      });
-
-      if (missing.length > 0 && incompleteIndex === null) {
-        incompleteIndex = index;
-        firstMissingField = missing[0];
-        const slideMap = {
-          type: 0,
-          broth: 1,
-          eggs: 2,
-          riceBread: 3,
-          drink: 4,
-          protein: 5,
-          tableNumber: 6,
-          paymentMethod: 7,
-          orderType: 8,
-        };
-        incompleteSlide = slideMap[firstMissingField] || 0;
+        if (!breakfast.type?.name) missing.push('type');
+        steps.forEach(step => {
+          if (step === 'tableNumber') {
+            if (!breakfast.tableNumber) missing.push('tableNumber');
+          } else if (step === 'paymentMethod' || step === 'drink') {
+            // Bebida y Pago ya NO son requeridos para mesero
+          } else if (step === 'orderType') {
+            if (!breakfast.orderType) missing.push('orderType');
+          } else if (!breakfast[step]) {
+            missing.push(step);
+          }
+        });
+        if (missing.length > 0) return { index: i, field: missing[0], id: breakfast.id };
       }
-    });
+      return null;
+    };
 
-    if (incompleteIndex !== null) {
-      setIncompleteBreakfastIndex(incompleteIndex);
-      setIncompleteBreakfastSlideIndex(incompleteSlide);
-      setErrorMessage(
-        `Por favor, completa el campo "${firstMissingField}" para el Desayuno #${incompleteIndex + 1}.`
-      );
+    const activeError = validateList(breakfasts);
+    if (activeError) {
+      setIncompleteBreakfastIndex(activeError.index);
+      setIncompleteBreakfastSlideIndex(slideMap[activeError.field] || 0);
+      setErrorMessage(`Por favor, completa el campo "${activeError.field}" para el Desayuno #${activeError.index + 1}.`);
       setTimeout(() => {
-        const element = document.getElementById(`breakfast-item-${breakfasts[incompleteIndex].id}`);
+        const element = document.getElementById(`breakfast-item-${activeError.id}`);
         if (element) {
           element.scrollIntoView({ behavior: 'smooth', block: 'center' });
           element.classList.add('highlight-incomplete');
@@ -973,38 +1149,45 @@ const DeliveryTableOrders = () => {
       return;
     }
 
+    // 2. Agrupar con otros slots de la misma mesa
+    const currentTable = breakfasts[0]?.tableNumber;
+    let finalBreakfasts = [...breakfasts];
+    let slotsToClear = [activeSlotId];
+
+    if (currentTable && currentTable !== 'llevar') {
+      Object.entries(slotsData).forEach(([id, slot]) => {
+        const idNum = Number(id);
+        if (idNum !== activeSlotId && slot.type === 'breakfast') {
+          const slotTable = slot.items?.[0]?.tableNumber;
+          if (slotTable === currentTable) {
+            // Validar este slot también antes de agrupar
+            const slotError = validateList(slot.items);
+            if (slotError) {
+              setActiveSlotId(idNum);
+              setErrorMessage(`El pedido de desayuno de la ${currentTable} en otra pestaña está incompleto (${slotError.field}).`);
+              throw new Error('INCOMPLETE_GROUPED_SLOT');
+            }
+            finalBreakfasts = [...finalBreakfasts, ...slot.items];
+            slotsToClear.push(idNum);
+          }
+        }
+      });
+    }
+
     setErrorMessage(null);
     setIsLoading(true);
 
     try {
-      console.log('🔍 [WaiterDashboard] === GUARDANDO PEDIDO DESAYUNO ===');
+      console.log('🔍 [WaiterDashboard] === GUARDANDO PEDIDO DESAYUNO AGRUPADO ===');
       // Construir desglose de pagos por método para totales
       const paymentsByMethodBreakfast = {};
-      breakfasts.forEach((b, index) => {
-        console.log(`🔍 [WaiterDashboard] Procesando desayuno ${index + 1} para pago:`, {
-          breakfast: {
-            type: b.type?.name,
-            broth: b.broth?.name,
-            orderType: b.orderType,
-            additions: b.additions,
-            paymentMethod: b.paymentMethod
-          }
-        });
-
+      finalBreakfasts.forEach((b) => {
         const method = getMethodName(b.paymentMethod || b.payment);
         if (!method) return;
         
         const amount = Number(calculateBreakfastPrice(b, 3) || 0);
-        console.log(`🔍 [WaiterDashboard] Cálculo de precio para pago:`, {
-          method,
-          amount,
-          source: 'WaiterDashboard.js'
-        });
-        
         paymentsByMethodBreakfast[method] = (paymentsByMethodBreakfast[method] || 0) + amount;
       });
-
-      console.log('🔍 [WaiterDashboard] === RESUMEN DE PAGOS ===', paymentsByMethodBreakfast);
 
       const paymentsBreakfast = Object.entries(paymentsByMethodBreakfast).map(([method, amount]) => ({
         method,
@@ -1014,13 +1197,13 @@ const DeliveryTableOrders = () => {
       const order = {
         userId: user.uid,
         userEmail: user.email || `waiter_${user.uid}@example.com`,
-        tableNumber: breakfasts[0]?.tableNumber || '', // Agregar tableNumber a nivel de orden
-        breakfasts: breakfasts.map(breakfast => ({
+        tableNumber: currentTable || '',
+        breakfasts: finalBreakfasts.map(breakfast => ({
           type: breakfast.type ? { name: breakfast.type.name } : null,
           broth: breakfast.broth ? { name: breakfast.broth.name } : null,
           eggs: breakfast.eggs ? { name: breakfast.eggs.name } : null,
           riceBread: breakfast.riceBread ? { name: breakfast.riceBread.name } : null,
-          drink: breakfast.drink ? { name: breakfast.drink.name } : { name: 'Sin bebida' }, // Valor por defecto
+          drink: breakfast.drink ? { name: breakfast.drink.name } : { name: 'Sin bebida' },
           protein: breakfast.protein ? { name: breakfast.protein.name } : null,
           additions: breakfast.additions?.map(addition => ({
             name: addition.name,
@@ -1028,7 +1211,6 @@ const DeliveryTableOrders = () => {
             price: addition.price || 0,
           })) || [],
           tableNumber: breakfast.tableNumber || '',
-          // Normaliza y guarda ambos por compatibilidad - Valor por defecto: Efectivo
           paymentMethod: (breakfast.paymentMethod || breakfast.payment)
             ? { name: getMethodName(breakfast.paymentMethod || breakfast.payment) }
             : { name: 'Efectivo' },
@@ -1038,37 +1220,38 @@ const DeliveryTableOrders = () => {
           orderType: breakfast.orderType || '',
           notes: breakfast.notes || '',
         })),
-        total: (() => {
-          const total = calculateTotalBreakfastPrice(breakfasts, 3, breakfastTypes);
-          console.log('🔍 [WaiterDashboard] === TOTAL FINAL PARA GUARDAR ===', {
-            total,
-            breakfastsLength: breakfasts.length,
-            source: 'WaiterDashboard save order'
-          });
-          return total;
-        })(),
+        total: calculateTotalBreakfastPrice(finalBreakfasts, 3, breakfastTypes),
         payments: paymentsBreakfast,
         status: 'Pendiente',
+        isPaid: false,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
-      console.log('[WaiterDashboard] === ORDEN COMPLETA A GUARDAR ===', {
-        order: {
-          ...order,
-          breakfasts: order.breakfasts.map(b => ({
-            type: b.type?.name,
-            broth: b.broth?.name,
-            orderType: b.orderType,
-            additions: b.additions
-          }))
-        }
-      });
+
       if (process.env.NODE_ENV === 'development') console.log('[WaiterDashboard] Saving breakfast order:', order);
       await addDoc(collection(db, 'breakfastOrders'), order);
-  setSuccessMessage('¡Orden de desayuno guardada con éxito!');
-  // Limpiar lista para que aparezca mensaje "No hay desayunos..."
-  setBreakfasts([]);
+      setSuccessMessage(`¡Orden de desayuno de ${currentTable} guardada con éxito (${finalBreakfasts.length} desayunos)!`);
+      
+      // Limpiar todos los slots procesados
+      setSlotsData(prev => {
+        const next = { ...prev };
+        slotsToClear.forEach(id => delete next[id]);
+        
+        const remainingIds = Object.keys(next);
+        if (remainingIds.length === 0) {
+          const newId = Date.now();
+          next[newId] = { id: newId, type: 'breakfast', items: [initializeBreakfastData({ isWaitress: true })], table: null };
+          setActiveSlotId(newId);
+        } else if (slotsToClear.includes(activeSlotId)) {
+          setActiveSlotId(Number(remainingIds[0]));
+        }
+        return next;
+      });
     } catch (error) {
+      if (error.message === 'INCOMPLETE_GROUPED_SLOT') {
+        setIsLoading(false);
+        return;
+      }
       if (process.env.NODE_ENV === 'development') console.error('Error al guardar la orden de desayuno:', error);
       setErrorMessage('Error al guardar la orden de desayuno. Intenta de nuevo.');
     } finally {
@@ -1084,6 +1267,7 @@ const DeliveryTableOrders = () => {
       const orderRef = doc(db, collectionName, orderId);
       await updateDoc(orderRef, {
         status: newStatus,
+        isPaid: false, // Asegurar que siga marcada como no pagada para la caja
         updatedAt: new Date(),
       });
       setErrorMessage(null);
@@ -1569,6 +1753,27 @@ const DeliveryTableOrders = () => {
     'Cancelada': 'bg-red-100 text-red-800',
   };
 
+  // Helper para truncar nombres a máximo 6 palabras
+  const truncateName = (name, maxWords = 6) => {
+    if (!name) return '';
+    const words = name.split(' ');
+    if (words.length <= maxWords) return name;
+    return words.slice(0, maxWords).join(' ') + '...';
+  };
+
+  // Helper para obtener el texto a mostrar en el slot tab
+  const getSlotDisplayText = (slot) => {
+    if (!slot.items || slot.items.length === 0) {
+      return slot.type === 'lunch' ? 'Sin platos' : 'Sin desa';
+    }
+    const firstItem = slot.items[0];
+    const proteinName = firstItem?.protein?.name;
+    if (proteinName) {
+      return truncateName(proteinName, 6);
+    }
+    return `${slot.items.length} ${slot.type === 'lunch' ? 'Platos' : 'Desa'}`;
+  };
+
   const normalizedAdditions = useMemo(() => additions.map(add => ({
     ...add,
     price: add.name === 'Mojarra' ? 8000 : add.price,
@@ -1611,6 +1816,8 @@ const DeliveryTableOrders = () => {
       <div className="flex-1 transition-all duration-300 min-h-screen">
         {/* Content */}
         <>
+
+
             <div className="flex border-b border-gray-300 mb-4">
               <button
                 className={`px-4 py-2 text-sm font-medium ${activeTab === 'create' ? 'border-b-2 border-blue-500 text-blue-500' : 'text-gray-600'}`}
@@ -1627,30 +1834,66 @@ const DeliveryTableOrders = () => {
             </div>
   {/* Eliminado el selector anterior para evitar duplicidad */}
   {activeTab === 'create' ? (
-          menuType === 'breakfast' ? (
+    <>
+          {menuType === 'breakfast' ? (
             <>
-              <div className="mb-4">
-                <div className="flex items-center justify-center bg-white p-3 rounded-lg shadow-sm">
-                  <span className="text-gray-700 text-sm text-center">
-                    Toma pedidos rápido. {(manualMenuType || menuType) === 'breakfast' ? 'Desayuno' : (manualMenuType || menuType) === 'lunch' ? 'Almuerzo' : 'Menú'} disponible hasta {timeRemaining}
-                  </span>
-                  <div className="ml-4 flex items-center">
-                    <select
-                      className="border rounded px-2 py-1 text-xs focus:outline-none focus:ring focus:border-blue-300"
-                      value={manualMenuType || menuType}
-                      onChange={e => setManualMenuType(e.target.value === 'auto' ? null : e.target.value)}
-                      style={{ minWidth: 100 }}
-                    >
-                      <option value="auto">Automático</option>
-                      <option value="breakfast">Desayuno</option>
-                      <option value="lunch">Almuerzo</option>
-                    </select>
-                  </div>
-                </div>
+               {/* Quick Panel Design (Agregado - Responsive y pequeño) */}
+             <div className="flex items-center gap-2 p-2 bg-white border-b shadow-sm overflow-x-auto mb-4 scrollbar-hide">
+              <div className="flex gap-2 min-w-max">
+                  {Object.values(slotsData).map(slot => {
+                      // Detectar nombre de mesa del primer item
+                      const firstItem = slot.items?.[0];
+                      const tableName = firstItem?.tableNumber;
+                      const displayTitle = tableName || (slot.type === 'lunch' ? '🥗 Almuerzo' : '🍳 Desayuno');
+
+                      return (
+                      <div 
+                          key={slot.id}
+                          onClick={() => setActiveSlotId(slot.id)}
+                          className={`relative cursor-pointer px-1.5 py-1 rounded-lg border min-w-[80px] transition-all
+                              ${activeSlotId === slot.id 
+                                  ? (slot.type === 'lunch' ? 'bg-blue-50 border-blue-400 text-blue-800' : 'bg-orange-50 border-orange-400 text-orange-800') 
+                                  : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'}
+                          `}
+                      >
+                          <div className="text-[9px] font-bold uppercase tracking-wider mb-0.5 whitespace-nowrap overflow-hidden text-ellipsis">
+                              {displayTitle}
+                          </div>
+                          <div className="flex justify-between items-center">
+                              <span className="font-medium text-[10px] truncate">
+                                  {getSlotDisplayText(slot)}
+                              </span>
+                              {Object.keys(slotsData).length > 0 && (
+                                  <button onClick={(e) => { e.stopPropagation(); removeSlot(slot.id); }} className="text-red-400 hover:text-red-600 ml-1">
+                                      <XCircleIcon className="w-3 h-3"/>
+                                  </button>
+                              )}
+                          </div>
+                      </div>
+                  )})}
               </div>
+              
+              {/* New Slot Buttons */}
+              <div className="flex gap-1 ml-2 border-l pl-2 flex-shrink-0">
+                  <button onClick={() => createNewSlot('lunch')} className="flex flex-col items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded bg-blue-100 hover:bg-blue-200 text-blue-700">
+                      <PlusCircleIcon className="w-4 h-4 sm:w-5 sm:h-5"/>
+                      <span className="text-[8px] font-bold">ALMU</span>
+                  </button>
+                  <button onClick={() => createNewSlot('breakfast')} className="flex flex-col items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded bg-orange-100 hover:bg-orange-200 text-orange-700">
+                      <PlusCircleIcon className="w-4 h-4 sm:w-5 sm:h-5"/>
+                      <span className="text-[8px] font-bold">DESA</span>
+                  </button>
+                  <button onClick={() => navigate('/delivery/quickpos')} className="flex flex-col items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded bg-green-100 hover:bg-green-200 text-green-700">
+                      <CalculatorIcon className="w-4 h-4 sm:w-5 sm:h-5"/>
+                      <span className="text-[8px] font-bold">CAJA</span>
+                  </button>
+              </div>
+            </div>
+
               <BreakfastList
+                key={`breakfast-list-${activeSlotId}`}
                 breakfasts={breakfasts}
-                setBreakfasts={setBreakfasts}
+                setBreakfasts={updateBreakfasts}
                 eggs={breakfastEggs}
                 broths={breakfastBroths}
                 riceBread={breakfastRiceBread}
@@ -1660,48 +1903,112 @@ const DeliveryTableOrders = () => {
                 breakfastProteins={breakfastProteins}
                 times={breakfastTimes}
                 paymentMethods={paymentMethods}
-                onBreakfastChange={(id, field, value) => handleBreakfastChange(setBreakfasts, id, field, value)}
-                onRemoveBreakfast={(id) => removeBreakfast(setBreakfasts, setSuccessMessage, id, breakfasts)}
-                onAddBreakfast={() => addBreakfast(setBreakfasts, setSuccessMessage, breakfasts, initializeBreakfastData({ isWaitress: true }))}
-                onDuplicateBreakfast={(breakfast) => duplicateBreakfast(setBreakfasts, setSuccessMessage, breakfast, breakfasts)}
+                onBreakfastChange={(id, field, value) => handleBreakfastChange(updateBreakfasts, id, field, value)}
+                onRemoveBreakfast={(id) => removeBreakfast(updateBreakfasts, setSuccessMessage, id, breakfasts)}
+                onAddBreakfast={() => {
+                  const lastBreakfast = breakfasts[breakfasts.length - 1];
+                  const newBreakfast = initializeBreakfastData({ isWaitress: true });
+                  newBreakfast.expandedSection = 0;
+                  if (lastBreakfast) {
+                    if (lastBreakfast.tableNumber) newBreakfast.tableNumber = lastBreakfast.tableNumber;
+                    if (lastBreakfast.orderType) newBreakfast.orderType = lastBreakfast.orderType;
+                  }
+                  addBreakfast(updateBreakfasts, setSuccessMessage, breakfasts, newBreakfast);
+                }}
+                onDuplicateBreakfast={(breakfast) => duplicateBreakfast(updateBreakfasts, setSuccessMessage, breakfast, breakfasts)}
                 incompleteBreakfastIndex={incompleteBreakfastIndex}
+
                 incompleteSlideIndex={incompleteBreakfastSlideIndex}
                 isOrderingDisabled={isOrderingDisabled}
                 userRole={3}
                 savedAddress={{}}
                 isTableOrder={true}
               />
-              <BreakfastOrderSummary
-                items={breakfasts}
-                onSendOrder={handleSendBreakfastOrder}
-                user={{ role: 3 }}
-                breakfastTypes={breakfastTypes}
-                isWaiterView={true}
-                isLoading={isLoading}
-              />
+              {(() => {
+                // Obtener número de mesa del slot activo
+                const currentTableNumber = breakfasts[0]?.tableNumber;
+                
+                // Si hay mesa asignada, agrupar todos los slots con la misma mesa
+                let allBreakfastsForTable = breakfasts;
+                if (currentTableNumber) {
+                  allBreakfastsForTable = Object.values(slotsData)
+                    .filter(slot => 
+                      slot.type === 'breakfast' && 
+                      slot.items?.length > 0 && 
+                      slot.items[0]?.tableNumber === currentTableNumber
+                    )
+                    .flatMap(slot => slot.items);
+                }
+                
+                return (
+                  <BreakfastOrderSummary
+                    items={allBreakfastsForTable}
+                    onSendOrder={handleSendBreakfastOrder}
+                    user={{ role: 3 }}
+                    breakfastTypes={breakfastTypes}
+                    isWaiterView={true}
+                    isLoading={isLoading}
+                  />
+                );
+              })()}
             </>
           ) : (
             <>
-              <div className="mb-4">
-                <div className="flex items-center justify-center bg-white p-3 rounded-lg shadow-sm">
-                  <span className="text-gray-700 text-sm text-center">
-                    Toma pedidos rápido. {(manualMenuType || menuType) === 'breakfast' ? 'Desayuno' : (manualMenuType || menuType) === 'lunch' ? 'Almuerzo' : 'Menú'} disponible hasta {timeRemaining}
-                  </span>
-                  <div className="ml-4 flex items-center">
-                    <select
-                      className="border rounded px-2 py-1 text-xs focus:outline-none focus:ring focus:border-blue-300"
-                      value={manualMenuType || menuType}
-                      onChange={e => setManualMenuType(e.target.value === 'auto' ? null : e.target.value)}
-                      style={{ minWidth: 100 }}
-                    >
-                      <option value="auto">Automático</option>
-                      <option value="breakfast">Desayuno</option>
-                      <option value="lunch">Almuerzo</option>
-                    </select>
-                  </div>
-                </div>
+               {/* Quick Panel Design (Agregado - Responsive y pequeño) */}
+             <div className="flex items-center gap-2 p-2 bg-white border-b shadow-sm overflow-x-auto mb-4 scrollbar-hide">
+              <div className="flex gap-2 min-w-max">
+                  {Object.values(slotsData).map(slot => {
+                      // Detectar nombre de mesa del primer item
+                      const firstItem = slot.items?.[0];
+                      const tableName = firstItem?.tableNumber;
+                      const displayTitle = tableName || (slot.type === 'lunch' ? '🥗 Almuerzo' : '🍳 Desayuno');
+
+                      return (
+                      <div 
+                          key={slot.id}
+                          onClick={() => setActiveSlotId(slot.id)}
+                          className={`relative cursor-pointer px-1.5 py-1 rounded-lg border min-w-[80px] transition-all
+                              ${activeSlotId === slot.id 
+                                  ? (slot.type === 'lunch' ? 'bg-blue-50 border-blue-400 text-blue-800' : 'bg-orange-50 border-orange-400 text-orange-800') 
+                                  : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'}
+                          `}
+                      >
+                          <div className="text-[9px] font-bold uppercase tracking-wider mb-0.5 whitespace-nowrap overflow-hidden text-ellipsis">
+                              {displayTitle}
+                          </div>
+                          <div className="flex justify-between items-center">
+                              <span className="font-medium text-[10px] truncate">
+                                  {getSlotDisplayText(slot)}
+                              </span>
+                              {Object.keys(slotsData).length > 0 && (
+                                  <button onClick={(e) => { e.stopPropagation(); removeSlot(slot.id); }} className="text-red-400 hover:text-red-600 ml-1">
+                                      <XCircleIcon className="w-3 h-3"/>
+                                  </button>
+                              )}
+                          </div>
+                      </div>
+                  )})}
               </div>
+              
+              {/* New Slot Buttons */}
+              <div className="flex gap-1 ml-2 border-l pl-2 flex-shrink-0">
+                  <button onClick={() => createNewSlot('lunch')} className="flex flex-col items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded bg-blue-100 hover:bg-blue-200 text-blue-700">
+                      <PlusCircleIcon className="w-4 h-4 sm:w-5 sm:h-5"/>
+                      <span className="text-[8px] font-bold">ALMU</span>
+                  </button>
+                  <button onClick={() => createNewSlot('breakfast')} className="flex flex-col items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded bg-orange-100 hover:bg-orange-200 text-orange-700">
+                      <PlusCircleIcon className="w-4 h-4 sm:w-5 sm:h-5"/>
+                      <span className="text-[8px] font-bold">DESA</span>
+                  </button>
+                  <button onClick={() => navigate('/delivery/quickpos')} className="flex flex-col items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded bg-green-100 hover:bg-green-200 text-green-700">
+                      <CalculatorIcon className="w-4 h-4 sm:w-5 sm:h-5"/>
+                      <span className="text-[8px] font-bold">CAJA</span>
+                  </button>
+              </div>
+            </div>
+
               <MealList
+                key={`meal-list-${activeSlotId}`}
                 meals={meals}
                 soups={soups}
                 soupReplacements={soupReplacements}
@@ -1714,22 +2021,47 @@ const DeliveryTableOrders = () => {
                 times={[]}
                 isTableOrder={true}
                 userRole={3}
-                onMealChange={(id, field, value) => handleMealChange(setMeals, id, field, value)}
-                onRemoveMeal={(id) => removeMeal(setMeals, setSuccessMessage, id, meals)}
-                onAddMeal={() => addMeal(setMeals, setSuccessMessage, meals, initializeMealData({}, true))}
-                onDuplicateMeal={(meal) => duplicateMeal(setMeals, setSuccessMessage, meal, meals)}
+                onMealChange={(id, field, value) => handleMealChange(updateMeals, id, field, value)}
+                onRemoveMeal={(id) => removeMeal(updateMeals, setSuccessMessage, id, meals)}
+                onAddMeal={() => {
+                  const lastMeal = meals[meals.length - 1];
+                  const newMeal = initializeMealData({}, true);
+                  newMeal.expandedSection = 0;
+                  if (lastMeal) {
+                    if (lastMeal.tableNumber) newMeal.tableNumber = lastMeal.tableNumber;
+                    if (lastMeal.orderType) newMeal.orderType = lastMeal.orderType;
+                  }
+                  addMeal(updateMeals, setSuccessMessage, meals, newMeal);
+                }}
+                onDuplicateMeal={(meal) => duplicateMeal(updateMeals, setSuccessMessage, meal, meals)}
                 incompleteMealIndex={incompleteMealIndex}
+
                 incompleteSlideIndex={incompleteSlideIndex}
                 isOrderingDisabled={isOrderingDisabled}
               />
               {(() => {
-                const totalCalculated = calculateTotal(meals, 3);
+                // Obtener número de mesa del slot activo
+                const currentTableNumber = meals[0]?.tableNumber;
+                
+                // Si hay mesa asignada, agrupar todos los slots con la misma mesa
+                let allMealsForTable = meals;
+                if (currentTableNumber) {
+                  allMealsForTable = Object.values(slotsData)
+                    .filter(slot => 
+                      slot.type === 'lunch' && 
+                      slot.items?.length > 0 && 
+                      slot.items[0]?.tableNumber === currentTableNumber
+                    )
+                    .flatMap(slot => slot.items);
+                }
+                
+                const totalCalculated = calculateTotal(allMealsForTable, 3);
                 console.log('🔍 WaiterDashboard total calculado:', totalCalculated);
                 return (
                   <OrderSummary
-                    meals={meals}
+                    meals={allMealsForTable}
                     onSendOrder={handleSendOrder}
-                    calculateTotal={() => calculateTotal(meals, 3)}
+                    calculateTotal={() => calculateTotal(allMealsForTable, 3)}
                     preCalculatedTotal={totalCalculated}
                     isTableOrder={true}
                     isWaiterView={false}
@@ -1740,8 +2072,9 @@ const DeliveryTableOrders = () => {
                 );
               })()}
             </>
-          )
-        ) : (
+          )}
+        </>
+      ) : (
           <div className="space-y-4">
             {orders.length === 0 ? (
               <p className="text-center text-gray-700">No has registrado órdenes de mesas.</p>
@@ -1755,7 +2088,13 @@ const DeliveryTableOrders = () => {
                   >
                     <div className="flex justify-center items-center">
                       <span>Órdenes de Desayuno</span>
-                      <span className="ml-2 text-lg">{expandedBreakfast ? '▼' : '▶'}</span>
+                      <span className="ml-2">
+                        {expandedBreakfast ? (
+                          <ChevronUpIcon className="h-5 w-5" />
+                        ) : (
+                          <ChevronDownIcon className="h-5 w-5" />
+                        )}
+                      </span>
                     </div>
                   </div>
                 )}
@@ -1769,7 +2108,15 @@ const DeliveryTableOrders = () => {
                         <div>
                           <h2 className="text-sm font-semibold text-gray-800 flex items-center gap-1">
                             {order.quickMode && !order.expanded && <span className="inline-flex items-center px-1.5 py-0.5 bg-green-600 text-white text-[10px] rounded">⚡ Rápido</span>}
-                            Desayuno #{index + 1} - Mesa {formatValue(order.breakfasts?.[0]?.tableNumber || order.tableNumber)} - #{order.id.slice(-4)}
+                            {formatValue(order.breakfasts?.[0]?.tableNumber || order.tableNumber)} - {order.breakfasts?.length === 1 ? 'desayuno' : 'desayunos'} {order.breakfasts?.length || 1}
+                            <span className={`ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                              order.status === 'Completada' ? 'bg-green-600 text-white animate-pulse' :
+                              order.status === 'Preparando' ? 'bg-blue-600 text-white' :
+                              'bg-orange-500 text-white'
+                            }`}>
+                              {order.status === 'Completada' ? 'COMPLETADO' : 
+                               order.status === 'Preparando' ? 'PREPARANDO' : 'PENDIENTE'}
+                            </span>
                           </h2>
                           {order.quickMode && !order.expanded && (
                             <div className="mt-1 text-[11px] text-green-700 font-medium">Pendiente de expansión</div>
@@ -1881,7 +2228,13 @@ const DeliveryTableOrders = () => {
                 >
                   <div className="flex justify-center items-center">
                     <span>Órdenes de Almuerzo</span>
-                    <span className="ml-2 text-lg">{expandedLunch ? '▼' : '▶'}</span>
+                    <span className="ml-2">
+                      {expandedLunch ? (
+                        <ChevronUpIcon className="h-5 w-5" />
+                      ) : (
+                        <ChevronDownIcon className="h-5 w-5" />
+                      )}
+                    </span>
                   </div>
                 </div>
               )}
@@ -1895,7 +2248,15 @@ const DeliveryTableOrders = () => {
                       <div>
                         <h2 className="text-sm font-semibold text-gray-800 flex items-center gap-1">
                           {order.quickMode && !order.expanded && <span className="inline-flex items-center px-1.5 py-0.5 bg-green-600 text-white text-[10px] rounded">⚡ Rápido</span>}
-                          Almuerzo #{index + 1} - Mesa {formatValue(order.meals?.[0]?.tableNumber || order.tableNumber)} - #{order.id.slice(-4)}
+                          {formatValue(order.meals?.[0]?.tableNumber || order.tableNumber)} - {order.meals?.length === 1 ? 'almuerzo' : 'almuerzos'} {order.meals?.length || 1}
+                          <span className={`ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                            order.status === 'Completada' ? 'bg-green-600 text-white animate-pulse' :
+                            order.status === 'Preparando' ? 'bg-blue-600 text-white' :
+                            'bg-orange-500 text-white'
+                          }`}>
+                            {order.status === 'Completada' ? 'COMPLETADO' : 
+                             order.status === 'Preparando' ? 'PREPARANDO' : 'PENDIENTE'}
+                          </span>
                         </h2>
                         {order.quickMode && !order.expanded && (
                           <div className="mt-1 text-[11px] text-green-700 font-medium">Pendiente de expansión</div>

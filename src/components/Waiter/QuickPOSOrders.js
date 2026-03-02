@@ -3,12 +3,14 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { collection, addDoc, serverTimestamp, onSnapshot, doc, updateDoc, query, orderBy, where } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { useAuth } from '../Auth/AuthProvider';
+import { useNavigate } from 'react-router-dom';
 import { PlusCircleIcon, HomeIcon, XCircleIcon } from '@heroicons/react/24/outline';
 
 const formatPrice = (v) => new Intl.NumberFormat('es-CO',{ style:'currency', currency:'COP', maximumFractionDigits:0 }).format(v||0);
 
 const QuickPOSOrders = ({ setError=()=>{}, setSuccess=()=>{} }) => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [tableInput, setTableInput] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -47,23 +49,26 @@ const QuickPOSOrders = ({ setError=()=>{}, setSuccess=()=>{} }) => {
     return () => unsub();
   }, []);
 
-  // Suscripción a órdenes pendientes para mesero (modo rápido) usando filtros directos (where) para eficiencia
+  // Suscripción a órdenes que no han sido pagadas para mesero
   useEffect(() => {
-    if (!user?.uid) return; // esperar usuario
+    if (!user?.uid) return;
+    const activeStatuses = ['Pendiente', 'Preparando', 'Completada'];
+    
+    // Al usar 'in' con orderBy puede requerir índices compuestos, 
+    // así que ordenamos en el useMemo para mayor compatibilidad
     const qTable = query(
       collection(db, 'tableOrders'),
-      where('status', '==', 'Pendiente'),
       where('userId', '==', user.uid),
-      orderBy('createdAt', 'desc')
+      where('status', 'in', activeStatuses)
     );
     const unsubTable = onSnapshot(qTable, (snapshot) => {
       setTableOrders(snapshot.docs.map(d => ({ id: d.id, ...d.data(), orderType: 'almuerzo' })));
     });
+
     const qBreakfast = query(
       collection(db, 'breakfastOrders'),
-      where('status', '==', 'Pendiente'),
       where('userId', '==', user.uid),
-      orderBy('createdAt', 'desc')
+      where('status', 'in', activeStatuses)
     );
     const unsubBreakfast = onSnapshot(qBreakfast, (snapshot) => {
       setBreakfastOrders(snapshot.docs.map(d => ({ id: d.id, ...d.data(), orderType: 'desayuno' })));
@@ -73,7 +78,30 @@ const QuickPOSOrders = ({ setError=()=>{}, setSuccess=()=>{} }) => {
   }, [user?.uid]);
 
   const pendingOrdersForPOS = useMemo(() => {
-    return [...breakfastOrders, ...tableOrders];
+    const combined = [...breakfastOrders, ...tableOrders];
+    const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000);
+
+    return combined
+      .filter(order => {
+        // Filtrar órdenes ya pagadas
+        if (order.isPaid) return false;
+        
+        // Filtrar órdenes canceladas
+        if (order.status === 'Cancelada') return false;
+        
+        // Incluir todos los estados activos (Pendiente, Preparando, Completada)
+        const activeStatuses = ['Pendiente', 'Preparando', 'Completada'];
+        if (activeStatuses.includes(order.status)) return true;
+        
+        // Fallback por tiempo para órdenes sin estado o con estados personalizados
+        const orderDate = new Date(order.createdAt?.seconds ? order.createdAt.seconds * 1000 : order.createdAt);
+        return orderDate > twelveHoursAgo;
+      })
+      .sort((a, b) => {
+        const timeA = new Date(a.createdAt?.seconds ? a.createdAt.seconds * 1000 : a.createdAt);
+        const timeB = new Date(b.createdAt?.seconds ? b.createdAt.seconds * 1000 : b.createdAt);
+        return timeB - timeA; // Descendente por defecto (más recientes primero)
+      });
   }, [breakfastOrders, tableOrders]);
 
   const showOrderDetails = (order) => {
@@ -231,6 +259,7 @@ const QuickPOSOrders = ({ setError=()=>{}, setSuccess=()=>{} }) => {
         serviceType,
         tableNumber: tableNumber || 'llevar',
         status: 'Pendiente',
+        isPaid: false, // Orden sin pagar inicialmente
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
@@ -260,6 +289,13 @@ const QuickPOSOrders = ({ setError=()=>{}, setSuccess=()=>{} }) => {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
+                  <button 
+                    onClick={() => navigate('/delivery/create')} 
+                    className="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium flex items-center gap-1 transition-colors"
+                  >
+                    <HomeIcon className="w-4 h-4" />
+                    Gestión de Mesas
+                  </button>
                   <select value={categoryFilter} onChange={(e)=>setCategoryFilter(e.target.value)} className="px-2 py-1 rounded bg-gray-700 text-gray-200 text-xs">
                     <option value="">Todas</option>
                     {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
@@ -291,7 +327,7 @@ const QuickPOSOrders = ({ setError=()=>{}, setSuccess=()=>{} }) => {
           </div>
           {/* Scroll catálogo */}
           <div className="flex-1 relative min-h-0">
-            <div className="h-full max-h-full lg:max-h-[calc(100vh-12rem)] overflow-y-auto overscroll-contain pr-4 space-y-4 custom-scrollbar pt-1">
+            <div className="h-full overflow-y-auto pr-2 sm:pr-4 space-y-4 custom-scrollbar pt-1">
               {/* ÓRDENES PENDIENTES - Similar a CajaPOS */}
               {pendingOrdersForPOS.length > 0 && (
                 <div>

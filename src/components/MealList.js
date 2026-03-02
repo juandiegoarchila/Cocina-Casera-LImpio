@@ -30,6 +30,46 @@ const MealList = ({
   const [showMaxMealsError, setShowMaxMealsError] = useState(false);
 
   useEffect(() => {
+    const handleQuickMultiply = (e) => {
+      const { mealId, count, field, value, type } = e.detail;
+      if (type !== 'lunch' || count <= 1) return;
+      
+      const baseMealIndex = meals.findIndex(m => m.id === mealId);
+      if (baseMealIndex === -1) return;
+      
+      const currentMealsCount = meals.length;
+      
+      if (count <= currentMealsCount) {
+        for (let i = 0; i < count; i++) {
+          const targetMeal = meals[i];
+          if (targetMeal) {
+            setTimeout(() => onMealChange(targetMeal.id, field, value), i * 50);
+          }
+        }
+      } else {
+        const baseMeal = meals[baseMealIndex];
+        
+        for (let i = 0; i < currentMealsCount; i++) {
+          const targetMeal = meals[i];
+          if (targetMeal) {
+            setTimeout(() => onMealChange(targetMeal.id, field, value), i * 50);
+          }
+        }
+        
+        const newMealsNeeded = count - currentMealsCount;
+        for (let i = 0; i < newMealsNeeded; i++) {
+          setTimeout(() => {
+            const mealWithValue = { ...baseMeal, [field]: value };
+            onDuplicateMeal(mealWithValue);
+          }, (currentMealsCount + i) * 100);
+        }
+      }
+    };
+    window.addEventListener('quick-multiply-order', handleQuickMultiply);
+    return () => window.removeEventListener('quick-multiply-order', handleQuickMultiply);
+  }, [meals, maxMeals, onMealChange, onDuplicateMeal]);
+
+  useEffect(() => {
     if (process.env.NODE_ENV === 'development') {
       console.log('[MealList] Additions prop updated:', additions);
     }
@@ -123,7 +163,7 @@ const MealList = ({
           ))
         )}
       </div>
-      {meals.length > 0 && (
+      {meals.length > 0 && !isTableOrder && (
         <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 shadow-md">
           <h3 className="font-semibold text-blue-800 mb-2 flex items-center text-sm md:text-base">
             <span className="mr-1.5 text-xl">🚀</span>

@@ -41,24 +41,24 @@ export const calculateBreakfastPrice = (breakfast, userRole, breakfastTypes = []
   const orderType = breakfast.orderType || (hasAddress ? 'takeaway' : 'table');
 
   const priceMap = {
-    'solo huevos': { default: { mesa: 7000, llevar: 8000 } },
+    'solo huevos': { default: { mesa: 8000, llevar: 9000 } },
     'solo caldo': {
-      'caldo de costilla': { mesa: 7000, llevar: 8000 },
-      'caldo de pescado': { mesa: 7000, llevar: 8000 },
+      'caldo de costilla': { mesa: 8000, llevar: 9000 },
+      'caldo de pescado': { mesa: 8000, llevar: 9000 },
       'caldo de pollo': { mesa: 8000, llevar: 9000 },
-      'caldo de pata': { mesa: 8000, llevar: 9000 },
-      'caldo de pajarilla': { mesa: 9000, llevar: 10000 },
-      default: { mesa: 7000, llevar: 8000 },
+      'caldo de pata': { mesa: 9000, llevar: 10000 },
+      'caldo de pajarilla': { mesa: 10000, llevar: 11000 },
+      default: { mesa: 8000, llevar: 9000 },
     },
     'desayuno completo': {
-      'caldo de costilla': { mesa: 11000, llevar: 12000 },
-      'caldo de pescado': { mesa: 11000, llevar: 12000 },
+      'caldo de costilla': { mesa: 12000, llevar: 13000 },
+      'caldo de pescado': { mesa: 12000, llevar: 13000 },
       'caldo de pollo': { mesa: 12000, llevar: 13000 },
-      'caldo de pata': { mesa: 12000, llevar: 13000 },
-      'caldo de pajarilla': { mesa: 13000, llevar: 14000 },
-      default: { mesa: 11000, llevar: 12000 },
+      'caldo de pata': { mesa: 13000, llevar: 14000 },
+      'caldo de pajarilla': { mesa: 14000, llevar: 15000 },
+      default: { mesa: 12000, llevar: 13000 },
     },
-    'moñona': { default: { mesa: 13000, llevar: 14000 } },
+    'moñona': { default: { mesa: 14000, llevar: 15000 } },
   };
 
   let basePrice = 0;
@@ -72,7 +72,7 @@ export const calculateBreakfastPrice = (breakfast, userRole, breakfastTypes = []
       basePrice = orderType === 'table' ? defaultPrice.mesa : defaultPrice.llevar;
     }
   } else {
-    basePrice = orderType === 'table' ? 7000 : 8000;
+    basePrice = orderType === 'table' ? 8000 : 9000;
   }
 
   console.log('🔍 [BreakfastCalculations] Precio base calculado:', { 
@@ -214,7 +214,7 @@ export const calculateBreakfastProgress = (breakfast, isTableOrder, isWaitress, 
     if (!isWaitress) mandatorySteps.push('payment');
     if (isWaitress) mandatorySteps.push('orderType');
   } else {
-    mandatorySteps.push('cutlery', 'time', 'address', 'payment');
+    mandatorySteps.push('cutlery', 'time', 'address', 'deliveryAgreement', 'payment');
   }
 
   const stepCompleteness = {
@@ -227,6 +227,7 @@ export const calculateBreakfastProgress = (breakfast, isTableOrder, isWaitress, 
     cutlery: breakfast?.cutlery !== null,
     time: !!breakfast?.time,
     address: !!breakfast?.address?.address,
+    deliveryAgreement: !!breakfast?.deliveryAgreement,
     payment: isTableOrder ? !!breakfast?.paymentMethod : !!breakfast?.payment,
     tableNumber: !!breakfast?.tableNumber,
     orderType: !!breakfast?.orderType,

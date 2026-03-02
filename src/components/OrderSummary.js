@@ -25,7 +25,8 @@ const useOrderSummary = (meals, isWaiterView, calculateTotal, preCalculatedTotal
       if (meal.soup?.name && meal.soup.name !== 'Sin sopa') return cleanText(meal.soup.name);
       return 'Sin sopa';
     } else if (field === 'Principio') {
-      const principleNames = meal.principle?.map(p => cleanText(p.name)).sort() || [];
+      const principleArray = Array.isArray(meal.principle) ? meal.principle : (meal.principle ? [meal.principle] : []);
+      const principleNames = principleArray.map(p => cleanText(p.name)).sort() || [];
       const replacement = meal.principleReplacement?.name ? cleanText(meal.principleReplacement.name) : '';
       return JSON.stringify([principleNames.join(','), replacement]);
     } else if (field === 'Proteína') {

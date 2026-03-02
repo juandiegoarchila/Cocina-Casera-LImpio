@@ -431,7 +431,25 @@ const WaiterCashier = ({ setError, setSuccess, theme, canDeleteAll = false }) =>
   // Órdenes pendientes sin filtro de búsqueda (para POS)
   const pendingOrdersForPOS = useMemo(() => {
     const combined = [...tableOrders, ...breakfastOrders];
-    const pending = combined.filter(order => !order.isPaid && order.status !== 'Completada');
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    
+    const pending = combined.filter(order => {
+      // 1. Ocultar si ya está pagada
+      if (order.isPaid === true) return false;
+      
+      // 2. Ocultar si está cancelada
+      if (order.status === 'Cancelada') return false;
+
+      // 3. Mostrar siempre si está en un estado operativo activo
+      const activeStatuses = ['Pendiente', 'Preparando', 'Completada'];
+      if (activeStatuses.includes(order.status)) return true;
+      
+      // 4. Fallback por tiempo
+      const rawDate = order.createdAt?.seconds ? order.createdAt.seconds * 1000 : order.createdAt;
+      const orderDate = new Date(rawDate);
+      return orderDate > twentyFourHoursAgo;
+    });
+    
     console.log('🔍 [WaiterCashier] Órdenes pendientes para POS:', pending.length, pending);
     return pending.sort((a, b) => {
       const timeA = new Date(a.createdAt?.seconds ? a.createdAt.seconds * 1000 : a.createdAt);

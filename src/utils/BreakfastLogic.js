@@ -27,6 +27,7 @@ export const initializeBreakfastData = ({ address, phoneNumber, details, isWaitr
   tableNumber: isWaitress ? '' : null,
   paymentMethod: isWaitress ? null : null,
   orderType: isWaitress ? null : 'takeaway',
+  expandedSection: 0,
   ...(isWaitress ? {} : {
     time: null,
     address: address || phoneNumber || details ? {
@@ -92,26 +93,26 @@ export const calculateBreakfastPrice = (breakfast, userRole, breakfastTypes = []
   // Define prices for "Para Mesa" and "Para Llevar" as per the provided table
   const priceMap = {
     'solo huevos': {
-      default: { mesa: 7000, llevar: 8000 },
+      default: { mesa: 8000, llevar: 9000 },
     },
     'solo caldo': {
-      'caldo de costilla': { mesa: 7000, llevar: 8000 },
-      'caldo de pescado': { mesa: 7000, llevar: 8000 },
+      'caldo de costilla': { mesa: 8000, llevar: 9000 },
+      'caldo de pescado': { mesa: 8000, llevar: 9000 },
       'caldo de pollo': { mesa: 8000, llevar: 9000 },
-      'caldo de pata': { mesa: 8000, llevar: 9000 },
-      'caldo de pajarilla': { mesa: 9000, llevar: 10000 },
-      default: { mesa: 7000, llevar: 8000 }, // Default for unspecified broths
+      'caldo de pata': { mesa: 10000, llevar: 11000 },
+      'caldo de pajarilla': { mesa: 11000, llevar: 12000 },
+      default: { mesa: 8000, llevar: 9000 }, // Default for unspecified broths
     },
     'desayuno completo': {
-      'caldo de costilla': { mesa: 11000, llevar: 12000 },
-      'caldo de pescado': { mesa: 11000, llevar: 12000 },
-      'caldo de pollo': { mesa: 12000, llevar: 13000 },
-      'caldo de pata': { mesa: 12000, llevar: 13000 },
-      'caldo de pajarilla': { mesa: 13000, llevar: 14000 },
-      default: { mesa: 11000, llevar: 12000 }, // Default for unspecified broths
+      'caldo de costilla': { mesa: 13000, llevar: 14000 },
+      'caldo de pescado': { mesa: 13000, llevar: 14000 },
+      'caldo de pollo': { mesa: 13000, llevar: 14000 },
+      'caldo de pata': { mesa: 14000, llevar: 15000 },
+      'caldo de pajarilla': { mesa: 15000, llevar: 16000 },
+      default: { mesa: 13000, llevar: 14000 }, // Default for unspecified broths
     },
     'moñona': {
-      default: { mesa: 13000, llevar: 14000 },
+      default: { mesa: 14000, llevar: 15000 },
     },
   };
 
@@ -126,7 +127,7 @@ export const calculateBreakfastPrice = (breakfast, userRole, breakfastTypes = []
       basePrice = orderType === 'table' ? defaultPrice.mesa : defaultPrice.llevar;
     }
   } else {
-    basePrice = orderType === 'table' ? 7000 : 8000; // Default price if type not found
+    basePrice = orderType === 'table' ? 8000 : 9000; // Default price if type not found
   }
 
   console.log('🔍 [BreakfastLogic] Precio base calculado:', { 
@@ -388,7 +389,7 @@ const fieldsToCheck = ['type', 'eggs', 'broth', 'riceBread', 'drink', 'Cubiertos
 const addressFields = ['address', 'phoneNumber', 'details'];
 
 export const generateMessageFromBreakfasts = (breakfasts, calculateBreakfastPrice, total, breakfastTypes, isWaitress = false) => {
-  let message = `👋 ¡Hola Cocina Casera! 🍴\nQuiero hacer mi pedido de desayunos:\n\n`;
+  let message = `👋 ¡Hola Cocina Casera! 🍴\nQuiero hacer mi pedido de desayunos:\n\n🧾 *Pago por transferencia:* Si pagas con transferencia, tu pedido se empieza a preparar solo cuando envíes el comprobante de pago. Entre más rápido lo envíes, más pronto sale tu pedido. Los números de cuenta están al final del mensaje.\n───────────────\n`;
 
   if (!breakfasts || breakfasts.length === 0) {
     message += `🍽 0 desayunos en total\n💰 Total: $0\n¡Gracias por tu pedido! 😊`;
@@ -809,12 +810,14 @@ export const generateMessageFromBreakfasts = (breakfasts, calculateBreakfastPric
       message += `Si no tienes efectivo,  puedes transferir.\n`;
       message += `\nBancolombia (Ahorros – Nequi a Bancolombia): 📲 54706725531\n`;
       message += `Daviplata: 📲 313 850 5647\n`;
+      message += `\n🧾 *Pago por transferencia:* Si pagas con transferencia, tu pedido se empieza a preparar solo cuando envíes el comprobante de pago. Entre más rápido lo envíes, más pronto sale tu pedido.\n`;
       message += `\n💰 Total: $${(total || 0).toLocaleString('es-CO')}\n`;
       message += `🚚 Estimado: 25-30 min (10-15 si están cerca).\n`;
     } else {
       message += `💳 Formas de pago:\n\n`;
       message += `Bancolombia (Ahorros – Nequi a Bancolombia): 📲 54706725531\n`;
       message += `Daviplata: 📲 313 850 5647\n`;
+      message += `\n🧾 *Pago por transferencia:* Si pagas con transferencia, tu pedido se empieza a preparar solo cuando envíes el comprobante de pago. Entre más rápido lo envíes, más pronto sale tu pedido.\n`;
       Object.entries(paymentSummaryMap).forEach(([method, amount]) => {
         if (method !== 'No especificado' && amount > 0 && method !== 'Efectivo') {
           message += `🔹 ${method}: $${(amount || 0).toLocaleString('es-CO')}\n`;
@@ -829,6 +832,13 @@ export const generateMessageFromBreakfasts = (breakfasts, calculateBreakfastPric
   }
 
   message += `\n¡Gracias por tu pedido! 😊`;
+  message += `\n\n📋 *Recuerda que aceptaste las condiciones de entrega:*`;
+  message += `\n👉 Ver condiciones completas: https://cocina-casera.web.app/politicas`;
+  message += `\n⏱️ Entrega: 25-30 min desde que el domiciliario confirma salida.`;
+  message += `\n🏢 Conjuntos/edificios: entrega en portería o entrada.`;
+  message += `\n👩‍🍳 Pedido con anticipación = llegada más puntual.`;
+  message += `\n🌧️ Retrasos externos están fuera de nuestro control.`;
+  message += `\n🙏 ¡Gracias por tu comprensión!`;
   return message;
 };
 
@@ -854,7 +864,7 @@ export const calculateBreakfastProgress = (breakfast, isTableOrder, isWaitress, 
     if (!isWaitress) mandatorySteps.push('payment');
     if (isWaitress) mandatorySteps.push('orderType');
   } else {
-    mandatorySteps.push('cutlery', 'time', 'address', 'payment');
+    mandatorySteps.push('cutlery', 'time', 'address', 'deliveryAgreement', 'payment');
   }
 
   const completedSteps = mandatorySteps.filter(step => {

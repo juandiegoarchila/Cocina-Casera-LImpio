@@ -1,12 +1,13 @@
 //src/components/MealItem.js
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/outline';
 import OptionSelector from './OptionSelector';
 import TimeSelector from './TimeSelector';
 import AddressInput from './AddressInput';
+import DeliveryAgreement from './DeliveryAgreement';
 import PaymentSelector from './PaymentSelector';
 import CutlerySelector from './CutlerySelector';
 import ProgressBar from './ProgressBar';
-import OnboardingTutorial from './OnboardingTutorial';
 import ErrorMessage from './ErrorMessage';
 import { calculateMealPrice } from '../utils/MealCalculations';
 import { db } from '../config/firebase';
@@ -56,6 +57,8 @@ const MealItem = ({
   const containerRef = useRef(null);
   const [tables, setTables] = useState([]);
   const [isAddressValid, setIsAddressValid] = useState(false);
+  const expandedSection = meal.expandedSection !== undefined ? meal.expandedSection : 0;
+  const setExpandedSection = (val) => onMealChange(id, 'expandedSection', val);
   // Control de auto-avance para evitar "rebote" cuando el usuario navega manualmente
   const advanceTimeoutRef = useRef(null);
 
@@ -73,7 +76,20 @@ const MealItem = ({
       if (slideRef.current) {
         slideRef.current.style.transition = 'transform 300ms ease-in-out';
       }
-      setCurrentSlide((prev) => prev + 1);
+      // Slider advance
+      if (currentSlide < slides.length - 1) {
+         setCurrentSlide((prev) => prev + 1);
+      }
+
+      // Accordion advance (Table Order)
+      if (isTableOrder) {
+         if (expandedSection !== null && expandedSection < slides.length - 1) {
+            setExpandedSection(expandedSection + 1);
+         } else if (expandedSection === slides.length - 1) {
+            setExpandedSection(null);
+         }
+      }
+      
       advanceTimeoutRef.current = null;
     }, 300);
   };
@@ -93,10 +109,16 @@ const MealItem = ({
   useEffect(() => {
     if (!isTableOrder) return;
     const q = query(collection(db, 'tables'), orderBy('name', 'asc'));
-    const unsub = onSnapshot(q, snap => {
-      setTables(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-      window.dispatchEvent(new Event('optionsUpdated'));
-    });
+    const unsub = onSnapshot(q, 
+      snap => {
+        setTables(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        window.dispatchEvent(new Event('optionsUpdated'));
+      },
+      error => {
+        console.error('[MealItem] Error loading tables:', error);
+        setTables([]);
+      }
+    );
     return () => unsub();
   }, [isTableOrder]);
 
@@ -148,7 +170,7 @@ const MealItem = ({
 
   const displayMainItem = isCompleteRice ? selectedRiceName : cleanProteinName(meal?.protein?.name) || 'Selecciona';
 
-  const totalSteps = isTableOrder ? (isWaitress ? 6 : 7) : 9; // Incluir bebida también para mesero
+  const totalSteps = isTableOrder ? (isWaitress ? 6 : 7) : 10; // Incluir bebida también para mesero
   const completedSteps = [
     isSoupComplete,
     isPrincipleComplete,
@@ -156,7 +178,7 @@ const MealItem = ({
     !!meal?.drink,
     isTableOrder ? !!meal?.tableNumber : meal?.cutlery !== null,
     ...(isTableOrder && !isWaitress ? [!!meal?.paymentMethod] : []), // Pago solo para no-mesero en mesa
-    ...(isTableOrder ? [] : [!!meal?.time, !!meal?.address?.address, !!meal?.payment]),
+    ...(isTableOrder ? [] : [!!meal?.time, !!meal?.address?.address, !!meal?.deliveryAgreement, !!meal?.payment]),
     isSidesComplete,
   ].filter(Boolean).length;
 
@@ -166,9 +188,38 @@ const MealItem = ({
     ? isWaitress
       ? isSoupComplete && isPrincipleComplete && (isCompleteRice || !!meal?.protein) && !!meal?.drink && !!meal?.tableNumber && isSidesComplete
       : isSoupComplete && isPrincipleComplete && (isCompleteRice || !!meal?.protein) && !!meal?.drink && !!meal?.tableNumber && !!meal?.paymentMethod && isSidesComplete
-    : isSoupComplete && isPrincipleComplete && (isCompleteRice || !!meal?.protein) && !!meal?.drink && !!meal?.time && !!meal?.address?.address && !!meal?.payment && meal?.cutlery !== null && isSidesComplete;
+    : isSoupComplete && isPrincipleComplete && (isCompleteRice || !!meal?.protein) && !!meal?.drink && !!meal?.time && !!meal?.address?.address && !!meal?.deliveryAgreement && !!meal?.payment && meal?.cutlery !== null && isSidesComplete;
 
-  const handleTutorialComplete = () => setShowTutorial(false);
+  // Auto-collapse completed meals
+  useEffect(() => {
+    if (isComplete && isExpanded && totalMeals > 1) {
+      setTimeout(() => setIsExpanded(false), 1500);
+    }
+  }, [isComplete, isExpanded, totalMeals]);
+
+  const handleQuickQuantity = (field, option, count) => {
+    let value;
+    
+    if (field === 'principle') {
+      value = [option];
+    } else if (field === 'sides') {
+      // Para sides (múltiple), agregar al array existente si no está ya
+      const currentSides = Array.isArray(meal?.sides) ? meal.sides : [];
+      const alreadySelected = currentSides.some(s => s.id === option.id);
+      value = alreadySelected ? currentSides : [...currentSides, option];
+    } else {
+      value = option;
+    }
+    
+    handleImmediateChange(field, value);
+    if (count > 1) {
+      window.dispatchEvent(new CustomEvent('quick-multiply-order', {
+        detail: { mealId: id, count, field, value, type: 'lunch' }
+      }));
+    }
+  };
+
+
 
   const handleImmediateChange = (field, value) => {
     let updatedMeal = { ...meal, [field]: value };
@@ -219,6 +270,12 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
           scheduleAdvance();
         }
         break;
+      case 'deliveryAgreement':
+        currentSlideIsComplete = !!value;
+        if (currentSlideIsComplete && currentSlide < slides.length - 1) {
+          scheduleAdvance();
+        }
+        break;
       case 'payment':
       case 'paymentMethod':
         currentSlideIsComplete = !!updatedMeal?.[field];
@@ -227,7 +284,21 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
         }
         break;
       case 'sides':
-        currentSlideIsComplete = isCompleteRice || (Array.isArray(value) && value.length > 0);
+        // Check if "Todo incluido" is selected
+        // Normalizing match to handle accents
+        const hasTodoIncluido = (Array.isArray(value) && value.some(s => {
+             const name = (s.name || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+             return name.includes('todo inclu') || s.isTodoIncluido;
+        })) || value?.isTodoIncluido; // Check the flag from OptionSelector
+        
+        if (hasTodoIncluido) {
+            console.log('Todo incluido detected, advancing immediately');
+            currentSlideIsComplete = true; 
+            if (currentSlide < slides.length - 1) scheduleAdvance(); 
+        } else {
+             // For manual selection, do NOT auto advance immediately.
+             currentSlideIsComplete = false; 
+        }
         break;
       case 'notes':
       case 'additions':
@@ -259,7 +330,7 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
         break;
     }
 
-    if (currentSlideIsComplete && field !== 'additions' && field !== 'principle' && currentSlide < slides.length - 1) {
+    if (currentSlideIsComplete && field !== 'additions' && field !== 'principle' && field !== 'sides' && currentSlide < slides.length - 1) {
       scheduleAdvance();
     }
   };
@@ -285,7 +356,15 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
         (Array.isArray(updatedMealForCheck.principle) && updatedMealForCheck.principle.length >= 1 && updatedMealForCheck.principle.length <= 2 && !updatedMealForCheck.principle.some(opt => opt.name === 'Remplazo por Principio'))
       );
 
+      // Only advance if replacement is involved (immediate) OR if triggered by Confirmation (which calls this usually? No, OptionSelector calls this on confirm?)
+      // Wait, OptionSelector calls onConfirm. MealItem passes handleOptionConfirm as onConfirm (usually).
+      // If we are here, it's confirmed. So we MUST advance.
       if (checkPrincipleComplete && currentSlide < slides.length - 1) {
+        scheduleAdvance();
+      }
+    } else if (field === 'sides') {
+      // Confirm sides always advances
+       if (currentSlide < slides.length - 1) {
         scheduleAdvance();
       }
     } else {
@@ -343,6 +422,54 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
   );
 
   const slides = [
+    ...(isTableOrder
+      ? [
+          {
+            component: (
+              <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
+                <OptionSelector
+                  title="Mesa"
+                  emoji="🍽️"
+                  options={tables}
+                  selected={tables.find(t => t.name === meal?.tableNumber) || null}
+                  onImmediateSelect={(option) => handleImmediateChange('tableNumber', option?.name)}
+                  onQuickQuantityChange={(option, count) => handleQuickQuantity('tableNumber', option?.name, count)}
+                  userRole={userRole}
+                />
+                {!meal?.tableNumber && (
+                  <p className="text-[10px] text-red-600 bg-red-50 p-1 rounded mt-1">
+                    Por favor, selecciona una mesa
+                  </p>
+                )}
+              </div>
+            ),
+            isComplete: !!meal?.tableNumber,
+            label: 'Mesa',
+            associatedField: 'tableNumber'
+          },
+          // Ocultar Método de Pago para mesero (userRole === 3)
+          ...(userRole === 3 ? [] : [{
+            component: (
+              <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
+                <h4 className="text-sm font-semibold text-green-700 mb-2">Método de Pago</h4>
+                <PaymentSelector
+                  paymentMethods={paymentMethods}
+                  selectedPayment={meal?.paymentMethod}
+                  setSelectedPayment={(payment) => handleImmediateChange('paymentMethod', payment)}
+                />
+                {!meal?.paymentMethod && (
+                  <p className="text-sm font-semibold text-red-600 bg-red-50 p-2 rounded mt-2">
+                    Por favor, selecciona un método de pago
+                  </p>
+                )}
+              </div>
+            ),
+            isComplete: !!meal?.paymentMethod,
+            label: 'Método de pago',
+            associatedField: 'paymentMethod'
+          }])
+        ]
+      : []),
     {
       component: (
         <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
@@ -352,10 +479,13 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
             options={soups}
             selected={meal?.soup}
             onImmediateSelect={(option) => handleImmediateChange('soup', option)}
+            onQuickQuantityChange={(option, count) => handleQuickQuantity('soup', option, count)}
             showReplacements={meal?.soup?.name === 'Remplazo por Sopa'}
             replacements={soupReplacements}
             selectedReplacement={meal?.soupReplacement}
             onImmediateReplacementSelect={(option) => handleImmediateChange('soupReplacement', option)}
+            onReplacementQuickQuantityChange={(option, count) => handleQuickQuantity('soupReplacement', option, count)}
+            userRole={userRole}
           />
         </div>
       ),
@@ -375,10 +505,13 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
             showConfirmButton={!isCompleteRice && !isReplacementWithPrinciple}
             onImmediateSelect={(selection) => handleImmediateChange('principle', selection)}
             onConfirm={(data) => handleOptionConfirm('principle', data)}
+            onQuickQuantityChange={(option, count) => handleQuickQuantity('principle', option, count)}
             showReplacements={Array.isArray(meal?.principle) && meal.principle.some(opt => opt.name === 'Remplazo por Principio')}
             replacements={soupReplacements}
             selectedReplacement={meal?.principleReplacement}
             onImmediateReplacementSelect={(option) => handleImmediateChange('principleReplacement', option)}
+            onReplacementQuickQuantityChange={(option, count) => handleQuickQuantity('principleReplacement', option, count)}
+            userRole={userRole}
           />
         </div>
       ),
@@ -422,6 +555,8 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
               options={proteins}
               selected={meal?.protein}
               onImmediateSelect={(option) => handleImmediateChange('protein', option)}
+              onQuickQuantityChange={(option, count) => handleQuickQuantity('protein', option, count)}
+              userRole={userRole}
             />
           )}
         </div>
@@ -440,6 +575,8 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
             options={drinks}
             selected={meal?.drink}
             onImmediateSelect={(option) => handleImmediateChange('drink', option)}
+            onQuickQuantityChange={(option, count) => handleQuickQuantity('drink', option, count)}
+            userRole={userRole}
           />
         </div>
       ),
@@ -447,52 +584,8 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
       label: 'Bebida',
       associatedField: 'drink'
     }]),
-    ...(isTableOrder
+    ...(!isTableOrder
       ? [
-          {
-            component: (
-              <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
-                <OptionSelector
-                  title="Mesa"
-                  emoji="🍽️"
-                  options={tables}
-                  selected={tables.find(t => t.name === meal?.tableNumber) || null}
-                  onImmediateSelect={(option) => handleImmediateChange('tableNumber', option?.name)}
-                />
-                {!meal?.tableNumber && (
-                  <p className="text-[10px] text-red-600 bg-red-50 p-1 rounded mt-1">
-                    Por favor, selecciona una mesa
-                  </p>
-                )}
-              </div>
-            ),
-            isComplete: !!meal?.tableNumber,
-            label: 'Mesa',
-            associatedField: 'tableNumber'
-          },
-          // Ocultar Método de Pago para mesero (userRole === 3)
-          ...(userRole === 3 ? [] : [{
-            component: (
-              <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
-                <h4 className="text-sm font-semibold text-green-700 mb-2">Método de Pago</h4>
-                <PaymentSelector
-                  paymentMethods={paymentMethods}
-                  selectedPayment={meal?.paymentMethod}
-                  setSelectedPayment={(payment) => handleImmediateChange('paymentMethod', payment)}
-                />
-                {!meal?.paymentMethod && (
-                  <p className="text-sm font-semibold text-red-600 bg-red-50 p-2 rounded mt-2">
-                    Por favor, selecciona un método de pago
-                  </p>
-                )}
-              </div>
-            ),
-            isComplete: !!meal?.paymentMethod,
-            label: 'Método de pago',
-            associatedField: 'paymentMethod'
-          }])
-        ]
-      : [
           {
             component: (
               <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
@@ -561,6 +654,19 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
           {
             component: (
               <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
+                <DeliveryAgreement
+                  accepted={meal?.deliveryAgreement}
+                  onAccept={(val) => handleImmediateChange('deliveryAgreement', val)}
+                />
+              </div>
+            ),
+            isComplete: !!meal?.deliveryAgreement,
+            label: 'Acuerdo',
+            associatedField: 'deliveryAgreement'
+          },
+          {
+            component: (
+              <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
                 <h4 className="text-sm font-semibold text-green-700 mb-2">Método de Pago</h4>
                 <PaymentSelector
                   paymentMethods={paymentMethods}
@@ -577,8 +683,9 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
             isComplete: !!meal?.payment,
             label: 'Método de pago',
             associatedField: 'payment'
-          },
-        ]),
+          }
+        ]
+      : []),
     {
       component: (
         <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 shadow-sm slide-item">
@@ -627,6 +734,8 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
                 selected={meal?.sides}
                 multiple={true}
                 onImmediateSelect={(selection) => handleImmediateChange('sides', selection)}
+                onQuickQuantityChange={(option, count) => handleQuickQuantity('sides', option, count)}
+                userRole={userRole}
               />
               {!isSidesComplete && (
                 <p className="text-xs font-semibold text-red-600 bg-red-50 p-1 rounded mt-1">
@@ -664,6 +773,9 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
       associatedField: 'sides'
     },
   ];
+
+  // Reset accordion when swapping ID (new slot context)
+  // Al montar o cambiar de slot, se mantiene la sección guardada en el estado del objeto
 
   useEffect(() => {
     if (isIncomplete && incompleteSlideIndex !== null) {
@@ -939,17 +1051,18 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
 
   return (
     <div id={`meal-item-${id}`} className="relative mb-2">
-      {showTutorial && id === 0 && (
-        <OnboardingTutorial run={showTutorial} onComplete={handleTutorialComplete} />
-      )}
       <div className="relative bg-white rounded-lg shadow-md">
         <div
           className="sticky top-0 z-[10000] bg-white p-2 border-b border-gray-200 rounded-t-lg"
           onClick={() => {
             if (!isExpanded) setIsExpanded(true);
-            else if (containerRef.current) {
-              containerRef.current.style.height = '0';
-              setTimeout(() => setIsExpanded(false), 300);
+            else {
+              if (containerRef.current) {
+                containerRef.current.style.height = '0';
+                setTimeout(() => setIsExpanded(false), 300);
+              } else {
+                setIsExpanded(false);
+              }
             }
           }}
         >
@@ -1018,6 +1131,42 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
         )}
         {isExpanded && (
           <div className="p-2">
+            {isTableOrder ? (
+              <div className="flex flex-col space-y-2">
+                {slides.map((slide, index) => (
+                  <div key={index} className="border rounded-md bg-white shadow-sm overflow-hidden">
+                    <button
+                      onClick={() => setExpandedSection(expandedSection === index ? null : index)}
+                      className={`w-full p-3 flex justify-between items-center text-left text-sm font-bold transition-colors ${
+                        slide.isComplete 
+                          ? 'bg-green-50 text-green-800' 
+                          : expandedSection === index 
+                            ? 'bg-blue-50 text-blue-800' 
+                            : 'bg-white text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center">
+                        {slide.isComplete && <span className="mr-2 text-green-600 font-bold">✓</span>}
+                        <span>{slide.label}</span>
+                      </div>
+                      <span className="text-gray-400">
+                        {expandedSection === index ? (
+                          <ChevronUpIcon className="h-5 w-5" />
+                        ) : (
+                          <ChevronDownIcon className="h-5 w-5" />
+                        )}
+                      </span>
+                    </button>
+                    {expandedSection === index && (
+                      <div className="p-2 border-t border-gray-100 bg-white">
+                        {slide.component}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+            <>
             <div
               ref={containerRef}
               className="relative overflow-hidden rounded-lg"
@@ -1078,6 +1227,8 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
                 </svg>
               </button>
             </div>
+            </>
+            )}
           </div>
         )}
       </div>
@@ -1112,6 +1263,7 @@ currentSlideIsComplete = !!updatedMeal?.soup && (updatedMeal?.soup.name !== 'Rem
               multiple={true}
               showReplacements={shouldShowReplacements}
               replacements={getReplacementsForAdditions()}
+              userRole={userRole}
               onImmediateSelect={(selection) => {
                 const updatedSelection = selection.map(add => {
                   const existingAdd = meal?.additions?.find(a => a.id === add.id);

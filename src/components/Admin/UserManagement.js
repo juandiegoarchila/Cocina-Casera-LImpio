@@ -75,10 +75,11 @@ const UserManagement = ({ setError, setSuccess, theme }) => {
     let currentUsers = users;
 
     if (searchTerm) {
+      const term = searchTerm.toLowerCase();
       currentUsers = currentUsers.filter(user =>
-        user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        user.address.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        ROLE_MAP[`${user.role}`]?.toLowerCase().includes(searchTerm.toLowerCase())
+        (user.email?.toLowerCase() || '').includes(term) ||
+        (user.address?.toLowerCase() || '').includes(term) ||
+        (ROLE_MAP[`${user.role}`]?.toLowerCase() || '').includes(term)
       );
     }
 
@@ -88,12 +89,12 @@ const UserManagement = ({ setError, setSuccess, theme }) => {
 
         switch (sortColumn) {
           case 'email':
-            valA = a.email.toLowerCase();
-            valB = b.email.toLowerCase();
+            valA = (a.email || '').toLowerCase();
+            valB = (b.email || '').toLowerCase();
             break;
           case 'address':
-            valA = a.address.toLowerCase();
-            valB = b.address.toLowerCase();
+            valA = (a.address || '').toLowerCase();
+            valB = (b.address || '').toLowerCase();
             break;
           case 'role':
             valA = a.role;

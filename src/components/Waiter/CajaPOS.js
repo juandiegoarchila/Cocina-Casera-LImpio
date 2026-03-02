@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import QRCode from 'qrcode';
 import { db } from '../../config/firebase';
-import { collection, onSnapshot, addDoc, serverTimestamp, updateDoc, doc, query, where, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, serverTimestamp, updateDoc, doc, query, where, orderBy, limit } from 'firebase/firestore';
 import { CurrencyDollarIcon, PlusCircleIcon, PencilIcon, XCircleIcon, InformationCircleIcon, HomeIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '../Auth/AuthProvider';
 import { calculateMealPrice } from '../../utils/MealCalculations';
@@ -106,16 +106,25 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
     return () => unsub();
   }, []);
   
-  // Cargar órdenes pendientes
+  // Cargar órdenes recientes para la caja (lo que no esté pagado aparecerá)
   useEffect(() => {
-    // Filtrar solo órdenes pendientes para mejorar rendimiento y reactividad
-    const qTable = query(collection(db, 'tableOrders'), where('status', '==', 'Pendiente'));
+    // Escuchar las últimas 100 órdenes de cada tipo para asegurar que nada se pierda
+    // El filtrado por isPaid se hará en memoria para evitar problemas con datos antiguos sin ese campo
+    const qTable = query(
+      collection(db, 'tableOrders'), 
+      orderBy('createdAt', 'desc'),
+      limit(100)
+    );
     const unsubTable = onSnapshot(qTable, (snapshot) => {
       const orders = snapshot.docs.map(d => ({ id: d.id, ...d.data(), orderType: 'mesa' }));
       setTableOrders(orders);
     });
     
-    const qBreakfast = query(collection(db, 'breakfastOrders'), where('status', '==', 'Pendiente'));
+    const qBreakfast = query(
+      collection(db, 'breakfastOrders'),
+      orderBy('createdAt', 'desc'),
+      limit(100)
+    );
     const unsubBreakfast = onSnapshot(qBreakfast, (snapshot) => {
       const orders = snapshot.docs.map(d => ({ id: d.id, ...d.data(), orderType: 'desayuno' }));
       setBreakfastOrders(orders);
@@ -329,13 +338,30 @@ const CajaPOS = ({ theme='dark', setError=()=>{}, setSuccess=()=>{} }) => {
   // Órdenes pendientes (sin filtro de búsqueda)
   const pendingOrdersForPOS = useMemo(() => {
     const combined = [...tableOrders, ...breakfastOrders];
-    return combined
-      .filter(order => !order.isPaid && order.status !== 'Completada')
-      .sort((a, b) => {
-        const timeA = new Date(a.createdAt?.seconds ? a.createdAt.seconds * 1000 : a.createdAt);
-        const timeB = new Date(b.createdAt?.seconds ? b.createdAt.seconds * 1000 : b.createdAt);
-        return timeA - timeB;
-      });
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000); 
+    
+    const filtered = combined.filter(order => {
+      // 1. Si ya está marcada como pagada, no mostrar en la sección pendientes
+      if (order.isPaid === true) return false;
+      
+      // 2. Si está cancelada, no mostrar en caja
+      if (order.status === 'Cancelada') return false;
+
+      // 3. Evaluar por estado operativo básico
+      const activeStatuses = ['Pendiente', 'Preparando', 'Completada'];
+      if (activeStatuses.includes(order.status)) return true;
+      
+      // 4. Fallback por tiempo (para estados personalizados o si falta estado)
+      const rawDate = order.createdAt?.seconds ? order.createdAt.seconds * 1000 : order.createdAt;
+      const orderDate = new Date(rawDate);
+      return orderDate > twentyFourHoursAgo;
+    });
+    
+    return filtered.sort((a, b) => {
+      const timeA = new Date(a.createdAt?.seconds ? a.createdAt.seconds * 1000 : a.createdAt);
+      const timeB = new Date(b.createdAt?.seconds ? b.createdAt.seconds * 1000 : b.createdAt);
+      return timeA - timeB; // Más antiguas primero para atención por orden
+    });
   }, [tableOrders, breakfastOrders]);
   
   // Sugerencias híbridas escaladas: para totales grandes agregar 60k,70k,80k...

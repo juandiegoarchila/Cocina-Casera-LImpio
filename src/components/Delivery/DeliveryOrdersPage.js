@@ -20,6 +20,7 @@ import DeliveryPayments from './DeliveryPayments';
 import DeliveryTasks from './DeliveryTasks';
 import DeliveryTableOrders from './DeliveryTableOrders';
 import QuickPOSOrders from '../Waiter/QuickPOSOrders';
+import WaiterCombatMode from '../Waiter/WaiterCombatMode';
 import { BoltIcon } from '@heroicons/react/24/outline';
 import SuccessMessage from '../SuccessMessage';
 import ErrorMessage from '../ErrorMessage';
@@ -62,28 +63,46 @@ const DeliveryOrdersPage = () => {
     }
   }, [user, loading, role]);
 
-  // Suscripciones tiempo real a órdenes pendientes propias (colecciones usadas por QuickPOS)
+  // Suscripciones tiempo real a órdenes que no han sido pagadas (colecciones usadas por QuickPOS)
   useEffect(() => {
     if (!user?.uid) return;
-    // tableOrders (almuerzos/mesa) creados por este usuario y pendientes
+    const activeStatuses = ['Pendiente', 'Preparando', 'Completada'];
+    
+    // tableOrders (almuerzos/mesa) creados por este usuario que aún no se han cobrado
     const qTable = query(
       collection(db, 'tableOrders'),
-      where('status', '==', 'Pendiente'),
       where('userId', '==', user.uid),
-      orderBy('createdAt', 'desc')
+      where('status', 'in', activeStatuses)
     );
     const unsubTable = onSnapshot(qTable, snap => {
-      setMyPendingTableOrders(snap.docs.map(d => ({ id: d.id, ...d.data(), orderType: 'almuerzo' })));
+      // Filtrar y ordenar en memoria por mayor compatibilidad (evita necesidad de índices compuestos dinámicos)
+      const orders = snap.docs
+        .map(d => ({ id: d.id, ...d.data(), orderType: 'almuerzo' }))
+        .filter(o => !o.isPaid)
+        .sort((a,b) => {
+            const timeA = a.createdAt?.seconds || 0;
+            const timeB = b.createdAt?.seconds || 0;
+            return timeB - timeA;
+        });
+      setMyPendingTableOrders(orders);
     });
-    // breakfastOrders pendientes del usuario
+
+    // breakfastOrders del usuario
     const qBreakfast = query(
       collection(db, 'breakfastOrders'),
-      where('status', '==', 'Pendiente'),
       where('userId', '==', user.uid),
-      orderBy('createdAt', 'desc')
+      where('status', 'in', activeStatuses)
     );
     const unsubBreakfast = onSnapshot(qBreakfast, snap => {
-      setMyPendingBreakfastOrders(snap.docs.map(d => ({ id: d.id, ...d.data(), orderType: 'desayuno' })));
+      const orders = snap.docs
+        .map(d => ({ id: d.id, ...d.data(), orderType: 'desayuno' }))
+        .filter(o => !o.isPaid)
+        .sort((a,b) => {
+            const timeA = a.createdAt?.seconds || 0;
+            const timeB = b.createdAt?.seconds || 0;
+            return timeB - timeA;
+        });
+      setMyPendingBreakfastOrders(orders);
     });
     const timer = setInterval(()=> setPendingCurrentTime(new Date()), 60000);
     return () => { unsubTable(); unsubBreakfast(); clearInterval(timer); };
@@ -153,6 +172,9 @@ const DeliveryOrdersPage = () => {
           ...d.data() 
         }));
         recomputeAllOrders();
+      }, (err) => {
+         console.error('Error listener orders:', err);
+         setIsLoading(false);
       });
       
       unsubBreakfast = onSnapshot(collection(db, 'deliveryBreakfastOrders'), (snapshot) => {
@@ -163,6 +185,9 @@ const DeliveryOrdersPage = () => {
           ...d.data() 
         }));
         recomputeAllOrders();
+      }, (err) => {
+         console.error('Error listener breakfast:', err);
+         setIsLoading(false);
       });
 
       // Listener para pedidos de clientes no autenticados
@@ -188,6 +213,9 @@ const DeliveryOrdersPage = () => {
         });
         
         recomputeAllOrders();
+      }, (err) => {
+         console.error('Error listener clientOrders:', err);
+         setIsLoading(false);
       });
       
     } catch (e) {
@@ -570,6 +598,14 @@ const DeliveryOrdersPage = () => {
               </button>
 
               <button
+                onClick={() => { navigate('/delivery/combat'); setIsSidebarOpen(false); }}
+                className={`flex items-center px-4 py-2 rounded-md text-sm font-medium ${theme === 'dark' ? 'text-gray-300 hover:text-white hover:bg-gray-700' : 'text-gray-700 hover:text-black hover:bg-gray-300'} transition-all duration-200`}
+              >
+                <BoltIcon className={`w-6 h-6 mr-2 ${theme === 'dark' ? 'text-red-400' : 'text-red-600'}`} />
+                <span>MODO GUERRA ⚔️</span>
+              </button>
+
+              <button
                 onClick={handleLogout}
                 className={`mt-auto flex items-center px-4 py-2 rounded-md text-sm font-medium ${theme === 'dark' ? 'text-red-300 hover:text-white hover:bg-red-700' : 'text-red-600 hover:text-red-800 hover:bg-red-200'} transition-all duration-200`}
               >
@@ -698,6 +734,27 @@ const DeliveryOrdersPage = () => {
           </button>
 
           <button
+            onClick={() => navigate('/delivery/combat')}
+            className={`relative flex items-center px-4 py-2 rounded-md text-sm font-medium min-w-[48px]
+              ${
+                isSidebarOpen
+                  ? theme === 'dark'
+                    ? 'text-gray-300 hover:text-white hover:bg-gray-700'
+                    : 'text-gray-700 hover:text-black hover:bg-gray-300'
+                  : 'justify-center'
+              } transition-all duration-300`}
+          >
+            <BoltIcon
+              className={`w-6 h-6 ${isSidebarOpen ? 'mr-2' : 'mr-0'} ${
+                theme === 'dark' ? 'text-red-400' : 'text-red-600'
+              }`}
+            />
+            <span className={`transition-opacity duration-200 ${isSidebarOpen ? 'opacity-100 block' : 'opacity-0 hidden'}`}>
+              MODO GUERRA ⚔️
+            </span>
+          </button>
+
+          <button
             onClick={handleLogout}
             className={`mt-auto flex items-center px-4 py-2 rounded-md text-sm font-medium min-w-[48px]
               ${
@@ -725,43 +782,7 @@ const DeliveryOrdersPage = () => {
   {/* Ocultar banners en la vista principal de pedidos para no duplicar el toast de TablaPedidos */}
   {/* Se pueden mostrar en otras rutas si se requiere */}
 
-        {/* Bloque Órdenes Pendientes propias (solo las creadas por el domiciliario) */}
-        <div className="mb-4">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold">🔔 Órdenes Pendientes</span>
-            <span className="text-xs px-2 py-0.5 rounded bg-yellow-100 text-yellow-800 font-medium">{myPendingOrders.length}</span>
-          </div>
-          {myPendingOrders.length > 0 && (
-            <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
-              {myPendingOrders.slice(0, 12).map(o => {
-                const createdDate = o.createdAt?.seconds ? new Date(o.createdAt.seconds * 1000) : (o.createdAt instanceof Date ? o.createdAt : new Date());
-                const minutesAgo = Math.max(0, Math.floor((pendingCurrentTime - createdDate) / 60000));
-                const tableNum = o.tableNumber || o.meals?.[0]?.tableNumber || o.breakfasts?.[0]?.tableNumber || '';
-                const isLlevar = !tableNum || tableNum.toLowerCase().includes('llevar');
-                const displayTable = isLlevar ? 'Llevar' : tableNum;
-                const displayTotal = o.total || o.quickTotal || 0;
-                const orderLabel = (o.orderType === 'desayuno' || o.type === 'breakfast') ? '🍳' : '🍽️';
-                const userName = getUserNameFromEmail(o.userEmail||'');
-                return (
-                  <div key={o.id} className={`relative group rounded ${theme==='dark'?'bg-gray-800':'bg-white'} shadow px-3 py-2 flex items-center justify-between text-xs`}>
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-base">{orderLabel}</span>
-                      <div className="min-w-0">
-                        <div className="font-medium truncate">{userName || 'Pedido'}</div>
-                        <div className="text-[10px] opacity-70 truncate">{displayTable}</div>
-                      </div>
-                    </div>
-                    <div className="flex flex-col items-end gap-0.5">
-                      <div className="text-[11px] font-semibold">{new Intl.NumberFormat('es-CO',{ style:'currency', currency:'COP', maximumFractionDigits:0 }).format(displayTotal)}</div>
-                      <div className="text-[10px] opacity-60">{minutesAgo}m</div>
-                      <button onClick={()=>openPendingDetail(o)} className="text-[10px] px-2 py-0.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition">Info</button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+
 
         <Routes>
           <Route path="/" element={
@@ -831,6 +852,7 @@ const DeliveryOrdersPage = () => {
           } />
           <Route path="/create" element={<DeliveryTableOrders />} />
           <Route path="/quickpos" element={<QuickPOSOrders setError={setError} setSuccess={setSuccess} />} />
+          <Route path="/combat" element={<WaiterCombatMode />} />
           <Route path="*" element={<Navigate to="/delivery" replace />} />
         </Routes>
 

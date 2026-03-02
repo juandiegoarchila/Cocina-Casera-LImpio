@@ -4,17 +4,18 @@
 // Precios (ALMUERZO) según tipo de orden
 // --------------------------------------
 // Normal:
-//   - Mesa:    $12.000
-//   - Llevar:  $13.000
+//   - Mesa:    $14.000
+//   - Llevar:  $15.000
 // Solo bandeja:
-//   - Mesa:    $11.000
-//   - Llevar:  $12.000
-// Mojarra: $16.000 (fijo, sin importar Mesa/Llevar)
+//   - Mesa:    $13.000
+//   - Llevar:  $13.000
+// Mojarra: $18.000 (fijo, sin importar Mesa/Llevar)
+// Pechuga Gratinada: Mesa $15.000 / Llevar $16.000
 // Adiciones: se suman (respetando quantity)
 
 const PRICE_MAP = {
-  table:    { normal: 12000, bandeja: 11000 },
-  takeaway: { normal: 13000, bandeja: 12000 },
+  table:    { normal: 14000, bandeja: 13000 },
+  takeaway: { normal: 15000, bandeja: 13000 },
 };
 
 // Normaliza 'orderType' a 'table' | 'takeaway'
@@ -102,10 +103,10 @@ export const calculateMealPrice = (meal) => {
   // Verificar si la proteína tiene un precio especial configurado
   let proteinPrice = meal?.protein?.price ? Number(meal.protein.price) : 0;
 
-  // Lógica especial para Pechuga Gratinada: $13.000 en mesa, $14.000 para llevar
+  // Lógica especial para Pechuga Gratinada: $15.000 en mesa, $16.000 para llevar
   if (meal?.protein?.name?.toLowerCase().includes('pechuga gratinada')) {
     const type = normalizeOrderType(meal?.orderType, meal);
-    proteinPrice = type === 'table' ? 13000 : 14000;
+    proteinPrice = type === 'table' ? 15000 : 16000;
     console.log('🍗 Pechuga Gratinada detectada:', { type, price: proteinPrice });
     
     // Retornar directamente aquí para evitar sumar adiciones dos veces si entrara al bloque siguiente
@@ -114,10 +115,10 @@ export const calculateMealPrice = (meal) => {
     return proteinPrice + additions + drinkPrice;
   }
   
-  // Fallback: Si la proteína es Mojarra pero no tiene precio, usar 16000
+  // Fallback: Si la proteína es Mojarra pero no tiene precio, usar 18000
   if (!proteinPrice && meal?.protein?.name?.toLowerCase().includes('mojarra')) {
-    proteinPrice = 16000;
-    console.log('⚠️ Mojarra detectada sin precio, usando fallback de 16000');
+    proteinPrice = 18000;
+    console.log('⚠️ Mojarra detectada sin precio, usando fallback de $18.000');
   }
   
   // Precio de bebida (si tiene precio explícito, ej: QuickPOS)

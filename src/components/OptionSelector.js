@@ -41,6 +41,9 @@ const OptionSelector = ({
   onAdd = () => {},
   onRemove = () => {},
   onIncrease = () => {},
+  onQuickQuantityChange = null,
+  onReplacementQuickQuantityChange = null,
+  userRole = null, // Nuevo prop para determinar si es domiciliario
 }) => {
   // Evitar doble disparo (touch + click) en iOS/Android
   const lastTouchTimeRef = useRef(0);
@@ -134,7 +137,10 @@ const OptionSelector = ({
           opt.requiresReplacement &&
           (opt.name.toLowerCase() === 'proteína adicional' ? !opt.protein : !opt.replacement)
       );
-      shouldShow = needsReplacement;
+      // Validar si hay reemplazos disponibles para mostrar
+      const hasAvailableReplacements = Array.isArray(replacements) && replacements.length > 0;
+      shouldShow = needsReplacement && hasAvailableReplacements;
+
       if (needsReplacement && !currentConfiguring) {
         const unconfigured = pendingSelection.find(
           (opt) =>
@@ -208,7 +214,11 @@ const OptionSelector = ({
   }, [pendingSelection, title, onImmediateSelect, currentConfiguring]);
 
   // NUEVO: efecto que limpia selecciones que se han marcado como isFinished (agotadas) después de haber sido elegidas
+  // IMPORTANTE: NO remover para domiciliarios (userRole === 3)
   useEffect(() => {
+    // No remover items agotados si el usuario es domiciliario
+    if (userRole === 3) return;
+    
     if (!options || options.length === 0) return;
     const finishedById = new Map();
     const finishedByName = new Set();
@@ -249,7 +259,7 @@ const OptionSelector = ({
         }
       }
     }
-  }, [options, pendingSelection, multiple, onImmediateSelect]);
+  }, [options, pendingSelection, multiple, onImmediateSelect, userRole]);
 
   // Limpiar mensajes de agotado tras unos segundos
   useEffect(() => {
@@ -286,7 +296,9 @@ const OptionSelector = ({
 
   // Maneja el clic en una opción
   const handleOptionClick = (option) => {
-    if (disabled || option.isFinished) return;
+    // Permitir a domiciliarios (userRole === 3) seleccionar items agotados
+    const isDeliveryPerson = userRole === 3;
+    if (disabled || (option.isFinished && !isDeliveryPerson)) return;
 
     let updatedSelection = multiple ? [...pendingSelection] : null;
     const isCurrentlySelected = multiple
@@ -383,10 +395,12 @@ const OptionSelector = ({
           }
         } else if (title === 'Acompañamiento' && multiple) {
           // Opción rápida: "Todo incluído" marca todas las opciones disponibles excepto "Ninguno" y la propia
-          if (option.name === 'Todo incluído') {
+          // Normalización para detectar "Todo incluido" con o sin tilde
+          if (option.name === 'Todo incluído' || option.name === 'Todo incluido') {
             const allAvailable = (options || [])
-              .filter(o => !o?.isFinished && o?.name !== 'Ninguno' && o?.name !== 'Todo incluído');
+              .filter(o => !o?.isFinished && o?.name !== 'Ninguno' && o?.name !== 'Todo incluído' && o?.name !== 'Todo incluido');
             updatedSelection = allAvailable;
+            updatedSelection.isTodoIncluido = true; // Use a property to signal this specific action
             const hadNinguno = updatedSelection.some(opt => opt.name === 'Ninguno');
             if (hadNinguno) {
               updatedSelection = updatedSelection.filter(opt => opt.name !== 'Ninguno');
@@ -439,7 +453,9 @@ const OptionSelector = ({
 
   // Maneja el clic en un reemplazo
   const handleReplacementClick = (replacement) => {
-    if (disabled || replacement.isFinished) return;
+    // Permitir a domiciliarios (userRole === 3) seleccionar reemplazos agotados
+    const isDeliveryPerson = userRole === 3;
+    if (disabled || (replacement.isFinished && !isDeliveryPerson)) return;
 
     if (title === 'Adiciones (por almuerzo)' || title === 'Adiciones (por desayuno)') {
       if (currentConfiguring) {
@@ -788,15 +804,32 @@ const OptionSelector = ({
   };
 
   const mobileLayout = (option, index, isSelected, quantity) => (
-    <div key={option.id || index} className="relative">
+    <div key={option.id || index} className="relative group">
+      {onQuickQuantityChange && userRole === 3 && !(option.isFinished && userRole !== 3) && (
+        <div className="absolute -top-2 right-[70px] z-[15] flex gap-0.5 bg-white shadow-md rounded-full px-1 py-0.5 opacity-100 transition-opacity border border-green-400">
+          {[1, 2, 3, 4, 5].map(n => (
+            <button
+              key={n}
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                onQuickQuantityChange(option, n);
+              }}
+              className="w-5 h-5 flex items-center justify-center text-[9px] font-bold rounded-full transition-colors bg-green-50 text-green-700 hover:bg-green-600 hover:text-white border border-green-200"
+            >
+              {n}
+            </button>
+          ))}
+        </div>
+      )}
       <button
         onClick={(e) => handleTap(e, option)}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={(e) => handleTap(e, option)}
-        disabled={disabled || option.isFinished}
+        disabled={disabled || (option.isFinished && userRole !== 3)}
         className={`relative w-full p-2 ${option.imageUrl ? 'pr-12' : ''} rounded-t-lg text-sm font-medium transition-all duration-200 flex items-center justify-between text-left min-h-[60px] shadow-sm ${
-          disabled || option.isFinished
+          disabled || (option.isFinished && userRole !== 3)
             ? 'bg-gray-100 text-gray-400 border border-gray-300 cursor-not-allowed'
             : isSelected
             ? 'bg-green-200 text-green-800 border border-green-300'
@@ -906,15 +939,32 @@ const OptionSelector = ({
                 }
                 
                 return (
-                  <div key={replacement.id || idx} className="relative">
+                  <div key={replacement.id || idx} className="relative group">
+                  {onReplacementQuickQuantityChange && userRole === 3 && !disabled && !(replacement.isFinished && userRole !== 3) && (
+                    <div className="absolute -top-2 right-[70px] z-[15] flex gap-0.5 bg-white shadow-md rounded-full px-1 py-0.5 opacity-100 transition-opacity border border-green-400">
+                      {[1, 2, 3, 4, 5].map((n) => (
+                        <button
+                          key={n}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            onReplacementQuickQuantityChange(replacement, n);
+                          }}
+                          className="w-5 h-5 flex items-center justify-center text-[9px] font-bold rounded-full transition-colors bg-green-50 text-green-700 hover:bg-green-600 hover:text-white border border-green-200"
+                        >
+                          {n}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <button
                     onClick={(e) => handleReplacementTap(e, replacement)}
                     onTouchStart={handleTouchStart}
                     onTouchMove={handleTouchMove}
                     onTouchEnd={(e) => handleReplacementTap(e, replacement)}
-                    disabled={disabled || replacement.isFinished}
-                    className={`relative w-full p-2 rounded-lg text-sm font-medium transition-all duration-200 flex flex-col items-start text-left min-h-[60px] shadow-sm ${
-                      disabled || replacement.isFinished
+                    disabled={disabled || (replacement.isFinished && userRole !== 3)}
+                    className={`relative w-full p-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center text-left min-h-[60px] shadow-sm ${
+                      disabled || (replacement.isFinished && userRole !== 3)
                         ? 'bg-gray-100 text-gray-400 border border-gray-300 cursor-not-allowed'
                         : isReplacementSelected(replacement)
                         ? 'bg-green-200 text-green-800 border border-green-300'
@@ -922,35 +972,33 @@ const OptionSelector = ({
                     }`}
                     aria-label={`Seleccionar opción ${replacement.name}${isReplacementSelected(replacement) ? ' (seleccionado)' : ''}`}
                   >
-                    <div className="flex items-center w-full">
-                      {replacement.emoji && (
-                        <span className="mr-2 text-base sm:text-sm">{replacement.emoji}</span>
-                      )}
-                      <div className="flex-grow">
-                        {getDisplayText(replacement)}
-                      </div>
-                      {isReplacementSelected(replacement) && (
-                        <svg className="ml-2 h-4 w-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                          <path
-                            fillRule="evenodd"
-                            d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                            clipRule="evenodd"
-                          />
-                        </svg>
+                    {replacement.emoji && (
+                      <span className="mr-2 text-base sm:text-sm">{replacement.emoji}</span>
+                    )}
+                    <div className="flex-grow">
+                      {getDisplayText(replacement)}
+                      {replacement.description && (
+                        <span className="text-xs text-gray-500 block mt-1">{replacement.description}</span>
                       )}
                     </div>
-                    {replacement.description && (
-                      <span className="text-xs text-gray-500 block mt-1">{replacement.description}</span>
+                    {isReplacementSelected(replacement) && (
+                      <svg className="ml-2 h-4 w-4 text-green-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                        <path
+                          fillRule="evenodd"
+                          d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
                     )}
                   </button>
-                  {!!replacement.imageUrl && <EyeButton url={replacement.imageUrl} small className="right-3 sm:right-4" />}
+                  {!!replacement.imageUrl && <EyeButton url={replacement.imageUrl} small className="right-3 sm:right-4 top-[calc(50%-10px)]" />}
                   {replacement.isNew && !replacement.isFinished && (
-                    <span className="absolute top-0 right-7 transform translate-x-1/2 -translate-y-1/2 bg-red-500 text-white text-[10px] font-semibold rounded-full px-2 py-0.5">
+                    <span className="absolute top-0 right-7 transform translate-x-1/2 -translate-y-1/2 bg-red-500 text-white text-[10px] font-semibold rounded-full px-2 py-0.5 z-[25]">
                       NUEVO
                     </span>
                   )}
                   {replacement.isFinished && (
-                    <span className="absolute top-0 right-1 -translate-y-1/2 bg-gray-500 text-white text-[10px] font-semibold rounded-full px-2 py-0.5 whitespace-nowrap z-10">
+                    <span className="absolute top-0 right-1 -translate-y-1/2 bg-gray-500 text-white text-[10px] font-semibold rounded-full px-2 py-0.5 whitespace-nowrap z-[25]">
                       AGOTADO{replacement.finishedAt && ` ${getTimeAgo(replacement.finishedAt)}`}
                     </span>
                   )}
@@ -966,29 +1014,46 @@ const OptionSelector = ({
           </div>
         )}
       {option.isNew && !option.isFinished && (
-        <span className="absolute top-0 right-7 transform translate-x-1/2 -translate-y-1/2 bg-red-500 text-white text-[10px] font-semibold rounded-full px-2 py-0.5">
+        <span className="absolute top-0 right-7 transform translate-x-1/2 -translate-y-1/2 bg-red-500 text-white text-[10px] font-semibold rounded-full px-2 py-0.5 z-[25]">
           NUEVO
         </span>
       )}
       {option.isFinished && (
-        <span className="absolute top-0 right-7 transform translate-x-1/2 -translate-y-1/2 bg-gray-500 text-white text-[10px] font-semibold rounded-full px-2 py-0.5">
+        <span className="absolute top-0 right-7 transform translate-x-1/2 -translate-y-1/2 bg-gray-500 text-white text-[10px] font-semibold rounded-full px-2 py-0.5 z-[25]">
           AGOTADO
         </span>
       )}
-  {!!option.imageUrl && <EyeButton url={option.imageUrl} small className="right-3 sm:right-4" />}
+  {!!option.imageUrl && <EyeButton url={option.imageUrl} small className="right-3 sm:right-4 top-[calc(50%-10px)]" />}
     </div>
   );
 
   const pcLayout = (option, index, isSelected, quantity) => (
-    <div key={option.id || index} className="relative">
+    <div key={option.id || index} className="relative group">
+      {onQuickQuantityChange && userRole === 3 && !(option.isFinished && userRole !== 3) && (
+        <div className="absolute -top-2 right-[70px] z-[15] flex gap-0.5 bg-white shadow-md rounded-full px-1 py-0.5 opacity-0 group-hover:opacity-100 transition-opacity border border-green-400">
+          {[1, 2, 3, 4, 5].map(n => (
+            <button
+              key={n}
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                onQuickQuantityChange(option, n);
+              }}
+              className="w-5 h-5 flex items-center justify-center text-[9px] font-bold rounded-full transition-colors bg-green-50 text-green-700 hover:bg-green-600 hover:text-white border border-green-200"
+            >
+              {n}
+            </button>
+          ))}
+        </div>
+      )}
       <button
         onClick={(e) => handleTap(e, option)}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={(e) => handleTap(e, option)}
-        disabled={disabled || option.isFinished}
+        disabled={disabled || (option.isFinished && userRole !== 3)}
         className={`relative w-full p-2 ${option.imageUrl ? 'pr-12' : ''} rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-between text-left min-h-[60px] shadow-sm ${
-          disabled || option.isFinished
+          disabled || (option.isFinished && userRole !== 3)
             ? 'bg-gray-100 text-gray-400 border border-gray-300 cursor-not-allowed'
             : isSelected
             ? 'bg-green-200 text-green-800 border border-green-300'
@@ -1051,14 +1116,14 @@ const OptionSelector = ({
           </svg>
         )}
       </button>
-  {!!option.imageUrl && <EyeButton url={option.imageUrl} className="right-3 sm:right-4" />}
+  {!!option.imageUrl && <EyeButton url={option.imageUrl} className="right-3 sm:right-4 top-[calc(50%-10px)]" />}
       {option.isNew && !option.isFinished && (
-        <span className="absolute top-0 right-7 transform translate-x-1/2 -translate-y-1/2 bg-red-500 text-white text-[10px] font-semibold rounded-full px-2 py-0.5">
+        <span className="absolute top-0 right-7 transform translate-x-1/2 -translate-y-1/2 bg-red-500 text-white text-[10px] font-semibold rounded-full px-2 py-0.5 z-[25]">
           NUEVO
         </span>
       )}
       {option.isFinished && (
-        <span className="absolute top-0 right-1 -translate-y-1/2 bg-gray-500 text-white text-[10px] font-semibold rounded-full px-2 py-0.5 whitespace-nowrap z-10">
+        <span className="absolute top-0 right-1 -translate-y-1/2 bg-gray-500 text-white text-[10px] font-semibold rounded-full px-2 py-0.5 whitespace-nowrap z-[25]">
           AGOTADO{option.finishedAt && ` ${getTimeAgo(option.finishedAt)}`}
         </span>
       )}
@@ -1112,14 +1177,31 @@ const OptionSelector = ({
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {replacements.map((replacement, index) => (
-              <div key={replacement.id || index} className="relative">
+              <div key={replacement.id || index} className="relative group">
+                {onReplacementQuickQuantityChange && userRole === 3 && !disabled && !replacement.isFinished && (
+                  <div className="absolute -top-2 right-[70px] z-[15] flex gap-0.5 bg-white shadow-md rounded-full px-1 py-0.5 opacity-0 group-hover:opacity-100 transition-opacity border border-green-400">
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <button
+                        key={n}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          onReplacementQuickQuantityChange(replacement, n);
+                        }}
+                        className="w-5 h-5 flex items-center justify-center text-[9px] font-bold rounded-full transition-colors bg-green-50 text-green-700 hover:bg-green-600 hover:text-white border border-green-200"
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <button
                   onClick={(e) => handleReplacementTap(e, replacement)}
                   onTouchStart={handleTouchStart}
                   onTouchMove={handleTouchMove}
                   onTouchEnd={(e) => handleReplacementTap(e, replacement)}
                   disabled={disabled || replacement.isFinished}
-                  className={`relative w-full p-2 rounded-lg text-sm font-medium transition-all duration-200 flex flex-col items-start text-left min-h-[60px] shadow-sm ${
+                  className={`relative w-full p-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center text-left min-h-[60px] shadow-sm ${
                     disabled || replacement.isFinished
                       ? 'bg-gray-100 text-gray-400 border border-gray-300 cursor-not-allowed'
                       : isReplacementSelected(replacement)
@@ -1128,33 +1210,33 @@ const OptionSelector = ({
                   }`}
                   aria-label={`Seleccionar opción ${replacement.name}${isReplacementSelected(replacement) ? ' (seleccionado)' : ''}`}
                 >
-                  <div className="flex items-center w-full">
-                    {replacement.emoji && (
-                      <span className="mr-2 text-base sm:text-sm">{replacement.emoji}</span>
-                    )}
-                    <span className="flex-grow">{getDisplayText(replacement)}</span>
-                    {isReplacementSelected(replacement) && (
-                      <svg className="h-4 w-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                        <path
-                          fillRule="evenodd"
-                          d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                          clipRule="evenodd"
-                        />
-                      </svg>
+                  {replacement.emoji && (
+                    <span className="mr-2 text-base sm:text-sm">{replacement.emoji}</span>
+                  )}
+                  <div className="flex-grow">
+                    {getDisplayText(replacement)}
+                    {replacement.description && (
+                      <span className="text-xs text-gray-500 block mt-1">{replacement.description}</span>
                     )}
                   </div>
-                  {replacement.description && (
-                    <span className="text-xs text-gray-500 block mt-1">{replacement.description}</span>
+                  {isReplacementSelected(replacement) && (
+                    <svg className="h-4 w-4 text-green-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                      <path
+                        fillRule="evenodd"
+                        d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
                   )}
                 </button>
-                {!!replacement.imageUrl && <EyeButton url={replacement.imageUrl} className="right-3 sm:right-4" />}
+                {!!replacement.imageUrl && <EyeButton url={replacement.imageUrl} className="right-3 sm:right-4 top-[calc(50%-10px)]" />}
                 {replacement.isNew && !replacement.isFinished && (
-                  <span className="absolute top-0 right-7 transform translate-x-1/2 -translate-y-1/2 bg-red-500 text-white text-[10px] font-semibold rounded-full px-2 py-0.5">
+                  <span className="absolute top-0 right-7 transform translate-x-1/2 -translate-y-1/2 bg-red-500 text-white text-[10px] font-semibold rounded-full px-2 py-0.5 z-[25]">
                     NUEVO
                   </span>
                 )}
                 {replacement.isFinished && (
-                  <span className="absolute top-0 right-1 -translate-y-1/2 bg-gray-500 text-white text-[10px] font-semibold rounded-full px-2 py-0.5 whitespace-nowrap z-10">
+                  <span className="absolute top-0 right-1 -translate-y-1/2 bg-gray-500 text-white text-[10px] font-semibold rounded-full px-2 py-0.5 whitespace-nowrap z-[25]">
                     AGOTADO{replacement.finishedAt && ` ${getTimeAgo(replacement.finishedAt)}`}
                   </span>
                 )}
@@ -1196,7 +1278,7 @@ const OptionSelector = ({
   Confirmar Principio
 </button>
       )}
-      {outOfStockRemovedNames.length > 0 && (
+      {outOfStockRemovedNames.length > 0 && userRole !== 3 && (
         <div className="mt-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded p-2">
           {outOfStockRemovedNames.length === 1 ? (
             <span>La opción "{outOfStockRemovedNames[0]}" se agotó y fue removida. Selecciona otra.</span>

@@ -15,10 +15,17 @@ const TableSelector = ({ value, onChange, disabled = false, placeholder = 'Selec
 
   useEffect(() => {
     const q = query(collection(db, 'tables'), orderBy('name', 'asc'));
-    const unsub = onSnapshot(q, snap => {
-      setTables(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-      setLoading(false);
-    });
+    const unsub = onSnapshot(q, 
+      snap => {
+        setTables(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        setLoading(false);
+      },
+      error => {
+        console.error('[TableSelector] Error loading tables:', error);
+        setTables([]);
+        setLoading(false);
+      }
+    );
     return () => unsub();
   }, []);
 

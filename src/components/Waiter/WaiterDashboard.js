@@ -1,7 +1,7 @@
 //src/components/Waiter/WaiterDashboard.js
 import React, { useState, useEffect, useMemo } from 'react';
 import { Disclosure, Transition } from '@headlessui/react';
-import { Bars3Icon, XMarkIcon, SunIcon, MoonIcon, ArrowLeftOnRectangleIcon, ClipboardDocumentListIcon, CreditCardIcon, ListBulletIcon, CurrencyDollarIcon, BoltIcon } from '@heroicons/react/24/outline';
+import { Bars3Icon, XMarkIcon, SunIcon, MoonIcon, ArrowLeftOnRectangleIcon, ClipboardDocumentListIcon, CreditCardIcon, ListBulletIcon, CurrencyDollarIcon, BoltIcon, ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../Auth/AuthProvider';
 import { db, auth } from '../../config/firebase';
@@ -18,6 +18,7 @@ import OptionSelector from '../OptionSelector';
 import WaiterPayments from './WaiterPayments';
 import WaiterTasks from './WaiterTasks';
 import WaiterCashier from './WaiterCashier';
+import WaiterCombatMode from './WaiterCombatMode';
 import { getColombiaLocalDateString } from '../../utils/bogotaDate';
 import CajaPOS from './CajaPOS';
 import QuickPOSOrders from './QuickPOSOrders';
@@ -562,6 +563,9 @@ const WaiterDashboard = () => {
           // Filtrar por usuario Y por fecha del día actual
           if (order.userId !== user?.uid) return false;
           
+          // Ocultar órdenes ya pagadas
+          if (order.isPaid === true) return false;
+          
           // Permitir órdenes recientes (últimos 10 min) independientemente de la fecha (fix para updates inmediatos)
           const isRecent = (now - order.createdAt) < 10 * 60 * 1000;
           
@@ -645,6 +649,9 @@ const WaiterDashboard = () => {
         .filter(order => {
           // Filtrar por usuario Y por fecha del día actual
           if (order.userId !== user?.uid) return false;
+          
+          // Ocultar órdenes ya pagadas
+          if (order.isPaid === true) return false;
           
           // Permitir órdenes recientes (últimos 10 min) independientemente de la fecha
           const isRecent = (now - order.createdAt) < 10 * 60 * 1000;
@@ -1093,6 +1100,7 @@ const WaiterDashboard = () => {
       const orderRef = doc(db, collectionName, orderId);
       await updateDoc(orderRef, {
         status: newStatus,
+        isPaid: false, // Asegurar que sea visible en POS hasta cobrar
         updatedAt: new Date(),
       });
       setErrorMessage(null);
@@ -1733,6 +1741,21 @@ const WaiterDashboard = () => {
                       <BoltIcon className={`w-6 h-6 mr-2 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} />
                       <span>Pedido Rápido</span>
                     </button>
+                    <button
+                      onClick={() => { setCurrentView('combat'); setIsSidebarOpen(false); }}
+                      className={`flex items-center px-4 py-2 rounded-md text-sm font-medium ${
+                        currentView === 'combat' 
+                          ? theme === 'dark' 
+                            ? 'bg-red-700 text-white' 
+                            : 'bg-red-200 text-red-800'
+                          : theme === 'dark' 
+                            ? 'text-gray-300 hover:text-white hover:bg-gray-700' 
+                            : 'text-gray-700 hover:text-black hover:bg-gray-300'
+                      } transition-all duration-200`}
+                    >
+                      <BoltIcon className={`w-6 h-6 mr-2 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} />
+                      <span>MODO GUERRA ⚔️</span>
+                    </button>
                     {/* Caja registradora oculta para meseros
                     <button
                       onClick={() => { setCurrentView('cashier'); setIsSidebarOpen(false); }}
@@ -1879,6 +1902,31 @@ const WaiterDashboard = () => {
             </span>
           </button>
 
+          <button
+            onClick={() => setCurrentView('combat')}
+            className={`relative flex items-center px-4 py-2 rounded-md text-sm font-medium min-w-[48px]
+              ${
+                currentView === 'combat' 
+                  ? theme === 'dark' 
+                    ? 'bg-red-700 text-white' 
+                    : 'bg-red-200 text-red-800'
+                  : isSidebarOpen
+                    ? theme === 'dark'
+                      ? 'text-gray-300 hover:text-white hover:bg-gray-700'
+                      : 'text-gray-700 hover:text-black hover:bg-gray-300'
+                    : 'justify-center'
+              } transition-all duration-300`}
+          >
+            <BoltIcon
+              className={`w-6 h-6 ${isSidebarOpen ? 'mr-2' : 'mr-0'} ${
+                theme === 'dark' ? 'text-gray-200' : 'text-gray-700'
+              }`}
+            />
+            <span className={`transition-opacity duration-200 ${isSidebarOpen ? 'opacity-100 block' : 'opacity-0 hidden'}`}>
+              MODO GUERRA ⚔️
+            </span>
+          </button>
+
           {/* Caja registradora oculta para meseros
           <button
             onClick={() => setCurrentView('cashier')}
@@ -1924,7 +1972,18 @@ const WaiterDashboard = () => {
               Cerrar Sesión
             </span>
           </button>
-        </nav>
+        </nav>ombat' ? (
+          // Vista MODO GUERRA
+          <WaiterCombatMode
+            soups={soups}
+            principles={principles}
+            proteins={proteins}
+            drinks={drinks}
+            sides={sides}
+            tableOptions={tableOptions}
+            menuType={menuType}
+          />  
+        ) : currentView === 'c
       </div>
 
       {/* Contenido principal */}
@@ -1977,27 +2036,9 @@ const WaiterDashboard = () => {
             </div>
   {/* Eliminado el selector anterior para evitar duplicidad */}
   {activeTab === 'create' ? (
-          menuType === 'breakfast' ? (
+    <>
+          {menuType === 'breakfast' ? (
             <>
-              <div className="mb-4">
-                <div className="flex items-center justify-center bg-white p-3 rounded-lg shadow-sm">
-                  <span className="text-gray-700 text-sm text-center">
-                    Toma pedidos rápido. {(manualMenuType || menuType) === 'breakfast' ? 'Desayuno' : (manualMenuType || menuType) === 'lunch' ? 'Almuerzo' : 'Menú'} disponible hasta {timeRemaining}
-                  </span>
-                  <div className="ml-4 flex items-center">
-                    <select
-                      className="border rounded px-2 py-1 text-xs focus:outline-none focus:ring focus:border-blue-300"
-                      value={manualMenuType || menuType}
-                      onChange={e => setManualMenuType(e.target.value === 'auto' ? null : e.target.value)}
-                      style={{ minWidth: 100 }}
-                    >
-                      <option value="auto">Automático</option>
-                      <option value="breakfast">Desayuno</option>
-                      <option value="lunch">Almuerzo</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
               <BreakfastList
                 breakfasts={breakfasts}
                 setBreakfasts={setBreakfasts}
@@ -2032,25 +2073,6 @@ const WaiterDashboard = () => {
             </>
           ) : (
             <>
-              <div className="mb-4">
-                <div className="flex items-center justify-center bg-white p-3 rounded-lg shadow-sm">
-                  <span className="text-gray-700 text-sm text-center">
-                    Toma pedidos rápido. {(manualMenuType || menuType) === 'breakfast' ? 'Desayuno' : (manualMenuType || menuType) === 'lunch' ? 'Almuerzo' : 'Menú'} disponible hasta {timeRemaining}
-                  </span>
-                  <div className="ml-4 flex items-center">
-                    <select
-                      className="border rounded px-2 py-1 text-xs focus:outline-none focus:ring focus:border-blue-300"
-                      value={manualMenuType || menuType}
-                      onChange={e => setManualMenuType(e.target.value === 'auto' ? null : e.target.value)}
-                      style={{ minWidth: 100 }}
-                    >
-                      <option value="auto">Automático</option>
-                      <option value="breakfast">Desayuno</option>
-                      <option value="lunch">Almuerzo</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
               <MealList
                 meals={meals}
                 soups={soups}
@@ -2090,8 +2112,9 @@ const WaiterDashboard = () => {
                 );
               })()}
             </>
-          )
-        ) : (
+          )}
+        </>
+      ) : (
           <div className="space-y-4">
             {orders.length === 0 ? (
               <p className="text-center text-gray-700">No has registrado órdenes de mesas.</p>
@@ -2105,7 +2128,13 @@ const WaiterDashboard = () => {
                   >
                     <div className="flex justify-center items-center">
                       <span>Órdenes de Desayuno</span>
-                      <span className="ml-2 text-lg">{expandedBreakfast ? '▼' : '▶'}</span>
+                      <span className="ml-2">
+                        {expandedBreakfast ? (
+                          <ChevronUpIcon className="h-5 w-5" />
+                        ) : (
+                          <ChevronDownIcon className="h-5 w-5" />
+                        )}
+                      </span>
                     </div>
                   </div>
                 )}
@@ -2119,7 +2148,15 @@ const WaiterDashboard = () => {
                         <div>
                           <h2 className="text-sm font-semibold text-gray-800 flex items-center gap-1">
                             {order.quickMode && !order.expanded && <span className="inline-flex items-center px-1.5 py-0.5 bg-green-600 text-white text-[10px] rounded">⚡ Rápido</span>}
-                            Desayuno #{index + 1} - Mesa {formatValue(order.breakfasts?.[0]?.tableNumber || order.tableNumber)} - #{order.id.slice(-4)}
+                            {formatValue(order.breakfasts?.[0]?.tableNumber || order.tableNumber)} - {order.breakfasts?.length === 1 ? 'desayuno' : 'desayunos'} {order.breakfasts?.length || 1}
+                            <span className={`ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                              order.status === 'Completada' ? 'bg-green-600 text-white animate-pulse' :
+                              order.status === 'Preparando' ? 'bg-blue-600 text-white' :
+                              'bg-orange-500 text-white'
+                            }`}>
+                              {order.status === 'Completada' ? 'COMPLETADO' : 
+                               order.status === 'Preparando' ? 'PREPARANDO' : 'PENDIENTE'}
+                            </span>
                           </h2>
                           {order.quickMode && !order.expanded && (
                             <div className="mt-1 text-[11px] text-green-700 font-medium">Pendiente de expansión</div>
@@ -2231,7 +2268,13 @@ const WaiterDashboard = () => {
                 >
                   <div className="flex justify-center items-center">
                     <span>Órdenes de Almuerzo</span>
-                    <span className="ml-2 text-lg">{expandedLunch ? '▼' : '▶'}</span>
+                    <span className="ml-2">
+                      {expandedLunch ? (
+                        <ChevronUpIcon className="h-5 w-5" />
+                      ) : (
+                        <ChevronDownIcon className="h-5 w-5" />
+                      )}
+                    </span>
                   </div>
                 </div>
               )}
@@ -2245,7 +2288,15 @@ const WaiterDashboard = () => {
                       <div>
                         <h2 className="text-sm font-semibold text-gray-800 flex items-center gap-1">
                           {order.quickMode && !order.expanded && <span className="inline-flex items-center px-1.5 py-0.5 bg-green-600 text-white text-[10px] rounded">⚡ Rápido</span>}
-                          Almuerzo #{index + 1} - Mesa {formatValue(order.meals?.[0]?.tableNumber || order.tableNumber)} - #{order.id.slice(-4)}
+                          {formatValue(order.meals?.[0]?.tableNumber || order.tableNumber)} - {order.meals?.length === 1 ? 'almuerzo' : 'almuerzos'} {order.meals?.length || 1}
+                          <span className={`ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                            order.status === 'Completada' ? 'bg-green-600 text-white animate-pulse' :
+                            order.status === 'Preparando' ? 'bg-blue-600 text-white' :
+                            'bg-orange-500 text-white'
+                          }`}>
+                            {order.status === 'Completada' ? 'COMPLETADO' : 
+                             order.status === 'Preparando' ? 'PREPARANDO' : 'PENDIENTE'}
+                          </span>
                         </h2>
                         {order.quickMode && !order.expanded && (
                           <div className="mt-1 text-[11px] text-green-700 font-medium">Pendiente de expansión</div>

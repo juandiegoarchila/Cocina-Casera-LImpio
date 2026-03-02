@@ -14,6 +14,7 @@ export const initializeMealData = ({ address, phoneNumber, details, isWaitress =
   notes: '',
   tableNumber: isWaitress ? '' : null,
   paymentMethod: isWaitress ? null : null,
+  expandedSection: 0,
   ...(isWaitress ? {} : {
     time: null,
     address: {
@@ -264,7 +265,7 @@ const addressFields = ['address', 'phoneNumber', 'details'];
 const specialRiceOptions = ['Arroz con pollo', 'Arroz paisa', 'Arroz tres carnes'];
 
 export const generateMessageFromMeals = (meals, calculateMealPrice, total, allSides = [], isWaitress = false) => {
-  let message = `👋 ¡Hola Cocina Casera! 🍴\nQuiero hacer mi pedido:\n\n`;
+  let message = `👋 ¡Hola Cocina Casera! 🍴\nQuiero hacer mi pedido:\n\n🧾 *Pago por transferencia:* Si pagas con transferencia, tu pedido se empieza a preparar solo cuando envíes el comprobante de pago. Entre más rápido lo envíes, más pronto sale tu pedido. Los números de cuenta están al final del mensaje.\n───────────────\n`;
 
   const safeMeals = Array.isArray(meals) ? meals : [];
 
@@ -728,6 +729,7 @@ message += `───────────────\n`;
       message += `Si no tienes efectivo,  puedes transferir.\n`;
       message += `\nBancolombia (Ahorros – Nequi a Bancolombia): 📲 54706725531\n`;
       message += `Daviplata: 📲 313 850 5647\n`;
+      message += `\n🧾 *Pago por transferencia:* Si pagas con transferencia, tu pedido se empieza a preparar solo cuando envíes el comprobante de pago. Entre más rápido lo envíes, más pronto sale tu pedido.\n`;
       message += `\n💰 Total: $${(total || 0).toLocaleString('es-CO')}\n`;
       message += `🚚 Estimado: 25-30 min (10-15 si están cerca).\n`;
     } else {
@@ -735,6 +737,7 @@ message += `───────────────\n`;
       message += `💳 Formas de pago:\n\n`;
       message += `Bancolombia (Ahorros – Nequi a Bancolombia): 📲 54706725531\n`;
       message += `Daviplata: 📲 313 850 5647\n`;
+      message += `\n🧾 *Pago por transferencia:* Si pagas con transferencia, tu pedido se empieza a preparar solo cuando envíes el comprobante de pago. Entre más rápido lo envíes, más pronto sale tu pedido.\n`;
       // Listado de métodos seleccionados con montos
       Object.entries(paymentSummaryMap).forEach(([method, amount]) => {
         if (method !== 'No especificado' && amount > 0 && method !== 'Efectivo') {
@@ -751,5 +754,12 @@ message += `───────────────\n`;
   }
 
   message += `\n¡Gracias por tu pedido! 😊`;
+  message += `\n\n📋 *Recuerda que aceptaste las condiciones de entrega:*`;
+  message += `\n👉 Ver condiciones completas: https://cocina-casera.web.app/politicas`;
+  message += `\n⏱️ Entrega: 25-30 min desde que el domiciliario confirma salida.`;
+  message += `\n🏢 Conjuntos/edificios: entrega en portería o entrada.`;
+  message += `\n👩‍🍳 Pedido con anticipación = llegada más puntual.`;
+  message += `\n🌧️ Retrasos externos están fuera de nuestro control.`;
+  message += `\n🙏 ¡Gracias por tu comprensión!`;
   return message;
 };
