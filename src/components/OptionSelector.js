@@ -296,6 +296,12 @@ const OptionSelector = ({
 
   // Maneja el clic en una opción
   const handleOptionClick = (option) => {
+    // Si es una opción de reemplazo, usar handleReplacementClick
+    if (option.isReplacement) {
+      handleReplacementClick(option);
+      return;
+    }
+
     // Permitir a domiciliarios (userRole === 3) seleccionar items agotados
     const isDeliveryPerson = userRole === 3;
     if (disabled || (option.isFinished && !isDeliveryPerson)) return;
@@ -547,6 +553,10 @@ const OptionSelector = ({
   // Verifica si una opción está seleccionada
   const isOptionSelected = useCallback(
     (option) => {
+      if (option.isReplacement) {
+        return selectedReplacement?.name === option.name;
+      }
+
       const currentCheckSelection = showConfirmButton ? pendingSelection : selected;
       
       // Debug temporal para mesa en almuerzos
@@ -805,7 +815,7 @@ const OptionSelector = ({
 
   const mobileLayout = (option, index, isSelected, quantity) => (
     <div key={option.id || index} className="relative group">
-      {onQuickQuantityChange && userRole === 3 && !(option.isFinished && userRole !== 3) && (
+      {onQuickQuantityChange && userRole === 3 && !(option.isFinished && userRole !== 3) && !option.isReplacement && (
         <div className="absolute -top-2 right-[70px] z-[15] flex gap-0.5 bg-white shadow-md rounded-full px-1 py-0.5 opacity-100 transition-opacity border border-green-400">
           {[1, 2, 3, 4, 5].map(n => (
             <button
@@ -1029,7 +1039,7 @@ const OptionSelector = ({
 
   const pcLayout = (option, index, isSelected, quantity) => (
     <div key={option.id || index} className="relative group">
-      {onQuickQuantityChange && userRole === 3 && !(option.isFinished && userRole !== 3) && (
+      {onQuickQuantityChange && userRole === 3 && !(option.isFinished && userRole !== 3) && !option.isReplacement && (
         <div className="absolute -top-2 right-[70px] z-[15] flex gap-0.5 bg-white shadow-md rounded-full px-1 py-0.5 opacity-0 group-hover:opacity-100 transition-opacity border border-green-400">
           {[1, 2, 3, 4, 5].map(n => (
             <button
@@ -1144,8 +1154,13 @@ const OptionSelector = ({
           const quantity = getOptionQuantity(option);
           return isMobile() ? mobileLayout(option, index, isSelected, quantity) : pcLayout(option, index, isSelected, quantity);
         })}
+        {showReplacement && replacements.map((replacement, index) => {
+          const isSelected = isOptionSelected({ id: `replacement-${replacement.id}`, name: replacement.name });
+          const quantity = getOptionQuantity({ id: `replacement-${replacement.id}`, name: replacement.name });
+          return isMobile() ? mobileLayout({ ...replacement, isReplacement: true }, `repl-${index}`, isSelected, quantity) : pcLayout({ ...replacement, isReplacement: true }, `repl-${index}`, isSelected, quantity);
+        })}
       </div>
-      {showReplacement && replacements.length > 0 && !isMobile() && (
+      {false && showReplacement && replacements.length > 0 && !isMobile() && (
         <div className="mt-2 pl-2 border-l-2 border-green-200">
           <div className="flex justify-between items-center mb-1">
             <h4 className="text-[10px] font-medium text-gray-600">

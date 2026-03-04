@@ -61,6 +61,25 @@ const BreakfastItem = ({
     }
   }, [breakfast?.type, breakfast?.broth, breakfast?.eggs, breakfast?.riceBread, currentSlide]);
 
+  // Auto-advance slide when chat widget syncs a breakfast selection
+  useEffect(() => {
+    if (isTableOrder) return;
+    const handler = (e) => {
+      const targetField = e.detail?.field;
+      if (!targetField) return;
+      // Find the slide index by matching associatedField
+      const idx = slides.findIndex(s => s.associatedField === targetField);
+      if (idx >= 0) {
+        if (slideRef.current) {
+          slideRef.current.style.transition = 'transform 300ms ease-in-out';
+        }
+        setCurrentSlide(idx);
+      }
+    };
+    window.addEventListener('chatSyncAdvanceBreakfastSlide', handler);
+    return () => window.removeEventListener('chatSyncAdvanceBreakfastSlide', handler);
+  }, [isTableOrder, slides]);
+
   // Cargar mesas solo en pedidos de mesa
   useEffect(() => {
     if (!isTableOrder) return;

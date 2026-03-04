@@ -105,6 +105,22 @@ const MealItem = ({
       setCurrentSlide(0);
     }
   }, [id]);
+
+  // Auto-advance slide when chat widget syncs a selection
+  useEffect(() => {
+    if (isTableOrder) return;
+    const handler = (e) => {
+      const targetSlide = e.detail?.slideIndex;
+      if (targetSlide !== undefined && targetSlide >= 0) {
+        if (slideRef.current) {
+          slideRef.current.style.transition = 'transform 300ms ease-in-out';
+        }
+        setCurrentSlide(targetSlide);
+      }
+    };
+    window.addEventListener('chatSyncAdvanceSlide', handler);
+    return () => window.removeEventListener('chatSyncAdvanceSlide', handler);
+  }, [isTableOrder]);
   
   useEffect(() => {
     if (!isTableOrder) return;

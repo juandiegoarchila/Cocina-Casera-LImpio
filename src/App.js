@@ -33,6 +33,7 @@ import OrderConfirmedScreen from './components/OrderConfirmedScreen';
 import DeliveryPolicyPage from './components/DeliveryPolicyPage';
 import LicenseManager from './components/Admin/LicenseManager';
 import SystemGuard from './components/common/SystemGuard';
+import ChatWidget, { CHAT_ENABLED } from './components/Chat/ChatWidget';
 
 const StaffHub = lazy(() => import('./components/Auth/StaffHub')); 
 const AdminPage = lazy(() => import('./components/Admin/AdminPage'));
@@ -1223,6 +1224,18 @@ try {
         <Route path="/test" element={<div className="text-center text-green-500">Ruta de prueba funcionando</div>} />
         </Routes>
       </SystemGuard>
+      {CHAT_ENABLED && <ChatWidget 
+        meals={meals}
+        setMeals={setMeals}
+        breakfasts={breakfasts}
+        setBreakfasts={setBreakfasts}
+        savedAddress={savedAddress}
+        onOrderConfirmed={(msg) => {
+          setLastOrderMessage(msg);
+          setShowOrderConfirmed(true);
+        }}
+        saveOrder={registerClientAndSaveOrder}
+      />}
     </Suspense>
   );
 };
