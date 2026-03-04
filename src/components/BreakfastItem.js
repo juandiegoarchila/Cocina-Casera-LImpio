@@ -61,25 +61,6 @@ const BreakfastItem = ({
     }
   }, [breakfast?.type, breakfast?.broth, breakfast?.eggs, breakfast?.riceBread, currentSlide]);
 
-  // Auto-advance slide when chat widget syncs a breakfast selection
-  useEffect(() => {
-    if (isTableOrder) return;
-    const handler = (e) => {
-      const targetField = e.detail?.field;
-      if (!targetField) return;
-      // Find the slide index by matching associatedField
-      const idx = slides.findIndex(s => s.associatedField === targetField);
-      if (idx >= 0) {
-        if (slideRef.current) {
-          slideRef.current.style.transition = 'transform 300ms ease-in-out';
-        }
-        setCurrentSlide(idx);
-      }
-    };
-    window.addEventListener('chatSyncAdvanceBreakfastSlide', handler);
-    return () => window.removeEventListener('chatSyncAdvanceBreakfastSlide', handler);
-  }, [isTableOrder, slides]);
-
   // Cargar mesas solo en pedidos de mesa
   useEffect(() => {
     if (!isTableOrder) return;
@@ -734,6 +715,24 @@ const BreakfastItem = ({
       console.log(`[BreakfastItem #${displayId}] Slides:`, slides.map(s => s.label));
     }
   }, [slides, displayId]);
+
+  // Auto-advance slide when chat widget syncs a breakfast selection
+  useEffect(() => {
+    if (isTableOrder) return;
+    const handler = (e) => {
+      const targetField = e.detail?.field;
+      if (!targetField) return;
+      const idx = slides.findIndex(s => s.associatedField === targetField);
+      if (idx >= 0) {
+        if (slideRef.current) {
+          slideRef.current.style.transition = 'transform 300ms ease-in-out';
+        }
+        setCurrentSlide(idx);
+      }
+    };
+    window.addEventListener('chatSyncAdvanceBreakfastSlide', handler);
+    return () => window.removeEventListener('chatSyncAdvanceBreakfastSlide', handler);
+  }, [isTableOrder, slides]);
 
   // Calcular el porcentaje de progreso usando la nueva función
   const completionPercentage = calculateBreakfastProgress(breakfast, isTableOrder, isWaitress, breakfastTypes);

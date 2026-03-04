@@ -3,11 +3,31 @@
  * Chat con IA (Gemini) + Rate Limiting
  */
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
-const admin = require('firebase-admin');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-admin.initializeApp();
-const db = admin.firestore();
+// Lazy-load para evitar timeout en deploy
+let _admin, _db, _GoogleGenerativeAI;
+
+function getAdmin() {
+  if (!_admin) {
+    _admin = require('firebase-admin');
+    _admin.initializeApp();
+  }
+  return _admin;
+}
+
+function getDb() {
+  if (!_db) {
+    _db = getAdmin().firestore();
+  }
+  return _db;
+}
+
+function getGenAIClass() {
+  if (!_GoogleGenerativeAI) {
+    _GoogleGenerativeAI = require('@google/generative-ai').GoogleGenerativeAI;
+  }
+  return _GoogleGenerativeAI;
+}
 
 // ─── Constantes ───────────────────────────────────────────
 const MAX_REQUESTS_PER_DAY = 500;     // Por sesión (sobrado para 40 personas/día)
@@ -16,7 +36,7 @@ const MODEL_NAME = 'gemini-2.5-flash'; // Barato, rápido y muy capaz
 
 // ─── Rate Limiter ─────────────────────────────────────────
 async function checkRateLimit(sessionId) {
-  const ref = db.collection('chatRateLimits').doc(sessionId);
+  const ref = getDb().collection('chatRateLimits').doc(sessionId);
   const now = new Date();
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
@@ -37,7 +57,7 @@ async function checkRateLimit(sessionId) {
     return false;
   }
 
-  await ref.update({ count: admin.firestore.FieldValue.increment(1) });
+  await ref.update({ count: getAdmin().firestore.FieldValue.increment(1) });
   return true;
 }
 
@@ -329,6 +349,7 @@ exports.chatWithAI = onCall(
     region: 'us-central1',
     maxInstances: 10,
     memory: '256MiB',
+    timeoutSeconds: 60,
   },
   async (request) => {
     const { message, menuItems, conversationHistory, sessionId, schedules, isOrderingDisabled, savedAddress } = request.data;
@@ -381,7 +402,8 @@ exports.chatWithAI = onCall(
         throw new HttpsError('failed-precondition', 'API Key de Gemini no configurada.');
       }
 
-      const genAI = new GoogleGenerativeAI(apiKey);
+      const GenAIClass = getGenAIClass();
+      const genAI = new GenAIClass(apiKey);
       const model = genAI.getGenerativeModel({
         model: MODEL_NAME,
         generationConfig: {
